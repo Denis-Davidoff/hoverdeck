@@ -3,7 +3,7 @@ import { surfaceControls } from './core/commands';
 import { remoteFileControls } from './core/remoteFiles';
 import { validSleepChoice, type SleepChoice } from '../power/sleepProtocol';
 import { chromeChatProtocolVersion, chromeChatCapabilities, readChromeChatCapabilities, type ChromeChatCapabilities } from './chromeChatCompatibility';
-import type { ChatEntry, ChatViewMode, ChatViewState, Selection, ViewToHost } from './chatProtocol';
+import type { ChatEntry, ChatViewMode, ChatViewState, QueueAction, Selection, ViewToHost } from './chatProtocol';
 import type { FeatureAiSettings } from './featureAi';
 import { validToolbarSkill } from './toolbarText';
 import { readFeatureAiSettings } from './featureAi';
@@ -71,7 +71,7 @@ const viewFields = {
 	sleep: 'shared', voice: 'override', blocked: 'shared', detecting: 'shared', agents: 'override', selection: 'shared',
 	chatId: 'shared', entries: 'shared', linkedChats: 'shared', running: 'shared', turnsEnded: 'shared', attachments: 'override', suggestions: 'override',
 	visualizations: 'shared', visualizationsUnchanged: 'editor',
-	hasBrowserTab: 'shared', browserApi: 'shared', nativeBrowser: 'shared', news: 'shared', newsHidden: 'shared',
+	hasBrowserTab: 'shared', browserApi: 'shared', nativeBrowser: 'shared', news: 'shared', newsHidden: 'shared', product: 'shared', externalAgents: 'shared',
 	tabs: 'shared', activeTab: 'shared', tabLimit: 'shared', terminals: 'editor', terminalFront: 'editor', terminalSupport: 'editor', pendingSends: 'shared', queuePaused: 'shared',
 	approvals: 'shared', switchTo: 'shared', commands: 'shared', toolbar: 'shared', toolbarRuns: 'shared',
 	skillAgents: 'shared', viewMode: 'shared', collapseTools: 'shared', context: 'shared', workdir: 'shared',
@@ -102,7 +102,7 @@ export function chromeChatSnapshot(full: ChatViewState, editorVersion?: string, 
 	const state: ChatViewState = entries !== full.entries ? { ...full, entries } : full;
 	return {
 		version: 1, protocolVersion: chromeChatProtocolVersion, capabilities: chromeChatCapabilities, editorVersion,
-		title: state.tabs.find(tab => tab.id === state.activeTab)?.title ?? 'AI Browser',
+		title: state.tabs.find(tab => tab.id === state.activeTab)?.title ?? state.product ?? 'AI Browser',
 		chatId: state.chatId,
 		running: state.running,
 		blocked: state.blocked,
@@ -177,6 +177,11 @@ export function readChromeElementAttachments(value: unknown): ChromeElementAttac
 }
 
 /** Only explicit, bounded commands may cross from Chrome into the chat controller. */
+/** A send time a remote surface may ask for: a whole number of epoch ms, not more than a year ahead. The host decides what "past" means. */
+export function validSendTime(at: unknown): at is number {
+	return typeof at === 'number' && Number.isSafeInteger(at) && at > 0 && at < Date.now() + 366 * 24 * 60 * 60 * 1000;
+}
+
 export function readChromeChatCommand(value: unknown): ChromeChatCommand | undefined {
 	if (!value || typeof value !== 'object') { return undefined; }
 	const raw = value as Record<string, unknown>;
@@ -250,7 +255,13 @@ export function readChromeChatCommand(value: unknown): ChromeChatCommand | undef
 				...(m.recordingQuality === 'balanced' || m.recordingQuality === 'high' || m.recordingQuality === 'maximum' ? { recordingQuality: m.recordingQuality } : {}) }; break;
 		case 'send':
 			if (typeof m.text !== 'string' || (!m.text.trim() && !attachments?.length) || m.text.length > 100_000 || m.text.includes('\0')) { return undefined; }
-			message = { type: 'send', text: m.text, ...(m.mode === 'queue' ? { mode: 'queue' as const } : {}) }; break;
+			if (m.at !== undefined && !validSendTime(m.at)) { return undefined; }
+			message = { type: 'send', text: m.text, ...(m.mode === 'queue' ? { mode: 'queue' as const } : {}), ...(m.at !== undefined ? { at: m.at as number } : {}) }; break;
+		case 'queueAction':
+			if (typeof m.id !== 'string' || !m.id || m.id.length > 200 || !['move', 'sendNow', 'schedule', 'unschedule'].includes(String(m.action))
+				|| (m.before !== undefined && (typeof m.before !== 'string' || !m.before || m.before.length > 200))
+				|| (m.action === 'schedule' ? !validSendTime(m.at) : m.at !== undefined)) { return undefined; }
+			message = { type: 'queueAction', id: m.id, action: m.action as QueueAction, ...(typeof m.before === 'string' ? { before: m.before } : {}), ...(m.action === 'schedule' ? { at: m.at as number } : {}) }; break;
 		case 'stop': message = { type: 'stop' }; break;
 		case 'cancelProgress':
 			if (m.chatId !== raw.chatId || typeof m.id !== 'string' || !m.id || m.id.length > 256) { return undefined; }
@@ -333,7 +344,7 @@ function readChromeFooterMessage(m: Record<string, unknown>): ViewToHost | undef
       if (!text('id', 200) || !text('tabId', 100, true) || !m.values || typeof m.values !== 'object' || Array.isArray(m.values)) { return undefined; }
       const values = Object.entries(m.values);
       if (values.length > 100 || values.some(([key, v]) => key.length > 200 || typeof v !== 'string' || v.length > 12000 || v.includes('\0'))) { return undefined; }
-      return { type: m.type, id: m.id as string, tabId: m.tabId as string | undefined, values: Object.fromEntries(values) as Record<string, string>, again: m.again === true, queue: m.queue === true };
+      return { type: m.type, id: m.id as string, tabId: m.tabId as string | undefined, values: Object.fromEntries(values) as Record<string, string>, again: m.again === true, ...(typeof m.queue === 'boolean' ? { queue: m.queue } : {}) };
     }
     case 'saveToolbarSkill': {
       const skill = validToolbarSkill(m.skill);
@@ -343,7 +354,7 @@ function readChromeFooterMessage(m: Record<string, unknown>): ViewToHost | undef
     case 'moveToolbarSkill': return text('id', 200) && (m.by === -1 || m.by === 1) ? { type: m.type, id: m.id as string, by: m.by } : undefined;
     case 'placeToolbarSkill': return text('id', 200) && text('target', 200) && typeof m.after === 'boolean' ? { type: m.type, id: m.id as string, target: m.target as string, after: m.after } : undefined;
     case 'toolbarApprove': return text('id', 200) && text('approvalId', 200) && typeof m.allow === 'boolean' ? { type: m.type, id: m.id as string, approvalId: m.approvalId as string, allow: m.allow } : undefined;
-    case 'gitCommit': return folder() && tab() && (m.scope === undefined || m.scope === 'all' || m.scope === 'staged') ? { type: m.type, folder: m.folder as string, tabId: m.tabId as string, scope: m.scope as 'all' | 'staged' | undefined, ...(m.push === true ? { push: true } : {}) } : undefined;
+    case 'gitCommit': return folder() && tab() && (m.scope === undefined || m.scope === 'all' || m.scope === 'staged') && (m.message === undefined || typeof m.message === 'string') ? { type: m.type, folder: m.folder as string, tabId: m.tabId as string, scope: m.scope as 'all' | 'staged' | undefined, ...(m.push === true ? { push: true } : {}), ...(typeof m.message === 'string' ? { message: m.message } : {}) } : undefined;
     case 'gitIndexAction': return folder() && tab() && ['stage', 'unstage'].includes(String(m.action)) && text('path', 4096, true) ? { type: m.type, folder: m.folder as string, tabId: m.tabId as string, action: m.action as 'stage' | 'unstage', path: m.path as string | undefined } : undefined;
     case 'openGitDiff': return folder() && tab() && text('path') && typeof m.staged === 'boolean' ? { type: m.type, folder: m.folder as string, tabId: m.tabId as string, path: m.path as string, staged: m.staged } : undefined;
     case 'fixGitCommit': case 'dismissGitCommit': return folder() && tab() && text('id', 200) ? { type: m.type, folder: m.folder as string, tabId: m.tabId as string, id: m.id as string } : undefined;
@@ -351,7 +362,7 @@ function readChromeFooterMessage(m: Record<string, unknown>): ViewToHost | undef
     case 'gitBranchAction': return folder() && text('name', 1024) && ['switch', 'create', 'delete'].includes(String(m.action)) ? { type: m.type, folder: m.folder as string, name: m.name as string, action: m.action as 'switch' | 'create' | 'delete', remote: m.remote === true } : undefined;
     case 'gitRemoteAction': return folder() && ['publish', 'push', 'pull'].includes(String(m.action)) && text('remote', 200, true) && text('confirmed', 4096, true) ? { type: m.type, folder: m.folder as string, action: m.action as 'publish' | 'push' | 'pull', remote: m.remote as string | undefined, confirmed: m.confirmed as string | undefined } : undefined;
     case 'restoreBranchStash': return folder() ? { type: m.type, folder: m.folder as string } : undefined;
-    case 'githubStatus': return folder() ? { type: m.type, folder: m.folder as string, ...(m.signIn === true ? { signIn: true } : {}) } : undefined;
+    case 'githubStatus': return folder() ? { type: m.type, folder: m.folder as string, ...(m.signIn === true ? { signIn: true } : {}), ...(m.refresh === true ? { refresh: true } : {}) } : undefined;
     case 'githubCreatePr': return folder() && text('title', 512) ? { type: m.type, folder: m.folder as string, title: m.title as string, ...(m.draft === true ? { draft: true } : {}) } : undefined;
     case 'files': {
       // Only the forms a remote surface may use; the host refuses the rest again.

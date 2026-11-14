@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { transpileModule, ScriptTarget } from 'typescript';
 import { attachmentMarker, readAttachmentMarkers } from './attachmentMarkers.ts';
+import { portableAttachmentText } from '../src/chat/attachmentText.ts';
 
 const source = readFileSync('preview-src/chat.ts', 'utf8');
 const lift = (name: string) => new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`).exec(source)![0];
@@ -39,7 +40,7 @@ function fixture() {
 		input, inputMirror, document, draftChat: 'chat', commands,
 		window: { addEventListener() {} }, gate: () => ({ s: 'on' }),
 		attachmentClipboardType: 'application/x-ai-browser-attachments',
-		attachmentMarker, readAttachmentMarkers,
+		attachmentMarker, readAttachmentMarkers, portableAttachmentText,
 		state: {}, chipOfToken: () => chip, syncAttachmentTokens() {},
 		post: (message: unknown) => posted.push(message),
 		rememberAttachmentCaret() {}, saveDraft() {}, autosize() {}, renderSend() {}, paintInput() {},

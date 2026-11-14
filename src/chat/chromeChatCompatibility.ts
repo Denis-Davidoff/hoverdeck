@@ -31,9 +31,9 @@ function version(value: unknown): string {
 export function chromeChatCompatibilityError(editorProtocol: unknown, chromeProtocol: unknown, editorVersion?: unknown, chromeVersion?: unknown): string | undefined {
   const editor = protocol(editorProtocol), chrome = protocol(chromeProtocol);
   if (editor > 0 && editor === chrome) { return undefined; }
-  const update = editor === chrome ? 'both AI Browser extensions'
-    : editor < chrome ? 'the AI Browser extension for VS Code' : 'the AI Browser extension for Chrome';
-  return `Incompatible AI Browser versions: VS Code ${version(editorVersion)}, Chrome ${version(chromeVersion)}. Update ${update} to the latest version, then reconnect.`;
+  const update = editor === chrome ? 'both extensions'
+    : editor < chrome ? 'the VS Code extension' : 'the Chrome extension';
+  return `Incompatible versions: VS Code ${version(editorVersion)}, Chrome ${version(chromeVersion)}. Update ${update} to the latest version, then reconnect.`;
 }
 
 /** Feature versions describe wire contracts, independently of release numbers. */
@@ -83,7 +83,7 @@ export function negotiateChromeChatCapabilities(peer: unknown, transport: unknow
 }
 
 export function chromeChatFeatureError(feature: ChromeChatFeature): string {
-  return `The ${feature} feature is incompatible or unavailable. Update the AI Browser extensions to the latest version to use it. Other compatible features remain available.`;
+  return `The ${feature} feature is incompatible or unavailable. Update the VS Code and Chrome extensions to the latest version to use it. Other compatible features remain available.`;
 }
 
 export function chromeChatAttachmentFeature(kind: string | undefined): ChromeChatFeature {

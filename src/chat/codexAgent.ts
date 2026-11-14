@@ -1,5 +1,6 @@
 import { privateTempDirectory } from '../core/safeFiles';
 import { chatCapability } from '../core/chatCapability';
+import { ownExtensionId, mcpServerName, productName } from '../core/flavor';
 import { requestCommitMessage } from './commitMessage';
 import { requestTitle } from './autoTitle';
 /*---------------------------------------------------------------------------------------------
@@ -141,7 +142,7 @@ export class CodexBackend implements AgentBackend {
 			// An older CLI that does not know the feature starts the thread anyway.
 			features: { default_mode_request_user_input: true },
 			...(chatId ? { [`shell_environment_policy.set.${processOwnerVariable}`]: agentProcesses.environment(chatId, 'codex')[processOwnerVariable] } : {}),
-			...(server ? { mcp_servers: { 'ai-browser': { url: server.url, http_headers: { Authorization: `Bearer ${server.token}`, ...(chatId ? { 'X-AI-Browser-Chat': chatCapability(chatId) } : {}) } } } } : {}),
+			...(server ? { mcp_servers: { [mcpServerName()]: { url: server.url, http_headers: { Authorization: `Bearer ${server.token}`, ...(chatId ? { 'X-AI-Browser-Chat': chatCapability(chatId) } : {}) } } } } : {}),
 		};
 	}
 
@@ -325,7 +326,7 @@ export class CodexBackend implements AgentBackend {
 				session.processEnded(error.message);
 			}
 		});
-		const ready = this.request('initialize', { clientInfo: { name: 'ai-browser', title: 'AI Browser', version: extensionVersion() } })
+		const ready = this.request('initialize', { clientInfo: { name: mcpServerName(), title: productName(), version: extensionVersion() } })
 			.then(() => process.send({ jsonrpc: '2.0', method: 'initialized' }));
 		this._ready = ready;
 		// **A server that did not complete the handshake is ended, not
@@ -487,7 +488,7 @@ export class CodexBackend implements AgentBackend {
 			this._process?.send({ jsonrpc: '2.0', id, result: { action: 'decline', content: null } });
 			return;
 		}
-		this._process?.send({ jsonrpc: '2.0', id, error: { code: -32601, message: `${method} is not supported by AI Browser.` } });
+		this._process?.send({ jsonrpc: '2.0', id, error: { code: -32601, message: `${method} is not supported by this client.` } });
 	}
 
 	/**
@@ -1045,5 +1046,5 @@ class CodexSession implements AgentSession {
 const compactStartWaitMs = 30_000;
 
 function extensionVersion(): string {
-	return vscode.extensions.getExtension('DenysDavydov.tab-browser-ultimate')?.packageJSON?.version ?? '0.0.0';
+	return vscode.extensions.getExtension(ownExtensionId())?.packageJSON?.version ?? '0.0.0';
 }

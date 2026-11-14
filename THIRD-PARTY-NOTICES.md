@@ -26,7 +26,7 @@ it, is a Larger Work and remains MIT.
 **The source form ships with the extension**: the packaged VSIX contains
 `extension/src/logins/loginFormScript.ts` beside the compiled `extension/out/logins/loginFormScript.js`, so the
 source of the exact version you have travels with it. It is also in this repository:
-https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/blob/main/src/logins/loginFormScript.ts
+https://github.com/Denis-Davidoff/hoverdeck/blob/main/src/logins/loginFormScript.ts
 
 The behaviour of Bitwarden's browser extension (GPL-3.0) was studied when deciding when to offer
 saving a password and how to fill one. None of its code is included.

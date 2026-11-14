@@ -99,7 +99,7 @@ test('chat queue stays blocked while child agents are running', () => {
 	assert.ok(getter);
 	const prototype = runInNewContext(transpileModule(`({ ${getter.replace('public ', '')} })`, {
 		compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
-	}).outputText);
+	}).outputText, { ChatTab: { _due: (q: { at?: number }, now: number) => q.at === undefined || q.at <= now }, Date });
 	const ready = Object.getOwnPropertyDescriptor(prototype, 'readyForQueued')!.get!;
 	const state = { _queued: [{}], running: false, _pending: [], _waiting: [], waiting: false, agentsRunning: 1,
 		get busy() { return this.running || this._pending.length > 0 || this.agentsRunning > 0; } };

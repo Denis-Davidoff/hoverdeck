@@ -41,6 +41,11 @@ export function attachmentReference(chip: AttachmentChip): string {
 	return reference;
 }
 
+/** The reference a chip was given, without giving it one: `undefined` for a chip no draft numbered. */
+export function knownAttachmentReference(chip: AttachmentChip): string | undefined {
+	return references.get(chip);
+}
+
 /** Retain a validated reference from another surface's draft, including gaps after removal. */
 export function bindAttachmentReference(chip: AttachmentChip, reference: string): void {
 	if (!/^@[1-9][0-9]{0,5}$/.test(reference)) { throw new Error('Invalid attachment reference'); }

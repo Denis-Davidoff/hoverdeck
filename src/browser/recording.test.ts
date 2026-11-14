@@ -141,6 +141,7 @@ function harness(options: { holdReady?: boolean; holdFirstFrame?: boolean; holdC
 				case './tabSource': return { tabs: tabSource };
 				case './shareRegistry': return { callerKey: (caller: any) => caller.sessionId ?? caller.kind };
 				case './recordingQuality': return recordingQuality;
+				case '../core/flavor': return { productName: () => 'AI Browser' };
 				default: throw new Error(`Unexpected dependency: ${name}`);
 			}
 		},
@@ -424,18 +425,18 @@ test('the last 30 seconds blink the Stop button and count down in the status bar
 		h.state.maxSeconds = 60;
 		await h.recording.start(); const run = h.recording._active;
 		run.elapsed = 10_000; h.recording._warn(run);
-		assert.ok(!h.state.contexts.some(([key]) => key === 'aiBrowser.recordingEnding'), 'nothing before the last 30 s');
+		assert.ok(!h.state.contexts.some(([key]) => key === 'hoverdeck.recordingEnding'), 'nothing before the last 30 s');
 		run.elapsed = 35_000; h.recording._warn(run);
-		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'aiBrowser.recordingEnding').at(-1), ['aiBrowser.recordingEnding', true]);
+		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'hoverdeck.recordingEnding').at(-1), ['hoverdeck.recordingEnding', true]);
 		assert.match(h.state.countdown.at(-1)!, /stops in 2\d s — the 1 min limit/);
 		h.recording._warn(run);
-		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'aiBrowser.recordingEnding').at(-1), ['aiBrowser.recordingEnding', false], 'it blinks');
+		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'hoverdeck.recordingEnding').at(-1), ['hoverdeck.recordingEnding', false], 'it blinks');
 		h.recording._warn(run);
 		await h.recording.control('pause'); h.recording._warn(run);
-		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'aiBrowser.recordingEnding').at(-1), ['aiBrowser.recordingEnding', false], 'paused, the clock stands still');
+		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'hoverdeck.recordingEnding').at(-1), ['hoverdeck.recordingEnding', false], 'paused, the clock stands still');
 		await h.recording.control('resume'); h.recording._warn(run);
 		await h.recording.control('stop');
-		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'aiBrowser.recordingEnding').at(-1), ['aiBrowser.recordingEnding', false]);
+		assert.deepEqual(h.state.contexts.filter(([key]) => key === 'hoverdeck.recordingEnding').at(-1), ['hoverdeck.recordingEnding', false]);
 		assert.equal(h.state.toasts.length, 0, 'never a toast over the page');
 	} finally { h.cleanup(); }
 });

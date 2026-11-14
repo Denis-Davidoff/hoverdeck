@@ -1,4 +1,5 @@
 import type { VisualizationReference, VisualizationSnapshot } from '../src/chat/visualizationProtocol';
+import { syncFileAccess, type ArtifactActions } from './artifactViews';
 
 interface ImageView {
 	readonly element: HTMLElement;
@@ -11,7 +12,7 @@ interface ImageView {
 const groups = new WeakMap<HTMLElement, Map<number, ImageView>>();
 
 /** Native image cards share the host's archived snapshots, without an executing iframe. */
-export function updateImageViews(container: HTMLElement, references: readonly VisualizationReference[], snapshots: Readonly<Record<string, VisualizationSnapshot>>): Map<number, ImageView> {
+export function updateImageViews(container: HTMLElement, references: readonly VisualizationReference[], snapshots: Readonly<Record<string, VisualizationSnapshot>>, actions: ArtifactActions = {}): Map<number, ImageView> {
 	let views = groups.get(container);
 	if (!views) { views = new Map(); groups.set(container, views); }
 	for (const [at, view] of views) {
@@ -43,6 +44,7 @@ export function updateImageViews(container: HTMLElement, references: readonly Vi
 		}
 		view.image.hidden = !available;
 		view.status.textContent = ref.error || (view.decodeError ? 'The image could not be decoded.' : available ? '' : 'This saved image is unavailable.');
+		syncFileAccess(view.element, view.status, ref, actions);
 	}
 	return views;
 }

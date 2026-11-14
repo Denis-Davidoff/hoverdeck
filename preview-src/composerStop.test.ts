@@ -21,7 +21,7 @@ function fixture() {
 		post: (message: unknown) => posted.push(message),
 	});
 	const send = runInNewContext(transpileModule(lift('send'), {}).outputText + '\nsend;', {
-		state, input, canSend: () => true, isPinChip: (chip: any) => chip.kind === 'terminal' && chip.pinned === true,
+		state, input, canSend: () => true, isPinChip: (chip: any) => chip.kind === 'terminal' && chip.pinned === true, recallShown: undefined, sendWhenReady: undefined,
 		post: (message: unknown) => posted.push(message), toolbarInvocation() { assert.fail('an empty draft must not send'); },
 	});
 	const items = runInNewContext(transpileModule(lift('sendMenuItems'), {}).outputText + '\nsendMenuItems;', {
@@ -49,21 +49,21 @@ test('browser and terminal pins leave Stop available and cannot submit an empty 
 	assert.equal(f.sendOptionsButton.disabled, true);
 });
 
-test('typing a follow-up or attaching a file keeps Stop as the main action with three menu choices', () => {
+test('typing a follow-up or attaching a file keeps Stop as the main action with its send choices', () => {
 	const f = fixture();
 	for (const file of [false, true]) {
 		f.input.value = file ? '' : 'Follow up';
 		f.state.attachments = file ? [{ kind: 'file', id: 'file' }] : [];
 		f.render();
 		assert.equal(f.attributes.get('aria-label'), 'Stop');
-		assert.deepEqual(Array.from(f.items(), (item: any) => item.label), ['Stop', 'Send now', 'Send later']);
+		assert.deepEqual(Array.from(f.items(), (item: any) => item.label), ['Stop', 'Send now', 'Send later', 'Schedule…']);
 		assert.equal(f.items()[1].disabled, false);
 		assert.equal(f.items()[2].disabled, false);
 	}
 	f.state.running = false;
 	f.render();
 	assert.equal(f.attributes.get('aria-label'), 'Send');
-	assert.equal(f.items().length, 2);
+	assert.equal(f.items().length, 3);
 });
 
 test('send menu actions use the same immediate and queue paths as the displayed shortcuts', () => {

@@ -83,6 +83,8 @@ export function validToolbarSkill(raw: unknown): ToolbarSkill | string {
 		return `A skill sends at most ${toolbarLimits.followUps + 1} prompts.`;
 	}
 	const result = raw.result === 'clipboard' || raw.result === 'silent' || raw.result === 'toast' ? raw.result : 'chat';
+	// How the first prompt goes in the chat while the agent works: `later` (the default) waits for the turn.
+	const firstSend = result === 'chat' && raw.firstSend === 'now' ? 'now' as const : undefined;
 	const notify = validNotify(raw.notify);
 	if (typeof notify === 'string') {
 		return notify;
@@ -106,7 +108,7 @@ export function validToolbarSkill(raw: unknown): ToolbarSkill | string {
 	if (params.length > toolbarLimits.params) {
 		return `A skill takes at most ${toolbarLimits.params} parameters.`;
 	}
-	return { id, name, prompt, followUps: followUps.length ? followUps : undefined, result, notify, agents, icon, label, tooltip, colors, params };
+	return { id, name, prompt, followUps: followUps.length ? followUps : undefined, result, firstSend, notify, agents, icon, label, tooltip, colors, params };
 }
 
 /** None, ours, or the user's own text — which may not be empty, or the notification would say nothing. */

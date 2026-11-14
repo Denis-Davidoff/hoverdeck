@@ -13,6 +13,15 @@ export const presentationTotalLimit = 6_000_000;
 
 const hash = (text: string | Uint8Array) => createHash('sha256').update(text).digest('hex');
 
+/**
+ * A file outside the conversation's directory: shown only once the user allows it in the chat
+ * (`presentationAccess`), never on the model's word. `path` is what the card names.
+ */
+export class OutsideDirectoryError extends Error {
+	readonly path: string;
+	constructor(message: string, file: string) { super(message); this.path = file; }
+}
+
 /** One conversation's source directory and immutable, host-owned snapshots. */
 export class VisualizationStore {
 	readonly directory: string;
@@ -43,14 +52,18 @@ export class VisualizationStore {
 		return expected;
 	}
 
-	async publish(file: string): Promise<{ id: string; revision: string; html: string }> {
+	async publish(file: string, allowed = false): Promise<{ id: string; revision: string; html: string }> {
 		if (!path.isAbsolute(file) || /[\x00-\x1f]/.test(file) || !/\.html?$/i.test(file)) { throw new Error('Use an absolute path to an HTML file.'); }
-		// Direct children only: no descendant directories to swap while opening a file.
-		if (path.dirname(path.resolve(file)) !== path.resolve(this.directory)) { throw new Error('Write the HTML file directly inside this conversation\'s visualization directory.'); }
-		const root = await this.prepare();
-		const target = path.join(root, path.basename(file));
-		const html = await readRegular(target);
-		if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The visualization file changed location.'); }
+		let html: string;
+		if (this._outside(file, 'Write the HTML file directly inside this conversation\'s visualization directory.', allowed)) {
+			html = new TextDecoder('utf-8', { fatal: true }).decode(await readAllowed(file, visualizationByteLimit));
+		} else {
+			// Direct children only: no descendant directories to swap while opening a file.
+			const root = await this.prepare();
+			const target = path.join(root, path.basename(file));
+			html = await readRegular(target);
+			if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The visualization file changed location.'); }
+		}
 		const revision = hash(html);
 		const id = hash(path.basename(file)).slice(0, 32);
 		await fs.mkdir(this._archive, { recursive: true, mode: 0o700 });
@@ -60,13 +73,17 @@ export class VisualizationStore {
 	}
 
 	/** Images use the same conversation directory, with a separate binary archive. */
-	async publishImage(file: string): Promise<{ id: string; revision: string }> {
+	async publishImage(file: string, allowed = false): Promise<{ id: string; revision: string }> {
 		if (!path.isAbsolute(file) || /[\x00-\x1f]/.test(file) || !/\.(png|jpe?g|gif|webp)$/i.test(file)) { throw new Error('Use an absolute path to a PNG, JPEG, GIF or WebP image.'); }
-		if (path.dirname(path.resolve(file)) !== path.resolve(this.directory)) { throw new Error("Copy the image directly inside this conversation's visualization directory before publishing it."); }
-		const root = await this.prepare();
-		const target = path.join(root, path.basename(file));
-		const bytes = await readRegularBytes(target, imageByteLimit);
-		if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The image changed location.'); }
+		let bytes: Buffer;
+		if (this._outside(file, "Copy the image directly inside this conversation's visualization directory before publishing it.", allowed)) {
+			bytes = await readAllowed(file, imageByteLimit);
+		} else {
+			const root = await this.prepare();
+			const target = path.join(root, path.basename(file));
+			bytes = await readRegularBytes(target, imageByteLimit);
+			if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The image changed location.'); }
+		}
 		if (!imageMime(bytes)) { throw new Error('The file is not a supported raster image.'); }
 		const revision = hash(bytes);
 		await fs.mkdir(this._archive, { recursive: true, mode: 0o700 });
@@ -107,19 +124,31 @@ export class VisualizationStore {
 		return { id: revision.slice(0, 32), revision };
 	}
 
-	async publishArtifact(file: string, kind: ArtifactKind): Promise<{ id: string; revision: string }> {
+	async publishArtifact(file: string, kind: ArtifactKind, allowed = false): Promise<{ id: string; revision: string }> {
 		if (!path.isAbsolute(file) || /[\x00-\x1f]/.test(file)) { throw new Error('Use an absolute path to a completed file.'); }
-		if (path.dirname(path.resolve(file)) !== path.resolve(this.directory)) { throw new Error("Copy the file directly inside this conversation's visualization directory."); }
-		const root = await this.prepare();
-		const target = path.join(root, path.basename(file));
-		const bytes = await readRegularBytes(target, kind === 'table' || kind === 'sources' ? visualizationByteLimit : imageByteLimit);
-		if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The file changed location.'); }
+		const limit = kind === 'table' || kind === 'sources' ? visualizationByteLimit : imageByteLimit;
+		let bytes: Buffer;
+		if (this._outside(file, "Copy the file directly inside this conversation's visualization directory.", allowed)) {
+			bytes = await readAllowed(file, limit);
+		} else {
+			const root = await this.prepare();
+			const target = path.join(root, path.basename(file));
+			bytes = await readRegularBytes(target, limit);
+			if (await fs.realpath(this.directory) !== root || await fs.realpath(target) !== target) { throw new Error('The file changed location.'); }
+		}
 		const artifact = artifactOf(bytes, path.basename(file), kind);
 		const serialized = JSON.stringify(artifact);
 		const revision = hash(serialized);
 		await fs.mkdir(this._archive, { recursive: true, mode: 0o700 });
 		await fs.writeFile(path.join(this._archive, `${revision}.artifact`), serialized, { flag: 'wx', mode: 0o600 }).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'EEXIST') { throw e; } });
 		return { id: hash(`${kind}:${path.basename(file)}`).slice(0, 32), revision };
+	}
+
+	/** True for a file the user allowed from outside the directory; throws for one not allowed. */
+	private _outside(file: string, message: string, allowed: boolean): boolean {
+		if (path.dirname(path.resolve(file)) === path.resolve(this.directory)) { return false; }
+		if (!allowed) { throw new OutsideDirectoryError(`${message} It is outside it: you can allow showing it in the chat.`, path.resolve(file)); }
+		return true;
 	}
 
 	async loadArtifact(revision: string): Promise<ArtifactSnapshot | undefined> {
@@ -165,6 +194,19 @@ export class VisualizationStore {
 			this._cache.delete(key);
 		}
 	}
+}
+
+/**
+ * A file the user allowed by its path. The file itself may not be a link (`O_NOFOLLOW`) or have
+ * other names (`nlink`); folders above it may (`/tmp` is `/private/tmp` on macOS), but where the
+ * path leads must not move while it is read.
+ */
+async function readAllowed(file: string, limit: number): Promise<Buffer> {
+	const resolved = path.resolve(file);
+	const before = await fs.realpath(resolved);
+	const bytes = await readRegularBytes(resolved, limit);
+	if (await fs.realpath(resolved) !== before) { throw new Error('The allowed file changed location.'); }
+	return bytes;
 }
 
 async function readRegular(file: string): Promise<string> {

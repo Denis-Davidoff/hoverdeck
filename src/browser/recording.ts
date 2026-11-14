@@ -1,3 +1,4 @@
+import { productName } from '../core/flavor';
 import { trackTemporaryFile, temporaryProject } from '../core/temporaryFiles';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -39,7 +40,7 @@ export interface RecordingResult {
  */
 /**
  * The last seconds of the time limit, in which the user is warned: the Stop
- * button on the browser tab blinks red (`aiBrowser.recordingEnding`, swapped
+ * button on the browser tab blinks red (`hoverdeck.recordingEnding`, swapped
  * every second between two Stop commands, since a toolbar icon is static) and
  * the status bar counts down. Never a toast: it would pause the page being
  * recorded (breaks-silently #10).
@@ -140,7 +141,7 @@ export class BrowserRecording implements vscode.Disposable {
 		if (this._active) { throw new Error('A recording is already in progress. Stop it first.'); }
 		const tab = this._browser.recordingTab(caller);
 		const attach = delivery === 'chat' ? this.destination?.(caller?.chatId) : undefined;
-		if (delivery === 'chat' && !attach) { throw new Error('Open an AI Browser Chat before recording to the chat.'); }
+		if (delivery === 'chat' && !attach) { throw new Error(`Open a ${productName()} chat before recording to the chat.`); }
 		const result: RecordingResult = { id: generateUuid(), state: 'starting', delivery, tabId: this._browser.tabIdOf(tab), url: tab.url, durationSeconds: 0, frames: 0, bytes: 0 };
 		if (!this.createEncoder) { throw new Error('The background video encoder is unavailable.'); }
 		const panel = this.createEncoder(result.id);
@@ -465,8 +466,8 @@ export class BrowserRecording implements vscode.Disposable {
 	private _snapshot(run: Run): RecordingResult { return { ...run.result, durationSeconds: this._seconds(run) }; }
 	private _publish(): void {
 		const run = this._active;
-		void vscode.commands.executeCommand('setContext', 'aiBrowser.recordingState', run?.result.state ?? 'idle');
-		void vscode.commands.executeCommand('setContext', 'aiBrowser.recordingActive', !!run);
+		void vscode.commands.executeCommand('setContext', 'hoverdeck.recordingState', run?.result.state ?? 'idle');
+		void vscode.commands.executeCommand('setContext', 'hoverdeck.recordingActive', !!run);
 		this._changed.fire(this.current);
 	}
 	private _fail(run: Run, error: unknown, notify = true): void {
@@ -497,7 +498,7 @@ export class BrowserRecording implements vscode.Disposable {
 			return;
 		}
 		run.blink = !run.blink;
-		void vscode.commands.executeCommand('setContext', 'aiBrowser.recordingEnding', run.blink);
+		void vscode.commands.executeCommand('setContext', 'hoverdeck.recordingEnding', run.blink);
 		run.countdown?.dispose();
 		run.countdown = vscode.window.setStatusBarMessage?.(vscode.l10n.t('$(record) Recording stops in {0} s — the {1} limit set in Chat Settings', left, formatRecordingSeconds(run.maxSeconds)), 1500);
 	}
@@ -507,7 +508,7 @@ export class BrowserRecording implements vscode.Disposable {
 		run.countdown = undefined;
 		if (run.blink !== undefined) {
 			run.blink = undefined;
-			void vscode.commands.executeCommand('setContext', 'aiBrowser.recordingEnding', false);
+			void vscode.commands.executeCommand('setContext', 'hoverdeck.recordingEnding', false);
 		}
 	}
 

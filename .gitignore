@@ -45,3 +45,6 @@ media/recording.js.map
 
 # Private Exchange modules: backed up separately; never publish with the base server.
 /exchange-server/private-plugins/
+
+# Per-agent HoverDeck listings, built by scripts/package-listings.mjs
+listings/dist/

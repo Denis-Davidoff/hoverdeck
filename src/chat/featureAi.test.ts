@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
-import { aiFeatures, defaultFeaturePrompts, featureAgent, featurePromptLimit, featureAiKey, featureEffort, readFeatureAiSettings, defaultTitleRefresh, readTitleRefresh, titleRefreshDue } from './featureAi.ts';
+import { aiFeatures, defaultFeaturePrompts, featureAgent, featurePromptLimit, featureAiKey, featureEffort, readFeatureAiSettings, defaultTitleRefresh, readTitleRefresh, titleRefreshDue, chatExcerpt } from './featureAi.ts';
 import { titleModel } from './autoTitle.ts';
 import type { ChatModel } from './chatProtocol.ts';
 
@@ -144,4 +144,36 @@ test('title refresh: read, clamped to the default, and when it is due', () => {
 	assert.equal(titleRefreshDue(ctx, 3, 80000, 30000), true);
 	assert.equal(titleRefreshDue(ctx, 3, undefined, 0), false);
 	assert.equal(titleRefreshDue({ mode: 'once', every: 5 }, 6, 1e6, 0), false);
+});
+
+test('includeChat is kept only when true, and never for chat titles', () => {
+	const settings = readFeatureAiSettings({ commitMessage: { includeChat: true }, branchName: { includeChat: 'yes' }, chatTitle: { includeChat: true } });
+	assert.equal(settings.commitMessage.includeChat, true);
+	assert.equal(settings.branchName.includeChat, undefined);
+	assert.equal(settings.chatTitle.includeChat, undefined);
+	assert.equal(readFeatureAiSettings(undefined).commitMessage.includeChat, undefined);
+});
+
+test('chatExcerpt keeps the last turns, prompts and reply text only, in order', () => {
+	const entries = [
+		{ kind: 'user', text: 'one' }, { kind: 'assistant', text: 'r1' },
+		{ kind: 'user', text: 'two' }, { kind: 'tool', text: 'ls' }, { kind: 'assistant', text: 'r2a' }, { kind: 'thinking', text: 'hmm' }, { kind: 'assistant', text: 'r2b' },
+		{ kind: 'user', text: 'three' }, { kind: 'notice', text: 'x' },
+		{ kind: 'user', text: 'four' }, { kind: 'assistant', text: 'r4' },
+	];
+	assert.equal(chatExcerpt(entries), 'User: two\nAssistant: r2a\n\nr2b\n\n---\n\nUser: three\n\n---\n\nUser: four\nAssistant: r4');
+	assert.equal(chatExcerpt([]), '');
+	const long = chatExcerpt([{ kind: 'user', text: 'p'.repeat(5000) }, { kind: 'assistant', text: 'a'.repeat(5000) + 'END' }]);
+	assert.ok(long.length < 4100);
+	assert.ok(long.endsWith('END'));
+});
+
+test('headUnits and tailUnits never split a surrogate pair', async () => {
+	const { headUnits, tailUnits } = await import('./featureAi.ts');
+	const text = 'ab😀cd';
+	assert.equal(headUnits(text, 3), 'ab');
+	assert.equal(headUnits(text, 4), 'ab😀');
+	assert.equal(tailUnits(text, 3), 'cd');
+	assert.equal(tailUnits(text, 4), '😀cd');
+	assert.equal(headUnits('abc', 10), 'abc');
 });

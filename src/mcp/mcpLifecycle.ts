@@ -15,6 +15,7 @@ import {
 	repairConfigs, stillMissing, tokenKeyPrefix, workspaceFolder, type RepairReport,
 } from './mcpSetup';
 import { confirm } from '../core/notify';
+import { hasExternalAgents } from '../core/flavor';
 import { generateUuid } from '../core/uuid';
 
 /**
@@ -88,7 +89,7 @@ export class McpLifecycle implements vscode.Disposable {
 	 * `workspaceFolders[0]`, which moves: remove or reorder the first folder of
 	 * a multi-root window and it names a different folder — while the server
 	 * keeps running and keeps accepting the token minted for the old one,
-	 * because nothing restarts it (only `aiBrowser.mcp.*` changes call
+	 * because nothing restarts it (only `hoverdeck.mcp.*` changes call
 	 * `apply()`). The stamp would then follow the new folder, the old one would
 	 * age past the grace period, and another window would delete the entry of a
 	 * server that is still answering. The identity to keep alive is the one the
@@ -102,7 +103,7 @@ export class McpLifecycle implements vscode.Disposable {
 	 * `_chain` serialises `_apply` itself, but the repair is deliberately not
 	 * awaited, so two runs can have repairs in flight at once and the file lock
 	 * decides which lands last — which can be the *older* one. Two quick edits
-	 * to `aiBrowser.mcp.port` then leave the superseded port in the config: the
+	 * to `hoverdeck.mcp.port` then leave the superseded port in the config: the
 	 * exact stale-port symptom this whole feature exists to remove, and it
 	 * would sit there until the next window start. The window is real: the survey
 	 * can spend up to `2 * statTimeoutMs` on a single stalled folder — two
@@ -164,7 +165,7 @@ export class McpLifecycle implements vscode.Disposable {
 	) {
 		// **Only `_servedFolder`, and only once there is one.** Stamping
 		// `workspaceFolder()` unconditionally wrote a `mcp.seen:` row for every
-		// window, including one with `aiBrowser.mcp.enabled: false` — which
+		// window, including one with `hoverdeck.mcp.enabled: false` — which
 		// never reaches `_workspaceToken`, so the row had no `mcp.token:` to
 		// belong to. Nothing reads such a row (the scan iterates token keys) and
 		// nothing removes it, so it accumulated one permanent entry per folder
@@ -235,7 +236,7 @@ export class McpLifecycle implements vscode.Disposable {
 		const generation = ++this._generation;
 		this._servedFolder = undefined;
 
-		const configuration = vscode.workspace.getConfiguration('aiBrowser');
+		const configuration = vscode.workspace.getConfiguration('hoverdeck');
 		if (!configuration.get<boolean>('mcp.enabled', true)) {
 			this._setState({ kind: 'disabled' });
 			return;
@@ -328,6 +329,9 @@ export class McpLifecycle implements vscode.Disposable {
 		// The scan's own failure degrades to "prune nothing", never to "repair
 		// nothing": a stat that threw must not cost the window its port fix.
 		// Queued behind any repair still running, for the reason on `_repairs`.
+		// HoverDeck writes no client configs, so there is nothing of its own to
+		// repair, and it does not touch AI Browser's entries behind its back.
+		if (!hasExternalAgents()) { return; }
 		const queued = this._repairs.catch(() => { });
 		this._repairs = Promise.race([queued, settleAfter(repairQueueWaitMs)]).then(() => repairConfigs(
 			server,
@@ -410,7 +414,7 @@ export class McpLifecycle implements vscode.Disposable {
 	 *
 	 * The first one is derived from the folder URI so that a window lands on the
 	 * same port after every restart — the whole reason configs used to go stale.
-	 * An **explicitly configured** `aiBrowser.mcp.port` is exempt: someone who
+	 * An **explicitly configured** `hoverdeck.mcp.port` is exempt: someone who
 	 * names a port means that port, and hashing them somewhere else would be a
 	 * surprise, so their walk starts where they said.
 	 */
@@ -443,7 +447,7 @@ export class McpLifecycle implements vscode.Disposable {
 				return;
 			case 'disabled':
 				vscode.window.showWarningMessage(vscode.l10n.t(
-					"The MCP server is off. Enable `aiBrowser.mcp.enabled` to connect an assistant."));
+					"The MCP server is off. Enable `hoverdeck.mcp.enabled` to connect an assistant."));
 				return;
 			case 'failed':
 				vscode.window.showErrorMessage(vscode.l10n.t(

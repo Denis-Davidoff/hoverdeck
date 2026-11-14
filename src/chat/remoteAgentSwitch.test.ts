@@ -22,7 +22,7 @@ function fixture(transport:'server'|'chrome', permissions?: ConnectionPermission
   chatTranscript:()=> 'Conversation transcript',transcriptFileName:()=> 'conversation.md',writeChatTranscript:async()=>'/project/conversation.md',agentNames:{codex:'Codex',claude:'Claude'},generateUuid:()=> 'attachment',vscode:{l10n:{t:(value:string)=>value},Uri:{file:(value:string)=>value}},
  });
  const View=exports.View,view=new View(),native=makeTab('native'),remote=makeTab('remote'),events:any[]=[];
- Object.assign(view,{_frontActive:native,_tabs:[native,remote],_chromeCommand:new AsyncLocalStorage(),_view:{},_exchangeDrafts:new Map(),_remembered:{agent:'codex',models:{},efforts:{}},_context:{globalState:{get:()=>undefined,update:async()=>{}}},
+ Object.assign(view,{_frontActive:native,_tabs:[native,remote],_chromeCommand:new AsyncLocalStorage(),_view:{},_exchangeDrafts:new Map(),_remembered:{agent:'codex',models:{},efforts:{}},_preferredAgent(this:any){return this._remembered.agent;},_context:{globalState:{get:()=>undefined,update:async()=>{}}},
   _registry:{detecting:false,backend:()=>({})},_rememberInput:async()=>{},_send:async(text:string,tabId:string)=>{events.push({sent:text,tabId});},_blocked:()=>undefined,_post(){},_postMessage(){},_focusInput(){},_giveBackQueue(){},_rememberAgent(){},_selection(this:any){return {agent:this._active.chat.agent,model:'model'};},
   _state(this:any){return {chatId:this._active.chat.id,switchTo:this._switchTo};},
   async _receive(this:any,message:any){if(message.type==='select')this._select(message.selection);else if(message.type==='newTab'||message.type==='newChat')await this.newChat(message.location);else await this._switchAgent(message.choice);},

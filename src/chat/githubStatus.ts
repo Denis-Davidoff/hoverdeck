@@ -26,6 +26,8 @@ export interface GithubPullRequest {
 	readonly branch: string;
 	/** Repository containing the head branch (forks may reuse branch names). */
 	readonly headRepo?: string;
+	/** The head commit (`gh`'s `headRefOid`, the API's `head.sha`): which runs are this pull request's. */
+	readonly headSha?: string;
 	readonly draft: boolean;
 	/** ISO time of the last update. */
 	readonly updatedAt: string;
@@ -58,6 +60,8 @@ export interface GithubRun {
 	readonly workflowPath?: string;
 	/** The commit the run ran on, for a link to the workflow file as it was then. */
 	readonly sha?: string;
+	/** Who started it: `triggering_actor` (a re-run's own), else `actor`. */
+	readonly actor?: string;
 }
 
 export interface GithubStatus {
@@ -82,6 +86,121 @@ export interface GithubStatus {
 	readonly upstreamGone?: boolean;
 	/** The branch's last commit subject: the title a new pull request starts with. */
 	readonly suggestedTitle?: string;
+	/**
+	 * A pull request from this branch already merged, whose head is the branch's
+	 * current commit: there is nothing new to open a pull request for. A commit
+	 * made since brings the offer back.
+	 */
+	readonly mergedPr?: GithubMergedPr;
+	/** The signed-in GitHub login (`gh api user`, or VS Code's GitHub account): its login is shown in blue on its pull requests. */
+	readonly viewer?: string;
+}
+
+/** A GitHub login as GitHub allows it, or undefined. */
+export function githubLogin(value: unknown): string | undefined {
+	const s = typeof value === 'string' ? value.trim() : '';
+	return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(s) ? s : undefined;
+}
+
+/** A run's actor: a login, or an app's bot account (`dependabot[bot]`). */
+function actorLogin(value: unknown): string | undefined {
+	const s = typeof value === 'string' ? value.trim() : '';
+	return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/.test(s) ? s : undefined;
+}
+
+/** Whether `viewer` wrote the pull request (logins compare without case). */
+export function isOwnPullRequest(pr: Pick<GithubPullRequest, 'author'>, viewer: string | undefined): boolean {
+	return !!viewer && !!pr.author && pr.author.toLowerCase() === viewer.toLowerCase();
+}
+
+/** Whether the signed-in account started this run (case-insensitive, as GitHub logins are). */
+export function isOwnRun(run: Pick<GithubRun, 'actor'>, viewer: string | undefined): boolean {
+	return !!viewer && !!run.actor && run.actor.toLowerCase() === viewer.toLowerCase();
+}
+
+/**
+ * `gh run list --json` has no actor field, so the gh path reads who started each run
+ * from the REST list through `gh api` with this filter, and joins it by id.
+ */
+export const ghRunActorsJq = '[.workflow_runs[] | {id, actor: (.triggering_actor.login // .actor.login)}]';
+
+/** The output of `ghRunActorsJq`: run id → login, only well-formed logins kept. */
+export function parseGhRunActors(json: string): Map<number, string> {
+	const out = new Map<number, string>();
+	for (const raw of arrayOf(json) as Record<string, unknown>[]) {
+		const id = num(raw?.id);
+		const login = actorLogin(raw?.actor);
+		if (id && login) { out.set(id, login); }
+	}
+	return out;
+}
+
+/** A merged pull request of the working folder's branch. */
+export interface GithubMergedPr {
+	readonly number: number;
+	readonly url: string;
+}
+
+/** What `gh pr list --state merged --json` is asked for. */
+export const ghMergedFields = 'number,url,headRefName,headRefOid,headRepository,headRepositoryOwner';
+
+/**
+ * The merged pull request whose head is `headSha` on `branch` (in `pushRepo`
+ * when known), from `gh pr list --state merged --json` or the API's
+ * `pulls?state=closed&head=…`. Only an exact head match counts: a branch with
+ * commits after the merge has something new to offer.
+ */
+export function mergedPullRequest(json: string, branch: string, headSha: string, pushRepo?: string): GithubMergedPr | undefined {
+	let parsed: unknown;
+	try { parsed = JSON.parse(json); } catch { return undefined; }
+	if (!Array.isArray(parsed) || !/^[0-9a-f]{40}$/i.test(headSha)) { return undefined; }
+	for (const raw of parsed.slice(0, githubListLimit) as Record<string, unknown>[]) {
+		const head = raw?.head as Record<string, unknown> | undefined;
+		// The API lists closed pull requests too; only a merged one counts.
+		if (head && !raw.merged_at) { continue; }
+		const ref = text(head ? head.ref : raw?.headRefName, 250);
+		const sha = text(head ? head.sha : raw?.headRefOid, 64);
+		const repository = (head ? head.repo : raw?.headRepository) as Record<string, unknown> | undefined;
+		const owner = text((raw?.headRepositoryOwner as Record<string, unknown> | undefined)?.login, 100);
+		const repo = text(repository?.full_name ?? repository?.nameWithOwner, 250) || (owner && repository?.name ? `${owner}/${text(repository.name, 100)}` : '');
+		if (ref !== branch || sha.toLowerCase() !== headSha.toLowerCase()) { continue; }
+		if (pushRepo && repo && repo.toLowerCase() !== pushRepo.toLowerCase()) { continue; }
+		const number = num(raw.number);
+		const url = httpsUrl(head ? raw.html_url : raw.url);
+		if (number && url) { return { number, url }; }
+	}
+	return undefined;
+}
+
+/**
+ * The Actions runs shown under a pull request: the newest of each workflow (the list is newest
+ * first) among the runs that are its own, the way a pull request's checks read on GitHub.
+ *
+ * Its own means a `pull_request` / `pull_request_target` run, or a `push` run, on its head
+ * branch — and on its head commit when that is known. Matching the branch alone listed every
+ * run that ever touched it: a `workflow_run` release and a `workflow_dispatch` job from hours
+ * before the pull request was opened, under a pull request whose tests were just starting
+ * (reported). A run names its branch and not the repository the branch is in, so for a pull
+ * request from a fork only `pull_request` runs count — a push to a branch of the same name
+ * here is not its run.
+ */
+export function runsForPullRequest(repo: string, pr: Pick<GithubPullRequest, 'branch' | 'headRepo' | 'headSha'>, runs: readonly GithubRun[]): GithubRun[] {
+	if (!pr.branch) { return []; }
+	const fork = !!pr.headRepo && pr.headRepo.toLowerCase() !== repo.toLowerCase();
+	const head = pr.headSha?.toLowerCase();
+	const seen = new Set<string>();
+	const out: GithubRun[] = [];
+	for (const run of runs) {
+		if (run.branch !== pr.branch) { continue; }
+		const prEvent = run.event.startsWith('pull_request');
+		if (!prEvent && (fork || run.event !== 'push')) { continue; }
+		if (head && run.sha && run.sha.toLowerCase() !== head) { continue; }
+		const workflow = run.workflowPath ?? run.name;
+		if (seen.has(workflow)) { continue; }
+		seen.add(workflow);
+		out.push(run);
+	}
+	return out;
 }
 
 /** A pull request just opened from the GitHub tab. */
@@ -102,6 +221,8 @@ export function canOfferPullRequest(status: GithubStatus): boolean {
 	// there for good, with nothing the user could do from it (reported). Publishing it again in the
 	// Branches window brings the offer back.
 	if (status.upstreamGone) { return false; }
+	// Merged with its remote branch kept: the offer stayed after the merge (reported).
+	if (status.mergedPr) { return false; }
 	const repo = (status.pushRepo ?? status.repo).toLowerCase();
 	return !status.prs.some(pr => pr.branch === branch && (pr.headRepo ?? status.repo).toLowerCase() === repo);
 }
@@ -144,7 +265,7 @@ export function parseCreatedPr(output: string): GithubCreatedPr | undefined {
 }
 
 /** What `gh pr list --json` is asked for. */
-export const ghPrFields = 'number,title,url,author,headRefName,headRepository,headRepositoryOwner,isDraft,updatedAt,reviewDecision,statusCheckRollup';
+export const ghPrFields = 'number,title,url,author,headRefName,headRefOid,headRepository,headRepositoryOwner,isDraft,updatedAt,reviewDecision,statusCheckRollup';
 /** What `gh run list --json` is asked for. */
 export const ghRunFields = 'databaseId,name,displayTitle,url,headBranch,headSha,event,status,conclusion,updatedAt,workflowDatabaseId';
 /** What `gh workflow list --json` is asked for: `gh run list` names a run's workflow by id only. */
@@ -184,6 +305,7 @@ const httpsUrl = (value: unknown): string => {
 	const s = text(value, 2000);
 	return /^https:\/\/github\.com\//.test(s) ? s : '';
 };
+const commitSha = (value: unknown): string | undefined => typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value) ? value : undefined;
 const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 
 function arrayOf(json: string): unknown[] {
@@ -230,17 +352,18 @@ export function parseGhPullRequests(json: string, branch?: string): GithubPullRe
 		const name = text(repository?.name, 100);
 		const headRepo = text(repository?.nameWithOwner, 250) || (owner && name ? `${owner}/${name}` : '');
 		const checks = summarizeChecks(raw.statusCheckRollup);
+		const headSha = commitSha(raw.headRefOid);
 		out.push({
 			number, url, title: text(raw.title), author: text((raw.author as Record<string, unknown> | undefined)?.login, 100),
 			branch: head, draft: raw.isDraft === true, updatedAt: text(raw.updatedAt, 40), review: text(raw.reviewDecision, 40),
-			...(headRepo ? { headRepo } : {}),
+			...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
 			...(checks ? { checks } : {}), ...(branch && head === branch ? { current: true } : {}),
 		});
 	}
 	return out;
 }
 
-export function parseGhRuns(json: string, branch?: string, workflows?: ReadonlyMap<number, string>): GithubRun[] {
+export function parseGhRuns(json: string, branch?: string, workflows?: ReadonlyMap<number, string>, actors?: ReadonlyMap<number, string>): GithubRun[] {
 	const out: GithubRun[] = [];
 	for (const raw of arrayOf(json) as Record<string, unknown>[]) {
 		const id = num(raw?.databaseId);
@@ -249,11 +372,12 @@ export function parseGhRuns(json: string, branch?: string, workflows?: ReadonlyM
 		const head = text(raw.headBranch, 250);
 		const workflowId = num(raw.workflowDatabaseId);
 		const file = workflowPath(raw.path) ?? (workflowId !== undefined ? workflows?.get(workflowId) : undefined);
-		const sha = typeof raw.headSha === 'string' && /^[0-9a-f]{40}$/i.test(raw.headSha) ? raw.headSha : undefined;
+		const sha = commitSha(raw.headSha);
+		const actor = actorLogin(raw.actor) ?? actors?.get(id);
 		out.push({
 			id, url, name: text(raw.name), title: text(raw.displayTitle), branch: head, event: text(raw.event, 40),
 			state: runState(raw.status, raw.conclusion), updatedAt: text(raw.updatedAt, 40), ...(branch && head === branch ? { current: true } : {}),
-			...(file ? { workflowPath: file } : {}), ...(sha ? { sha } : {}),
+			...(file ? { workflowPath: file } : {}), ...(sha ? { sha } : {}), ...(actor ? { actor } : {}),
 		});
 	}
 	return out;
@@ -268,10 +392,11 @@ export function parseApiPullRequests(json: string, branch?: string): GithubPullR
 		if (!number || !url) { continue; }
 		const head = text((raw.head as Record<string, unknown> | undefined)?.ref, 250);
 		const headRepo = text(((raw.head as Record<string, unknown> | undefined)?.repo as Record<string, unknown> | undefined)?.full_name, 250);
+		const headSha = commitSha((raw.head as Record<string, unknown> | undefined)?.sha);
 		out.push({
 			number, url, title: text(raw.title), author: text((raw.user as Record<string, unknown> | undefined)?.login, 100),
 			branch: head, draft: raw.draft === true, updatedAt: text(raw.updated_at, 40), review: '',
-			...(headRepo ? { headRepo } : {}),
+			...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
 			...(branch && head === branch ? { current: true } : {}),
 		});
 	}
@@ -285,6 +410,7 @@ export function parseApiRuns(json: string, branch?: string): GithubRun[] {
 	return parseGhRuns(JSON.stringify((parsed.workflow_runs as Record<string, unknown>[]).map(r => ({
 		databaseId: r?.id, name: r?.name, displayTitle: r?.display_title, url: r?.html_url, headBranch: r?.head_branch,
 		event: r?.event, status: r?.status, conclusion: r?.conclusion, updatedAt: r?.updated_at, path: r?.path, headSha: r?.head_sha,
+		actor: (r?.triggering_actor as Record<string, unknown> | undefined)?.login ?? (r?.actor as Record<string, unknown> | undefined)?.login,
 	}))), branch);
 }
 

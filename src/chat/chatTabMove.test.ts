@@ -30,7 +30,7 @@ async function transfer(fail = false, location: 'tab' | 'window' = 'tab', comman
 	const session = { running: true };
 	const tab = { id: 'moving', chat: { id: 'conversation', title: 'My chat' }, session, attachments: [{ chip: { id: 'attached' } }],
 		moveTo(host: unknown) { calls.push('move'); Object.assign(this, { host }); }, close() { assert.fail('moving must not close the session'); } };
-	const source: any = { _tabs: [tab], _active: tab, _remembered: { agent: 'codex' }, _terminals: { size: 0 },
+	const source: any = { _tabs: [tab], _active: tab, _remembered: { agent: 'codex' }, _preferredAgent() { return this._remembered.agent; }, _terminals: { size: 0 },
 		_registry: {}, _runs: {}, _services: {}, _savedDrafts: new Map(), _livePages: new Map(), _repoBusy: new Map(), _gitCommits: new Map(), _windows: new Set(), _childChats: new Set(),
 		_draining: new Map(), _chatSkillTabs: new Map([['skill', [{ tab }]]]), _annotationLinks: new Map(),
 		_post() { calls.push('post'); }, _saveTabs() { calls.push('save'); }, _fail() { calls.push('error'); } };
@@ -124,7 +124,7 @@ function existingViews(limit = 10) {
 	const live = { id: 'live', chat: { id: 'chat-live' }, attachments: [], session: { running: true }, moveTo(_host: unknown) {}, close() { assert.fail('must keep live session'); } };
 	const old = { id: 'old', chat: { id: 'chat-old' } };
 	const sibling = { id: 'sibling', chat: { id: 'chat-sibling' } };
-	const source: any = { _tabs: [live, sibling], _active: live, _services: services, _savedDrafts: new Map(), _registry: {}, _repoBusy: new Map(), _gitCommits: new Map(),
+	const source: any = { _tabs: [live, sibling], _active: live, _preferredAgent() { return this._remembered?.agent; }, _services: services, _savedDrafts: new Map(), _registry: {}, _repoBusy: new Map(), _gitCommits: new Map(),
 		_draining: new Map(), _chatSkillTabs: new Map(), _annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _dragToken: 'secret', _terminals: { size: 0 } };
 	const target: any = { _tabs: [old], _active: old, _services: services, _savedDrafts: new Map(), _drainQueues() {}, _view: {}, _tabHost: {}, _chatSkillTabs: new Map(),
 		_annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _terminals: { clearFront() { return false; } }, _leaveTerminal() { return false; },
@@ -180,7 +180,7 @@ test('cross-view drop validates source, token, age and original conversation', (
 });
 
 test('surface names distinguish sidebar and editor chat panels', () => {
-	const label = method('_surfaceLabel');
+	const label = method('_surfaceLabel', { productName: () => 'AI Browser' });
 	assert.equal(label.call({ _panel: undefined }), 'AI Browser (sidebar)');
 	assert.equal(label.call({ _panel: {}, _panelIdentity: {}, _surfaceNumber: 4, _active: { chat: { title: 'Fix login' } } }), 'AI Browser #4');
 });
@@ -355,7 +355,7 @@ test('Chrome open pins the returned new tab instead of pages discovered while co
 	const open = method('_openBrowser', {
 		tabSource: { all: [oldPage, newPage] }, generateUuid: () => 'attachment',
 		vscode: { commands: { async executeCommand(command: string) {
-			assert.equal(command, 'aiBrowser.openInChrome'); host._active = otherChat; return newPage;
+			assert.equal(command, 'hoverdeck.openInChrome'); host._active = otherChat; return newPage;
 		} } },
 	});
 	await open.call(host, 'chrome');

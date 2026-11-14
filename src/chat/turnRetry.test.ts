@@ -30,7 +30,7 @@ function fixture(agent: 'codex' | 'claude' = 'codex') {
 		'./attachmentReferences': load('src/chat/attachmentReferences.ts'),
 		'./messageFiles': load('src/chat/messageFiles.ts'),
 		'./visualizationProtocol': load('src/chat/visualizationProtocol.ts'), './visualizationStore': load('src/chat/visualizationStore.ts'),
-		'../core/notifyText': load('src/core/notifyText.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
+		'../core/notifyText': load('src/core/notifyText.ts'), '../core/flavor': load('src/core/flavor.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
 	}, {
 		setTimeout: (callback: () => void, delay: number) => { timers.set(++timerId, { delay, callback }); return timerId; },
 		clearTimeout: (id: number) => timers.delete(id),
@@ -214,12 +214,13 @@ test('Claude launches Ultracode independently and preserves tool approval settin
 		send() {}
 		dispose() { this.exited = true; }
 	}
+	const flavorModule = load<typeof import('../core/flavor.ts')>('src/core/flavor.ts');
 	const { ClaudeBackend } = load<typeof import('./claudeAgent.ts')>('src/chat/claudeAgent.ts', {
 		vscode: { EventEmitter: Emitter, l10n: { t: (text: string) => text } },
 		'./agentProtocol': protocol, './agentProcess': { JsonLineProcess: FakeProcess, withTimeout: <T>(promise: Promise<T>) => promise },
 		'./agentProcesses': { agentProcesses: { environment: () => ({}) } },
 		'./autoTitle': {}, './commitMessage': {}, '../core/safeFiles': {},
-		'../core/uuid': { generateUuid: () => 'probe-uuid' }, '../core/chatCapability': {},
+		'../core/uuid': { generateUuid: () => 'probe-uuid' }, '../core/chatCapability': {}, '../core/flavor': flavorModule,
 	});
 	const backend = new ClaudeBackend('unused-test-binary', () => '/tmp');
 	const session = backend.openSession('/tmp');
@@ -230,6 +231,8 @@ test('Claude launches Ultracode independently and preserves tool approval settin
 		const settings = JSON.parse(first.args[first.args.indexOf('--settings') + 1]);
 		assert.equal(settings.ultracode, true);
 		assert.ok(settings.permissions.ask.length > 0, 'workflow mode retains mandatory approval rules');
+		assert.ok(settings.permissions.ask.includes('mcp__hoverdeck__chat_stop_agent'), 'the rules name the server the build injects');
+		assert.ok(settings.permissions.ask.includes('mcp__ai-browser__terminal_send'), 'and the older name a project config may still carry');
 		assert.equal(first.args[first.args.indexOf('--effort') + 1], 'low');
 		first.messages.fire({ type: 'result', subtype: 'success', result: '' });
 		await session.send({ text: 'Next task', images: [], ultracode: false }, 'opus', 'low');

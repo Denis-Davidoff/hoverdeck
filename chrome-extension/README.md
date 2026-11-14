@@ -37,8 +37,8 @@ encrypted-connection, consent and explicitly shared-terminal requirements.
 The same settings section sets project file access separately
 for Chrome and the website: no access, browse only, browse and attach, or browse,
 attach and edit. The default preserves the existing editing actions. These
-application settings (`aiBrowser.chat.remoteFilesChrome` and
-`aiBrowser.chat.remoteFilesWebsite`) are enforced by the host and cannot be
+application settings (`hoverdeck.chat.remoteFilesChrome` and
+`hoverdeck.chat.remoteFilesWebsite`) are enforced by the host and cannot be
 changed by remote clients. They cover Files and project attachment picking;
 agent commands retain their own approvals and sandbox permissions. The same
 section contains the remote terminal settings.

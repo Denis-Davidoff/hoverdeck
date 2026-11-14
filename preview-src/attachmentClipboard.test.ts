@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { ScriptTarget, transpileModule } from 'typescript';
 import { attachmentMarker, readAttachmentMarkers } from './attachmentMarkers.ts';
+import { portableAttachmentText, prepareAttachmentText, readAttachmentText } from '../src/chat/attachmentText.ts';
 
 const source = readFileSync('preview-src/chat.ts', 'utf8');
 const lift = (name: string) => new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`).exec(source)![0];
@@ -22,15 +23,19 @@ function view() {
 		input, state: { chatId: 'chat', attachments: [], agents: [{ available: true }] }, draftChat: 'chat', drafts: {}, fromHistory: false,
 		tokenedChips: new Map(), pastedTokens: new Map(), pendingAttachmentPastes: new Map(), removedByToken: new Set(),
 		attachmentClipboardType: 'application/x-ai-browser-attachments', attachmentCaret: undefined, pendingPasteCount: 0,
-		attachmentMarker, readAttachmentMarkers,
+		attachmentMarker, readAttachmentMarkers, portableAttachmentText, prepareAttachmentText, readAttachmentText,
+		recallShown: undefined, sendWhenReady: undefined, walkDraftLive: false, inputHistory: [], historyAt: 0, historyDraft: '',
+		paletteMode: undefined, closePalette() {}, send() {}, previewChips: new Map(), previewKey: (chat: string, reference: string) => `${chat}\u0000${reference}`,
 		post: (message: any) => posted.push(message), gate: () => ({ s: 'on' }), isPinChip: () => false,
 		newId: () => `paste-${++sequence}`, Event: class {}, autosize() {}, renderSend() {}, paintInput() {},
 		rememberAttachmentCaret() { context.attachmentCaret = { chat: context.draftChat, value: input.value, start: input.selectionStart, end: input.selectionEnd }; },
 		saveDraft() { context.drafts[context.draftChat] = input.value; },
 	};
 	const api = runInNewContext(compile([source.match(/const attachmentTokenPattern = [^\n]+/)![0],
-		...['attachmentToken', 'draftChips', 'tokensIn', 'setInputText', 'spacedToken', 'plainToken', 'syncAttachmentTokens', 'pasteAttachmentTokens', 'pastedAttachments', 'canSend'].map(lift),
-		'({ attachmentToken, syncAttachmentTokens, pasteAttachmentTokens, pastedAttachments, canSend });',
+		...['attachmentToken', 'draftChips', 'tokensIn', 'setInputText', 'spacedToken', 'plainToken', 'syncAttachmentTokens', 'pasteAttachmentTokens', 'pastedAttachments', 'canSend',
+			'forgetPreviews', 'requestAttachments', 'enterBadgedText', 'sendWhenSettled',
+			'draftText', 'walking', 'endRecall', 'settleRecall', 'recall'].map(lift),
+		'({ attachmentToken, syncAttachmentTokens, pasteAttachmentTokens, pastedAttachments, canSend, recall, walking, settleRecall });',
 	].join('\n')), context);
 	const paste = (chip: any, text = api.attachmentToken(chip)) => {
 		api.pasteAttachmentTokens({ preventDefault() {}, clipboardData: { getData: () => JSON.stringify({ text, items: [{ ...chip, token: text }] }) } });
@@ -110,7 +115,7 @@ test('plain-text att markers restore a badge even after rich clipboard data is s
 
 function host(attachments: any[]) {
 	const source = readFileSync('src/chat/chatView.ts', 'utf8');
-	const methods = ['_rememberAttachments', '_pasteAttachments'].map(name => new RegExp(`\\tprivate (?:async )?${name}\\([\\s\\S]*?\\n\\t\\}`).exec(source)![0]);
+	const methods = ['_rememberAttachments', '_attachmentFinder', '_pasteAttachments'].map(name => new RegExp(`\\tprivate (?:async )?${name}\\([\\s\\S]*?\\n\\t\\}`).exec(source)![0]);
 	let nextId = 0;
 	const Host = runInNewContext(compile(`class ChatViewProvider { static _surfaces = new Map(); static _attachmentClipboard = new Map(); ${methods.join('\n')} }\nChatViewProvider;`), {
 		generateUuid: () => `clone-${++nextId}`, vscode: { Uri: { parse: (uri: string) => ({ uri }) } },
@@ -118,7 +123,7 @@ function host(attachments: any[]) {
 	const instance = new Host();
 	const tab = { chat: { id: 'chat', entries: [] as any[] }, attachments };
 	const messages: any[] = [];
-	Object.assign(instance, { _active: tab, _tabs: [tab], _blocked: () => false, _post() {}, _postMessage: (message: any) => messages.push(message) });
+	Object.assign(instance, { _active: tab, _tabs: [tab], _history: () => [], _blocked: () => false, _post() {}, _postMessage: (message: any) => messages.push(message) });
 	Host._surfaces.set('view', instance);
 	return { instance, tab, messages };
 }
@@ -179,4 +184,55 @@ test('copied annotation badges keep their content without inheriting live page b
 	assert.equal(copy.chromeAnnotation, undefined);
 	assert.equal(copy.exchangeAnnotation, undefined);
 	assert.equal(original.chromeAnnotation.id, 'page-marker');
+});
+
+test('a message recalled with ↑ shows working badges, leaves the draft alone while walking, and is made on the first edit', () => {
+	const f = view();
+	const draftChip = { id: 'draft', reference: '@1', label: 'draft.txt', kind: 'file' };
+	f.context.state.attachments = [draftChip];
+	f.input.value = 'see ';
+	f.input.setSelectionRange(4, 4);
+	f.context.attachmentCaret = { chat: 'chat', value: f.input.value, start: 4, end: 4 };
+	f.api.syncAttachmentTokens(f.context.state);
+	const draft = f.input.value;
+	const sentToken = '[@1\u00a0shot.png]';
+	f.context.inputHistory = [{ text: `fix ${sentToken} please`, items: [{ token: sentToken, id: 'sent-shot', kind: 'screenshot', label: 'shot.png' }] }];
+	f.context.historyAt = 1;
+
+	// On show: the badge is a preview drawn from the saved attachment, under a reference the draft does not use.
+	assert.equal(f.api.recall(-1), true);
+	assert.ok(f.api.walking());
+	const [preview] = [...f.context.previewChips.values()];
+	assert.equal(preview.chip.id, 'sent-shot');
+	assert.equal(preview.chip.kind, 'screenshot');
+	assert.equal(f.input.value, `fix ${preview.token} please`);
+	assert.notEqual(preview.chip.reference, '@1');
+	assert.ok(!f.posted.some(message => message.type === 'pasteAttachments' || message.type === 'removeAttachment'));
+	f.api.syncAttachmentTokens(f.context.state);
+	assert.ok(!f.posted.some(message => message.type === 'removeAttachment'), 'walking leaves the draft chips alone');
+
+	// Back down: the draft as it was, its chip still there.
+	f.api.recall(1);
+	assert.equal(f.input.value, draft);
+	assert.equal(f.context.previewChips.size, 0);
+	assert.ok(!f.posted.some(message => message.type === 'removeAttachment'));
+
+	// Up again and edited: the recalled badge is made, the draft's own chip goes with its token and is kept as a marker.
+	f.api.recall(-1);
+	f.input.value += ' now';
+	f.api.settleRecall();
+	f.api.syncAttachmentTokens(f.context.state);
+	const request = f.posted.findLast(message => message.type === 'pasteAttachments');
+	assert.equal(request.items[0].id, 'sent-shot');
+	assert.ok(f.posted.some(message => message.type === 'removeAttachment' && message.id === 'draft'));
+	assert.ok(f.posted.some(message => message.type === 'rememberAttachments' && message.ids.includes('draft')));
+	assert.equal(f.context.historyDraft, `see ${attachmentMarker(draftChip)}`);
+	assert.equal(f.api.canSend(), false, 'the badge is still being made');
+	const clone = { id: 'clone', reference: '@2', label: 'shot.png', kind: 'screenshot' };
+	f.api.pastedAttachments([{ token: request.items[0].token, id: clone.id }], request.request, 'chat');
+	f.context.state = { ...f.context.state, attachments: [clone] };
+	f.api.syncAttachmentTokens(f.context.state);
+	assert.equal(f.input.value, `fix ${f.api.attachmentToken(clone)} please now`);
+	assert.equal(f.api.canSend(), true);
+	assert.equal(f.context.previewChips.size, 0);
 });

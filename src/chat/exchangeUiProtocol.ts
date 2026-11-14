@@ -29,7 +29,7 @@ export function readExchangeUiCommand(value: unknown): ExchangeUiCommand | undef
 		case 'newChat': case 'newTab': message = { type: m.type, location: 'here' }; break;
 		case 'removeAttachment': case 'openChat': case 'deleteChat': case 'closeTab': case 'selectTab': case 'unqueue': case 'stopAgent': case 'resumeInTerminal':
 			if (!id()) { return undefined; } message = { type: m.type, id: m.id }; break;
-		// Terminal lifecycle; the host checks again (`aiBrowser.chat.remoteTerminal`, encryption, consent, shared).
+		// Terminal lifecycle; the host checks again (`hoverdeck.chat.remoteTerminal`, encryption, consent, shared).
 		case 'newTerminal':
 			if (Object.keys(m).some(k => !['type','agent'].includes(k)) || (m.agent !== undefined && m.agent !== 'claude' && m.agent !== 'codex' && m.agent !== 'gemini' && m.agent !== 'openrouter' && m.agent !== 'opencode' && m.agent !== 'pi')) { return undefined; }
 			message = { type: 'newTerminal', ...(m.agent ? { agent: m.agent } : {}) }; break;

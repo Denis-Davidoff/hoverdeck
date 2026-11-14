@@ -504,10 +504,10 @@ test('authenticated Chrome annotation synchronization carries MCP requests and a
 
 test('compatibility uses the shared protocol rather than equal extension release numbers', () => {
   assert.equal(chromeChatCompatibilityError(chromeChatProtocolVersion, chromeChatProtocolVersion, '0.8.7', '0.5.0'), undefined);
-  assert.match(chromeChatCompatibilityError(undefined, chromeChatProtocolVersion, '0.8.6', '0.5.0'), /Update the AI Browser extension for VS Code/);
-  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion, undefined, '0.8.7', '0.4.0'), /Update the AI Browser extension for Chrome/);
-  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion + 1, chromeChatProtocolVersion), /Update the AI Browser extension for Chrome/);
-  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion, chromeChatProtocolVersion + 1), /Update the AI Browser extension for VS Code/);
+  assert.match(chromeChatCompatibilityError(undefined, chromeChatProtocolVersion, '0.8.6', '0.5.0'), /Update the VS Code extension/);
+  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion, undefined, '0.8.7', '0.4.0'), /Update the Chrome extension/);
+  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion + 1, chromeChatProtocolVersion), /Update the Chrome extension/);
+  assert.match(chromeChatCompatibilityError(chromeChatProtocolVersion, chromeChatProtocolVersion + 1), /Update the VS Code extension/);
   const connection = readChromeChatConnection({ version: 1, url: 'http://127.0.0.1:12345', token: 'f'.repeat(64), extensionId,
     protocolVersion: chromeChatProtocolVersion, editorVersion: '0.8.7' });
   assert.equal(connection.protocolVersion, chromeChatProtocolVersion); assert.equal(connection.editorVersion, '0.8.7');
@@ -532,7 +532,7 @@ test('an incompatible Chrome client cannot send, pin or synchronize annotations,
       if (protocol === undefined) {
         assert.equal(response.status, 200);
         const legacy = JSON.parse(response.body);
-        assert.match(legacy.view.blocked, /Update the AI Browser extension for Chrome/);
+        assert.match(legacy.view.blocked, /Update the Chrome extension/);
         assert.equal(legacy.entries[0].kind, 'notice');
       } else { assert.equal(response.status, 426); }
     }
@@ -553,7 +553,7 @@ test('pairing advertises editor compatibility and refuses mismatched Chrome befo
     assert.equal(discovery.protocolVersion, chromeChatProtocolVersion); assert.equal(discovery.editorVersion, '0.8.7');
     for (let i = 0; i < 2; i++) {
       const response = await get(config, headers, 'POST', '/pair/request-1234');
-      assert.equal(response.status, 426); assert.match(JSON.parse(response.body).error, /Update the AI Browser extension for Chrome/);
+      assert.equal(response.status, 426); assert.match(JSON.parse(response.body).error, /Update the Chrome extension/);
       assert.equal(JSON.parse(response.body).connection, undefined);
     }
     assert.equal(approvals, 0); assert.equal(notices.length, 1);
@@ -858,7 +858,7 @@ test('terminals in Chrome: disabled with the setting named, consent once, frames
 	const config = await bridge.start();
 	bridge.update(state());
 	let snapshot = JSON.parse((await get(config)).body);
-	assert.match(snapshot.view.terminalSupport.reason, /aiBrowser\.chat\.chromeTerminalAccess/);
+	assert.match(snapshot.view.terminalSupport.reason, /hoverdeck\.chat\.chromeTerminalAccess/);
 	assert.equal(snapshot.view.controls.newTerminal.s, 'off');
 	assert.deepEqual(snapshot.view.terminals, []);
 	const json = { 'Content-Type': 'application/json' };

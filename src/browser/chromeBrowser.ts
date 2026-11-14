@@ -2,6 +2,7 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -341,6 +342,10 @@ export class ChromeBrowser implements vscode.Disposable {
 	private _endpoint = '';
 	private readonly _tabs = new Map<string, ChromeTab>();
 	private _active: ChromeTab | undefined;
+	/** Whether the Chrome connected to is the user's own profile rather than ours. */
+	private _userProfile = false;
+	/** Tabs opened through us, and tabs those tabs opened (`openerId`). */
+	private readonly _ours = new Set<string>();
 
 	private readonly _onOpen = new vscode.EventEmitter<ChromeTab>();
 	private readonly _onClose = new vscode.EventEmitter<ChromeTab>();
@@ -376,12 +381,12 @@ export class ChromeBrowser implements vscode.Disposable {
 			if (!url) { continue; }
 			const socket = await openSocket(url, 3000).catch(() => undefined)
 				?? (dir === ownProfileDir ? await openSocket(url, 8000).catch(() => undefined) : undefined);
-			if (socket) { return this._adopt(socket, url); }
+			if (socket) { return this._adopt(socket, url, dir !== ownProfileDir); }
 		}
 		// A Chrome still holding our profile would take a second launch's
 		// arguments and exit, and its port file would never come back.
 		if (profileInUse(ownProfileDir)) {
-			throw new Error('Google Chrome started by AI Browser is running but not answering. Quit it and try again.');
+			throw new Error(`Google Chrome started by ${productName()} is running but not answering. Quit it and try again.`);
 		}
 		const exe = chromeExecutable();
 		if (!exe) {
@@ -401,14 +406,15 @@ export class ChromeBrowser implements vscode.Disposable {
 			const url = readActivePort(ownProfileDir);
 			if (!url) { continue; }
 			const socket = await openSocket(url, 3000).catch(() => undefined);
-			if (socket) { return this._adopt(socket, url); }
+			if (socket) { return this._adopt(socket, url, false); }
 		}
 		throw new Error('Chrome started but did not open its DevTools endpoint.');
 	}
 
-	private async _adopt(socket: Socket, url: string): Promise<Connection> {
+	private async _adopt(socket: Socket, url: string, userProfile: boolean): Promise<Connection> {
 		const control = new Connection(socket);
 		this._endpoint = url;
+		this._userProfile = userProfile;
 		this._control = control;
 		control.onEvent(message => this._event(message));
 		control.onClose(() => {
@@ -428,6 +434,9 @@ export class ChromeBrowser implements vscode.Disposable {
 
 	private _add(info: TargetInfo): ChromeTab | undefined {
 		if (!this._isTab(info) || this._tabs.has(info.targetId)) { return undefined; }
+		if (info.openerId && this._ours.has(info.openerId)) {
+			this._ours.add(info.targetId);
+		}
 		const tab = new ChromeTab(info.targetId, info, this);
 		this._tabs.set(info.targetId, tab);
 		this._onOpen.fire(tab);
@@ -438,6 +447,7 @@ export class ChromeBrowser implements vscode.Disposable {
 		const tab = this._tabs.get(targetId);
 		if (!tab) { return; }
 		this._tabs.delete(targetId);
+		this._ours.delete(targetId);
 		this._onClose.fire(tab);
 		if (this._active === tab) {
 			this._active = undefined;
@@ -467,6 +477,7 @@ export class ChromeBrowser implements vscode.Disposable {
 	public async openTab(url: string): Promise<ChromeTab> {
 		const control = await this.connect();
 		const { targetId } = await control.send('Target.createTarget', { url: url || 'about:blank' });
+		this._ours.add(targetId);
 		let tab = this._tabs.get(targetId);
 		if (!tab) {
 			const infos = await this.targets();
@@ -477,6 +488,16 @@ export class ChromeBrowser implements vscode.Disposable {
 		await control.send('Target.activateTarget', { targetId }).catch(() => undefined);
 		this.markActive(tab);
 		return tab;
+	}
+
+	/**
+	 * Whether this is one of the user's own tabs in their own Chrome profile —
+	 * not opened through us, nor by a tab that was. Their mail and bank are
+	 * there, and an agent misled by a page should not be able to list or reach
+	 * them (`hoverdeck.security.hideOtherChromeTabs`).
+	 */
+	public isUsersOwn(tab: ChromeTab): boolean {
+		return this._userProfile && !this._ours.has(tab.targetId);
 	}
 
 	/** Brings an open tab's window and the tab forward. */

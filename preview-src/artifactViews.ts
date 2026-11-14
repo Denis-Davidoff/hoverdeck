@@ -7,6 +7,46 @@ export interface ArtifactActions {
 	sourceLink?(url: string, title: string): HTMLElement;
 	openLinkLabel?: string;
 	externalLinkLabel?: string;
+	/** Allow or refuse showing a file outside the visualization directory; absent where only VS Code can decide. */
+	fileAccess?(path: string, allow: boolean): void;
+}
+
+/**
+ * The question on a card whose file lies outside the conversation's visualization directory:
+ * the full path, and Show / Don't show. Built once per path and kept across state posts (#365),
+ * gone once the host answers with a published snapshot or a refusal. Returns whether it asks.
+ */
+export function syncFileAccess(card: HTMLElement, status: HTMLElement, ref: VisualizationReference, actions: ArtifactActions): boolean {
+	let row = card.querySelector<HTMLElement>(':scope > .visualization-access');
+	if (!ref.blockedPath) { row?.remove(); return false; }
+	status.textContent = '';
+	if (row?.dataset.path === ref.blockedPath && row.dataset.mode === (actions.fileAccess ? 'ask' : 'remote')) { return true; }
+	row?.remove();
+	row = document.createElement('div'); row.className = 'visualization-access';
+	row.dataset.path = ref.blockedPath; row.dataset.mode = actions.fileAccess ? 'ask' : 'remote';
+	const text = document.createElement('div'); text.className = 'visualization-access-text';
+	const lead = document.createElement('span'); lead.textContent = 'This file is outside the conversation\'s folder. Show it here?';
+	const where = document.createElement('code'); where.className = 'visualization-access-path'; where.textContent = ref.blockedPath; where.title = ref.blockedPath;
+	text.append(lead, where);
+	row.append(text);
+	const buttons = document.createElement('div'); buttons.className = 'visualization-access-buttons';
+	if (actions.fileAccess) {
+		const decide = (allow: boolean) => () => {
+			for (const button of buttons.querySelectorAll('button')) { button.disabled = true; }
+			actions.fileAccess!(ref.blockedPath!, allow);
+		};
+		const allow = document.createElement('button'); allow.type = 'button'; allow.className = 'soft-button primary'; allow.textContent = 'Show file';
+		allow.addEventListener('click', decide(true));
+		const deny = document.createElement('button'); deny.type = 'button'; deny.className = 'soft-button'; deny.textContent = 'Don\'t show';
+		deny.addEventListener('click', decide(false));
+		buttons.append(allow, deny);
+	} else {
+		const note = document.createElement('span'); note.className = 'visualization-access-note'; note.textContent = 'Allow it in VS Code.';
+		buttons.append(note);
+	}
+	row.append(buttons);
+	status.after(row);
+	return true;
 }
 interface View {
 	readonly element: HTMLElement;
@@ -73,6 +113,7 @@ export function updateArtifactViews(container: HTMLElement, references: readonly
 			}
 		}
 		view.status.textContent = ref.error || view.renderError || (artifact ? '' : 'This saved artifact is unavailable.');
+		syncFileAccess(view.element, view.status, ref, actions);
 	}
 	observer ??= new MutationObserver(() => { for (const view of live) { if (!view.element.isConnected) { release(view); view.revision = undefined; } } });
 	observer.observe(document.body, { childList: true, subtree: true });

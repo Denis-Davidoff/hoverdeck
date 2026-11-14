@@ -53,7 +53,7 @@ test('hidden from and refused to a caller without the chat capability', async ()
 	for (const [name, tool] of f.tools) {
 		assert.strictEqual(tool.visibleTo?.({ kind: 'claude' } as Caller), false, name);
 		assert.strictEqual(tool.visibleTo?.({ kind: 'claude', chatId: 'x' } as Caller), true, name);
-		await assert.rejects(f.run(name, { terminalId: 't1', text: 'ls', keys: ['enter'], until: 'idle' }, { kind: 'other' } as Caller), /Only the agents of the AI Browser chat/);
+		await assert.rejects(f.run(name, { terminalId: 't1', text: 'ls', keys: ['enter'], until: 'idle' }, { kind: 'other' } as Caller), /Only the agents of the chat/);
 	}
 	await assert.rejects(f.run('terminal_list', {}, { kind: 'claude', chatId: 'gone' } as Caller), /no longer open/);
 });

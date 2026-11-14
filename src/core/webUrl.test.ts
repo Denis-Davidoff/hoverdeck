@@ -91,7 +91,7 @@ suite('normalizeAddress', () => {
 	});
 
 	test('is idempotent, so a second pass through changes nothing', () => {
-		// Both the status bar prompt and `aiBrowser.show` normalise, and the
+		// Both the status bar prompt and `hoverdeck.show` normalise, and the
 		// first calls the second.
 		for (const input of ['example.com', 'localhost:3000', 'https://a.b/c']) {
 			const once = normalizeAddress(input);

@@ -28,15 +28,20 @@ function storage() {
 		id: string;
 		started: boolean;
 		chat: any;
+		scheduled: unknown[] = [];
+		restoreScheduled(items: unknown[]) { this.scheduled = items; }
 		constructor(_host: unknown, chat: any) { this.chat = chat; this.id = chat.id; this.started = !!chat.entries.length; }
 	}
 	let next = 0;
-	const context = { legacyProjectTabs, ChatTab: Tab, reopened: (chat: any) => ({ ...chat }), newChat: (agent: string, id?: string) => ({ id: id ?? `new-${++next}`, agent, entries: [] }),
+	// The real reader of saved scheduled messages, lifted like the methods (#521).
+	const scheduledSource = /\nfunction scheduledOf\([\s\S]*?\n\}/.exec(readFileSync('src/chat/chatView.ts', 'utf8'))![0];
+	const scheduledOf = runInNewContext(transpileModule(`${scheduledSource}\nscheduledOf;`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, { vscode: { Uri: { parse: (s: string) => s } } });
+	const context = { legacyProjectTabs, ChatTab: Tab, scheduledOf, reopened: (chat: any) => ({ ...chat }), newChat: (agent: string, id?: string) => ({ id: id ?? `new-${++next}`, agent, entries: [] }),
 		tabLimit: () => 20, path: { isAbsolute }, capAt: (s: string, limit: number) => s.slice(0, limit), tabTitleLimit: 80,
 		ChatViewProvider: { _surfaces: new Map<string, any>() } };
 	const restore = production('_restoreTabs', context), save = production('_saveTabs', context), find = production('_findOpenChat', context);
 	const host = (key: string) => {
-		const view: any = { _tabsStorageKey: key, _legacyTabsStorageKey:key+'.legacy', _projectId:'project-1', _tabs: [], _remembered: { agent: 'codex' }, _tabsSaved: '', _history: () => [stored],
+		const view: any = { _tabsStorageKey: key, _legacyTabsStorageKey:key+'.legacy', _projectId:'project-1', _tabs: [], _remembered: { agent: 'codex' }, _preferredAgent() { return this._remembered.agent; }, _tabsSaved: '', _history: () => [stored],
 			_context: { workspaceState: { get: (k: string) => values.get(k), update: (k: string, v: any) => { values.set(k, v); return Promise.resolve(); } } } };
 		view._findOpenChat = find;
 		return view;

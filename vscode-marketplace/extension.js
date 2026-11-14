@@ -28,8 +28,8 @@
 
 const vscode = require('vscode');
 
-const VSIX_URL = 'https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/raw/main/tab-browser-ultimate.vsix';
-const GUIDE_URL = 'https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate#readme';
+const VSIX_URL = 'https://github.com/Denis-Davidoff/hoverdeck/raw/main/tab-browser-ultimate.vsix';
+const GUIDE_URL = 'https://github.com/Denis-Davidoff/hoverdeck#readme';
 
 /**
  * Where a release lands first. The reply carries the version and a download URL pinned to that
@@ -38,7 +38,7 @@ const GUIDE_URL = 'https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimat
 const OPEN_VSX_API = 'https://open-vsx.org/api/DenysDavydov/tab-browser-ultimate';
 
 /** Fallback source: the manifest next to the committed VSIX. Used when Open VSX cannot be reached. */
-const RAW_MANIFEST_URL = 'https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/package.json';
+const RAW_MANIFEST_URL = 'https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/package.json';
 
 /** The real extension's id. Different from this one's — that is the whole point. */
 const FULL_BUILD_ID = 'DenysDavydov.tab-browser-ultimate';

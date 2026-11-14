@@ -26,7 +26,7 @@ export function chatTranscript(title: string, agentName: string, entries: readon
 	const lines = [
 		`# ${oneLine(title) || 'Chat'}`,
 		'',
-		`A conversation with ${agentName}, written out by the AI Browser chat on ${now.toISOString()} so that another agent can carry it on.`,
+		`A conversation with ${agentName}, written out by the chat on ${now.toISOString()} so that another agent can carry it on.`,
 	];
 	let speaker: 'user' | 'agent' | undefined;
 	const heading = (who: 'user' | 'agent') => {

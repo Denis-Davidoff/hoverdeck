@@ -96,7 +96,7 @@ Copies annotation text when the user chooses the annotation overlay's copy actio
 
 Privacy policy URL (available after publishing `PRIVACY.md` to the public `main` branch):
 
-https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/blob/main/PRIVACY.md
+https://github.com/Denis-Davidoff/hoverdeck/blob/main/PRIVACY.md
 
 The ZIP contains the installable extension and its short manifest description.
 Paste the detailed description, single purpose and permission explanations above

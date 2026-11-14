@@ -1,5 +1,10 @@
 # 🚀 First integrated browser for VS Code editor with Claude Code, Codex, Gemini CLI, OpenCode, Pi and OpenRouter support 🎆
 
+> **HoverDeck is now its own extension** (`DenysDavydov.hoverdeck`), split from AI Browser. Every
+> setting is `hoverdeck.*`; on first start your `aiBrowser.*` settings are copied over where the
+> new ones are unset. Connecting Claude Code, Codex, Gemini CLI or OpenCode running outside the
+> chat stays with AI Browser — in HoverDeck every agent works in the chat and its terminal tabs.
+
 - 🌐 **VS Code’s built-in browser or Google Chrome:** work in a native browser tab inside the
   editor where available, or let your assistant drive Google Chrome without a Chrome extension.
 - 🤖 **Your assistants, your way:** keep the Claude Code and Codex extensions or the Gemini CLI you
@@ -46,7 +51,7 @@ and this mode runs from a local editor window.
 
 **Setup at a glance** — the whole path in eight numbered steps; click the picture for full size:
 
-[![Step-by-step setup: install, enable the browser API, open a page, connect Claude Code or Codex](ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/ai-browser-instruct.jpg)
+[![Step-by-step setup: install, enable the browser API, open a page, connect Claude Code or Codex](ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/ai-browser-instruct.jpg)
 
 The experimental **Chrome chat side panel** can display a live conversation and its
 settings from a local editor window, without chat tabs. See
@@ -105,6 +110,8 @@ visible while recording. Files are temporary until saved; agents receive a file 
 For limits, settings and technical details, see [CLAUDE.md](CLAUDE.md#browser-video-recording).
 
 ## 📝 Changelog
+
+**Unreleased** — HoverDeck split from AI Browser: its own extension id (`DenysDavydov.hoverdeck`), commands and settings renamed to `hoverdeck.*`, and your `aiBrowser.*` settings (user, workspace and folder) copied over on first start where unset. HoverDeck's own state from before the split — chat history, toolbar skills, saved logins, keys — keeps working under the new names. Removed: Connect Claude Code / Codex / Gemini / OpenCode, Check Connection, Add … to Claude Code / Codex, Share Tab with one agent and Copy Recording Prompt; every agent works in the chat and its terminal tabs. With AI Browser still installed beside it, **Remove old AI Browser entries** in the status bar takes AI Browser's Connect entries out of `.mcp.json` and `.codex/config.toml`.
 
 **0.9.21** — Pinned tabs: click the chat tab already in front to pin it; it moves beside the other pinned tabs, gets a yellow underline and asks before closing. A new toolbar skill editor with a live button preview, sections, a prompt that grows with its text and a Markdown toolbar with Preview in every prompt. JSON and table cards get a proper search field and buttons, and JSON values are coloured by type. The Chrome side panel is 0.6.3. Fixes: ⌘B and ⌘K in the skill editor no longer also run VS Code shortcuts, and inserting a parameter into a prompt in Preview no longer types into the parameter's name.
 
@@ -376,7 +383,7 @@ status bar menu) to check your editor and enable access. For Chrome, choose
 **Open Google Chrome for your agent** in the status bar menu; no Browser API setup is needed.
 
 > **The fastest way in is the VSIX in this repository:**
-> [**tab-browser-ultimate.vsix**](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/raw/main/tab-browser-ultimate.vsix)
+> [**tab-browser-ultimate.vsix**](https://github.com/Denis-Davidoff/hoverdeck/raw/main/tab-browser-ultimate.vsix)
 > → **Extensions: Install from VSIX…**. It is the current build.
 >
 > [**Open VSX**](https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate) carries the

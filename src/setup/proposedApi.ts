@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { grantProposedApi } from './argvJson';
 import { writeFileAtomic } from '../core/safeFiles';
 import { confirm } from '../core/notify';
+import { ownExtensionId } from '../core/flavor';
 
 /*
  * Turning the `browser` proposal on for the user, in one click.
@@ -148,7 +149,7 @@ export function isBrowserApiGranted(): boolean {
  */
 export async function shouldUseIntegratedBrowser(): Promise<boolean> {
 	const preferIntegrated = vscode.workspace
-		.getConfiguration('aiBrowser')
+		.getConfiguration('hoverdeck')
 		.get<boolean>('useIntegratedBrowser', true);
 	if (!preferIntegrated) {
 		return false;
@@ -211,8 +212,8 @@ export async function browserApiState(): Promise<BrowserApiState> {
  * copy here would silently stop matching if either ever moved.
  */
 function extensionId(): string {
-	return vscode.extensions.getExtension('DenysDavydov.tab-browser-ultimate')?.id
-		?? 'DenysDavydov.tab-browser-ultimate';
+	const id = ownExtensionId();
+	return vscode.extensions.getExtension(id)?.id ?? id;
 }
 
 /**
@@ -407,7 +408,7 @@ export async function enableBrowserApi(): Promise<void> {
 			vscode.l10n.t("Native browser tabs are not available in {0}. Use Google Chrome with your agents and browser tools.", host.name),
 			openChrome);
 		if (choice === openChrome) {
-			await vscode.commands.executeCommand('aiBrowser.openInChrome');
+			await vscode.commands.executeCommand('hoverdeck.openInChrome');
 		}
 		return;
 	}

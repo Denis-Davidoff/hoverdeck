@@ -1812,14 +1812,15 @@ function claudePath(input: Record<string, unknown>): string | undefined {
 
 /**
  * The MCP server this extension runs, as the chat hands it to both CLIs: the
- * same name as `mcpServerName` in `mcpClientState.ts`, written twice since a
- * leaf module may not import another. Also the per-project name Connect Codex
+ * same name as `serverName` in `mcpClientState.ts` (AI Browser) or `hoverdeck`
+ * (`mcpServerName` in `core/flavor.ts`), written here since a leaf module may not
+ * import another. Also the per-project name Connect Codex
  * once wrote into the global config, `ai-browser-<slug>-<6 hex>` — and only that
  * shape: any `ai-browser-…` would let somebody else's server, named so, be
  * answered by the approval menu's AI Browser mode as if it were the browser.
  */
 function isBrowserServer(name: string): boolean {
-	return name === 'ai-browser' || /^ai-browser-.+-[0-9a-f]{6}$/.test(name);
+	return name === 'ai-browser' || name === 'hoverdeck' || /^ai-browser-.+-[0-9a-f]{6}$/.test(name);
 }
 
 /**
@@ -1854,14 +1855,14 @@ export const terminalReadTools: ReadonlySet<string> = new Set(['terminal_list', 
  */
 const browserServerTools: ReadonlySet<string> = new Set([
 	'browser_annotations_add', 'browser_annotations_clear', 'browser_annotations_get', 'browser_annotations_list', 'browser_annotations_remove',
-	'browser_click', 'browser_console', 'browser_drag', 'browser_fill', 'browser_frames', 'browser_hover', 'browser_html',
+	'browser_click', 'browser_console', 'browser_drag', 'browser_fill', 'browser_frames', 'browser_get_cookies', 'browser_hover', 'browser_html',
 	'browser_inspect_element', 'browser_navigate', 'browser_press',
 	'browser_recording_pause', 'browser_recording_resume', 'browser_recording_start', 'browser_recording_status', 'browser_recording_stop',
 	'browser_replace_text', 'browser_restore_text', 'browser_screenshot', 'browser_scroll', 'browser_select_tab', 'browser_selected_element',
-	'browser_snapshot', 'browser_state', 'browser_tabs', 'browser_text', 'browser_text_segments', 'browser_type', 'browser_wait_for',
+	'browser_set_cookies', 'browser_snapshot', 'browser_state', 'browser_tabs', 'browser_text', 'browser_text_segments', 'browser_type', 'browser_wait_for',
 	'editor_context', 'editor_definition', 'editor_references', 'editor_reveal', 'editor_symbols',
 	// The chat's reads, which any token holder may make.
-	'chat_state', 'chat_agents', 'chat_usage', 'chat_present_html', 'chat_present_image', 'chat_present_file', 'chat_present_table', 'chat_present_sources', 'chat_present_audio', 'chat_present_video', 'chat_notify', 'chat_progress', 'chat_update_plan', 'chat_present_json', 'chat_present_result', 'chat_cite',
+	'chat_state', 'chat_agents', 'chat_usage', 'chat_present_html', 'chat_present_image', 'chat_present_file', 'chat_present_table', 'chat_present_sources', 'chat_present_audio', 'chat_present_video', 'chat_notify', 'chat_progress', 'chat_update_plan', 'chat_present_json', 'chat_present_result', 'chat_cite', 'chat_play_sound', 'chat_alert',
 	'chat_list', 'chat_get_metadata', 'chat_read_messages', 'chat_search', 'chat_add_note',
 	'chat_list_models', 'chat_get_task',
 ]);
@@ -2073,7 +2074,7 @@ export function claudeApprovalAnswer(input: unknown, allow: boolean, answers?: Q
 	}
 	return allow
 		? { behavior: 'allow', updatedInput: given }
-		: { behavior: 'deny', message: 'The user declined this in the AI Browser chat.' };
+		: { behavior: 'deny', message: 'The user declined this in the chat.' };
 }
 
 /**
@@ -2316,7 +2317,7 @@ function geminiMcpCall(call: Record<string, unknown>): { server?: string; tool: 
 	if (titled && name === `mcp_${geminiToolName(titled.server)}_${geminiToolName(titled.tool)}`) {
 		return titled;
 	}
-	const ours = /^mcp_(ai-browser(?:-.+-[0-9a-f]{6})?)_((?:browser|editor|chat|terminal)_[a-z_]+)$/.exec(name);
+	const ours = /^mcp_(ai-browser(?:-.+-[0-9a-f]{6})?|hoverdeck)_((?:browser|editor|chat|terminal)_[a-z_]+)$/.exec(name);
 	if (ours) {
 		return { server: ours[1], tool: ours[2] };
 	}
@@ -2595,10 +2596,10 @@ export function geminiErrorText(code: number | undefined, message: string, detai
 export function geminiExitText(reason: string, starting: boolean): string {
 	reason = reason.trim().replace(/\.$/, '');
 	if (/env: .?node.?: No such file|node: (command )?not found/i.test(reason)) {
-		return `Gemini CLI needs Node.js 20 or later, and none was found next to it or on PATH (${reason}). Install Node.js, or set aiBrowser.chat.geminiPath to a copy that can run.`;
+		return `Gemini CLI needs Node.js 20 or later, and none was found next to it or on PATH (${reason}). Install Node.js, or set hoverdeck.chat.geminiPath to a copy that can run.`;
 	}
 	if (/ENOENT|EACCES/.test(reason)) {
-		return `Gemini CLI could not be started (${reason}). Refresh the agents, or set aiBrowser.chat.geminiPath.`;
+		return `Gemini CLI could not be started (${reason}). Refresh the agents, or set hoverdeck.chat.geminiPath.`;
 	}
 	// Gemini CLI's fatal exit codes (`FatalError` subclasses in 0.64's core).
 	switch (/exited with code (\d+)/.exec(reason)?.[1]) {

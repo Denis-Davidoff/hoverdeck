@@ -15,7 +15,7 @@ function fixture(version: string, installed = true, folder: { uri: { scheme: str
 	runInNewContext(transpileModule(`${command}\n${prompt}\n${chatPrompt}`, {
 		compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
 	}).outputText, {
-		exports, serverName: 'ai-browser', plainInPrompt: (text: string) => text,
+		exports, serverName: 'ai-browser', productName: () => 'AI Browser', mcpServerName: () => 'ai-browser', plainInPrompt: (text: string) => text,
 		refuseRemoteWorkspace: () => false, scopeNote: () => '', confirm() {},
 		refuse: (text: string) => { calls.refusal = text; },
 		chooseAgentBinary: async () => ({ chosen: installed ? { path: '/tools/opencode', version } : undefined }),

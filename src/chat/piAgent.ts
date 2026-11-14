@@ -10,13 +10,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { chatCapability } from '../core/chatCapability';
+import { mcpServerName, productName } from '../core/flavor';
 import { privateTempDirectory, writeFileAtomic } from '../core/safeFiles';
 import type { AgentBackend, AgentSession, BrowserServer, TurnInput } from './agents';
 import { JsonLineProcess, withTimeout } from './agentProcess';
 import { claudeApproval, outsideProject, type AgentEvent } from './agentProtocol';
 import type { AgentId, AgentUsage, ChatCommand, ChatModel, QuestionAnswers } from './chatProtocol';
 import {
-	PiEventReader, isCompactRequest, piArgs, piCommands, piContextWindow, piErrorText, piExitText, piGateExtension, piGateLoaded,
+	PiEventReader, isCompactRequest, piArgs, piCommands, piContextWindow, piErrorText, piExitText, piGateExtension, piGateLoaded, piTerminalExtension,
 	piGateRequest, piGateTool, piIsDialog, piMcpEnv, piModels, piResponseError, piSignedOut, piSignedOutText, piState,
 	piUiResponse, splitPiModel,
 } from './piProtocol';
@@ -75,15 +76,24 @@ export function piPath(binary: string): string {
 	return [path.dirname(binary), ...nodeDirs(), process.env.PATH ?? ''].filter(Boolean).join(path.delimiter);
 }
 
-/** The gate extension on disk: private directory, `0600`, named by its text so a change of the text is a new file. */
-async function gateFile(): Promise<string> {
+/** An extension on disk: private directory, `0600`, named by its text so a change of the text is a new file. */
+async function extensionFile(text: string, stem: string): Promise<string> {
 	const dir = await privateTempDirectory('shared', 'runtime', 'pi');
-	const name = `ai-browser-gate-${crypto.createHash('sha256').update(piGateExtension).digest('hex').slice(0, 12)}.ts`;
+	const name = `${stem}-${crypto.createHash('sha256').update(text).digest('hex').slice(0, 12)}.ts`;
 	const file = path.join(dir, name);
 	let same = false;
-	try { same = fs.readFileSync(file, 'utf8') === piGateExtension; } catch { /* absent */ }
-	if (!same) { await writeFileAtomic(file, piGateExtension, 0o600, false); }
+	try { same = fs.readFileSync(file, 'utf8') === text; } catch { /* absent */ }
+	if (!same) { await writeFileAtomic(file, text, 0o600, false); }
 	return file;
+}
+
+function gateFile(): Promise<string> {
+	return extensionFile(piGateExtension, 'ai-browser-gate');
+}
+
+/** The terminal tab's extension (`piTerminalExtension`), for `-e`. */
+export function piTerminalExtensionFile(): Promise<string> {
+	return extensionFile(piTerminalExtension, 'ai-browser-terminal');
 }
 
 /* --------------------------------------------------------------------- RPC */
@@ -347,7 +357,7 @@ class PiSession implements AgentSession {
 		});
 		const env = {
 			PATH: piPath(this._binary),
-			...piMcpEnv(server ? { url: server.url, token: server.token } : undefined, server?.chatId ? chatCapability(server.chatId) : undefined, undefined),
+			...piMcpEnv(server ? { url: server.url, token: server.token, name: mcpServerName() } : undefined, server?.chatId ? chatCapability(server.chatId) : undefined, undefined),
 		};
 		const proc = new JsonLineProcess(this._binary, args, this._cwd, { ...env, ...agentProcesses.environment(this._chatId, 'pi') });
 		// Not yet `_rpc`: `dispose` ends it from here, or a window closing mid-start leaves it until its handshake times out.
@@ -359,7 +369,7 @@ class PiSession implements AgentSession {
 			// The gate is the only approval there is: without it Pi would run every tool unasked.
 			const commands = await rpc.ok({ type: 'get_commands' }, probeMs);
 			if (!piGateLoaded(commands.data)) {
-				throw new PiError(vscode.l10n.t('Pi did not load the AI Browser approval gate, and without it every tool would run unasked, so nothing was sent. Update Pi, or report this.'));
+				throw new PiError(vscode.l10n.t('Pi did not load the {0} approval gate, and without it every tool would run unasked, so nothing was sent. Update Pi, or report this.', productName()));
 			}
 			const current = piState(state)?.model;
 			if (!current || current.id === 'unknown') { throw new PiError(piSignedOutText); }
@@ -378,7 +388,7 @@ class PiSession implements AgentSession {
 		if (fresh) { this._emit({ type: 'session', id: sessionId }); }
 		if (!this._noticed) {
 			this._noticed = true;
-			this._emit({ type: 'notice', text: vscode.l10n.t('Pi has no permission system of its own, so AI Browser asks about every tool it uses through the approval menu (Auto, Ask or Deny by category). Pi is started without AGENTS.md and CLAUDE.md: they cost this much context on one turn, and your own project instructions are not applied.') });
+			this._emit({ type: 'notice', text: vscode.l10n.t('Pi has no permission system of its own, so {0} asks about every tool it uses through the approval menu (Auto, Ask or Deny by category). Pi is started without AGENTS.md and CLAUDE.md: they cost this much context on one turn, and your own project instructions are not applied.', productName()) });
 		}
 		return rpc;
 	}

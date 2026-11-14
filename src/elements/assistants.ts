@@ -7,6 +7,7 @@ import { trackTemporaryFile, temporaryProject } from '../core/temporaryFiles';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { hasExternalAgents } from '../core/flavor';
 import { workspaceIsRemoteFromHost } from '../setup/proposedApi';
 import { existingReportDirectories, projectTempDirectory, writeExclusive } from '../core/safeFiles';
 
@@ -73,6 +74,9 @@ export function isInstalled(id: AssistantId): boolean {
  * (#223), rather than offering an action that is refused after every pick.
  */
 export function canHandOver(id: AssistantId): boolean {
+	// HoverDeck ships no Add entries; false here also sends a `claude:*` action
+	// remembered by AI Browser (and moved over with its state) to its Copy twin.
+	if (!hasExternalAgents()) { return false; }
 	// Nor, for Claude Code, in a window with no local folder: it addresses files
 	// by their path inside the workspace (`'noWorkspace'`), so every pick there
 	// ended in a toast over the page just picked in (#323's rule). Hidden, the
@@ -104,7 +108,7 @@ async function isAvailable(id: AssistantId): Promise<boolean> {
  */
 export function publishAssistantContext(): void {
 	for (const id of Object.keys(assistants) as AssistantId[]) {
-		vscode.commands.executeCommand('setContext', `aiBrowser.${id}Installed`, canHandOver(id));
+		vscode.commands.executeCommand('setContext', `hoverdeck.${id}Installed`, canHandOver(id));
 	}
 }
 

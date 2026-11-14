@@ -29,7 +29,7 @@
  *
  * There is **no `terminal_create`**: a tool that opened and pinned a shell
  * would let an agent start shells with the user's whole environment and no
- * consent step, and every terminal counts against `aiBrowser.chat.terminalLimit`.
+ * consent step, and every terminal counts against `hoverdeck.chat.terminalLimit`.
  * The agent has its own Bash tool, approval-gated, for what it wants to run.
  *
  * The screen comes from the host's screen model, never from the view's xterm,
@@ -181,7 +181,7 @@ function terminalIdOf(args: Record<string, unknown>): string {
 
 function control(port: ChatControlPort): ChatControl {
 	if (!port.target) {
-		throw new Error('The AI Browser chat is not available in this window.');
+		throw new Error('The chat is not available in this window.');
 	}
 	return port.target;
 }
@@ -190,7 +190,7 @@ function control(port: ChatControlPort): ChatControl {
 function requireChat(port: ChatControlPort, caller: Caller): string {
 	const chatId = caller.chatId;
 	if (!chatId) {
-		throw new Error('Only the agents of the AI Browser chat can use terminals, and only those the user attached to their conversation.');
+		throw new Error('Only the agents of the chat can use terminals, and only those the user attached to their conversation.');
 	}
 	if (!control(port).tabOf(chatId)) {
 		throw new Error('Cannot use terminals: the conversation this call came from is no longer open in a tab.');
@@ -284,7 +284,7 @@ export function terminalTools(port: ChatControlPort): Tool[] {
 			name: 'terminal_list', title: 'Terminals attached to this chat', visibleTo,
 			description: 'The terminals the user attached to this conversation, with their ids (for the other terminal_* tools), '
 				+ 'names, whether the shell runs or exited, the working folder, the size, and whether the user paused agent control. '
-				+ 'Only the AI Browser chat\'s own agents can use it, and only terminals the user attached see here: ask the user to '
+				+ 'Only the chat\'s own agents can use it, and only terminals the user attached see here: ask the user to '
 				+ 'attach one (the + menu, Terminal…) if there is none. Call this first.',
 			inputSchema: schema({}),
 			run: async (_args, caller) => {

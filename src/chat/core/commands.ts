@@ -58,7 +58,7 @@ export const COMMANDS = {
 	loadEarlier: chat('host', 'host'),
 
 	// Terminal tabs: a shell on the editor's machine. Chrome and the website reach the ones the editor
-	// shares (`aiBrowser.chat.remoteTerminal`; the website on encrypted connections only): lifecycle as
+	// shares (`hoverdeck.chat.remoteTerminal`; the website on encrypted connections only): lifecycle as
 	// commands, gated again by the host (consent, setting); output, keys and acks as `terminal.*` frames
 	// (`remoteTerminalProtocol.ts`, Chrome's over the bridge's `/terminal` routes), never here.
 	newTerminal: terminalLifecycle, closeTerminal: terminalLifecycle, renameTerminal: terminalLifecycle, restartTerminal: terminalLifecycle,
@@ -81,7 +81,7 @@ export const COMMANDS = {
 	approve: chat('host', 'host'), setViewMode: chat('host', 'host'), saveFeatureAi: chat('host', 'host'),
 	openAttachment: chat('mixed', 'mixed'),
 	reattachAttachment: editor('Attaching a saved item is available in VS Code.'),
-	unqueue: both('chat'), resumeQueue: both('chat'),
+	unqueue: both('chat'), queueAction: both('chat'), resumeQueue: both('chat'),
 	clearChat: both('chat'), exportChat: chat('host', 'mixed'),
 	attach: chat('local', 'mixed'), pasteFile: chat('local', 'local'), removeAttachment: chat('local', 'mixed'),
 	pasteAttachments: editor('Attachments pasted here stay text outside VS Code.'),
@@ -110,6 +110,8 @@ export const COMMANDS = {
 	// These switches decide what a remote surface may open on this machine: changed only in the editor, never from the surface they limit.
 	soundSettings: editor('The finish sound is changed only in VS Code.'),
 	osNotify: editor('Chrome and the website show their own notification.'),
+	securitySettings: editor('Security settings are changed only in VS Code.'),
+	mcpFeatures: editor('MCP features are switched only in VS Code.'),
 	remoteTerminalSettings: editor('Remote terminal access is changed only in VS Code.'),
 	setConnectionPermission: editor('Connection permissions are changed only in VS Code.'),
 	openrouter: editor('The OpenRouter key and models are edited only in VS Code.'),
@@ -124,7 +126,7 @@ export const COMMANDS = {
 
 	// Opening things.
 	openText: both('chat'), openDiff: both('chat'),
-	saveArtifact: editor(), saveAttachment: editor(), openFile: chat('host', { no: 'Local files open only in VS Code.' }),
+	saveArtifact: editor(), presentationAccess: editor(), saveAttachment: editor(), openFile: chat('host', { no: 'Local files open only in VS Code.' }),
 	openLink: chat('local', 'mixed'), localLinkInfo: both('chat'),
 	openBrowser: chat('mixed', 'mixed'),
 
@@ -263,7 +265,7 @@ export function readConnectionPermissions(value: unknown): ConnectionPermissions
 export function connectionPermission(type: string, feature?: string): ConnectionPermission | undefined {
 	if (['stop', 'cancelProgress'].includes(type)) { return undefined; }
 	if (['newChat', 'newTab', 'closeTab', 'renameTab', 'clearChat', 'openChat', 'listHistory', 'deleteChat', 'listAllAgents', 'secondOpinion', 'stopAgent'].includes(type)) { return 'conversations'; }
-	if (['send', 'unqueue', 'resumeQueue', 'exportChat'].includes(type)) { return 'messages'; }
+	if (['send', 'unqueue', 'queueAction', 'resumeQueue', 'exportChat'].includes(type)) { return 'messages'; }
 	if (['approve', 'toolbarApprove', 'setApprovalMode'].includes(type)) { return 'approvals'; }
 	if (['attach', 'pasteFile', 'attachPath', 'acceptSuggestion', 'removeAttachment', 'reattachAttachment'].includes(type)) { return 'attachments'; }
 	if (['files', 'openFile', 'openText', 'openDiff', 'localLinkInfo'].includes(type)) { return 'files'; }

@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { ownExtensionId, productName } from '../core/flavor';
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 import { chatCapability } from '../core/chatCapability';
@@ -46,7 +47,7 @@ export interface OpenRouterConfig {
 	apiKey(): Promise<string | undefined>;
 	/** The raw `globalState` value of the configured models; validated here. */
 	models(): unknown;
-	/** The raw `aiBrowser.chat.openrouterEndpoint` setting. */
+	/** The raw `hoverdeck.chat.openrouterEndpoint` setting. */
 	endpoint(): string | undefined;
 	/** The saved entries of the conversation whose `ref` this is, to rebuild it from. */
 	entries(ref: string): readonly ChatEntry[] | undefined;
@@ -251,7 +252,7 @@ class OpenRouterSession implements AgentSession {
 				tools = (await this._mcpTools(signal)).tools;
 			} catch (err) {
 				if (signal.aborted) { return ending('Stopped.'); }
-				this.emit({ type: 'notice', text: vscode.l10n.t("The browser tools are not available in this turn ({0}). Check that the AI Browser MCP server is enabled.", err instanceof Error ? err.message : String(err)) });
+				this.emit({ type: 'notice', text: vscode.l10n.t("The browser tools are not available in this turn ({0}). Check that the {1} MCP server is enabled.", err instanceof Error ? err.message : String(err), productName()) });
 			}
 		}
 		for (let round = 0; round < openrouterMaxRounds; round++) {
@@ -323,7 +324,7 @@ class OpenRouterSession implements AgentSession {
 				try {
 					response = await this._fetch(`${endpoint.url}/chat/completions`, {
 						method: 'POST', signal: idle.signal, body, redirect: 'manual',
-						headers: { ...(key ? { 'Authorization': `Bearer ${key}` } : {}), 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'X-Title': 'AI Browser' },
+						headers: { ...(key ? { 'Authorization': `Bearer ${key}` } : {}), 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'X-Title': productName() },
 					});
 				} catch (err) {
 					if (signal.aborted) { throw new StoppedError(); }
@@ -335,7 +336,7 @@ class OpenRouterSession implements AgentSession {
 					// A redirect is never followed: the key must reach only the configured address.
 					throw new Error(local
 						? vscode.l10n.t("The local server answered with a redirect, which is not followed. Check the model's Local server address.")
-						: vscode.l10n.t("OpenRouter answered with a redirect, which is not followed. Check aiBrowser.chat.openrouterEndpoint."));
+						: vscode.l10n.t("OpenRouter answered with a redirect, which is not followed. Check hoverdeck.chat.openrouterEndpoint."));
 				}
 				if (!response.ok) {
 					const text = await response.text().then(t => t.slice(0, 4000)).catch(() => '');
@@ -619,7 +620,7 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 function extensionVersion(): string {
-	return vscode.extensions.getExtension('DenysDavydov.tab-browser-ultimate')?.packageJSON?.version ?? '0.0.0';
+	return vscode.extensions.getExtension(ownExtensionId())?.packageJSON?.version ?? '0.0.0';
 }
 
 export { openrouterKeySecret, errorMessage };

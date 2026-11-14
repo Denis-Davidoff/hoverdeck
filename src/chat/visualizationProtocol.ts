@@ -23,6 +23,8 @@ export interface VisualizationReference {
 	readonly wide?: boolean;
 	readonly kind?: PresentationKind;
 	readonly error?: string;
+	/** A file outside the conversation's directory, waiting for the user to allow or refuse showing it. */
+	readonly blockedPath?: string;
 }
 
 export interface VisualizationSnapshot {

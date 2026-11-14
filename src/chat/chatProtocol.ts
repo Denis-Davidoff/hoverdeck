@@ -44,7 +44,7 @@ export interface ChatAgent {
 	readonly copies?: readonly AgentCopy[];
 	/** The path of the copy in use. */
 	readonly binary?: string;
-	/** How it was picked: the newest found, by hand for this project, or by the `aiBrowser.chat.<agent>Path` setting. */
+	/** How it was picked: the newest found, by hand for this project, or by the `hoverdeck.chat.<agent>Path` setting. */
 	readonly choice?: 'auto' | 'pinned' | 'setting';
 	/** The copy this project picked is no longer found, so the newest is used. */
 	readonly pinMissing?: boolean;
@@ -85,6 +85,11 @@ export interface ToolbarColors {
 	readonly icon?: string;
 }
 
+export type QueueAction = 'move' | 'sendNow' | 'schedule' | 'unschedule';
+
+/** How a toolbar skill's first prompt goes into the chat during a turn: added to the turn, or queued for after it (the default). */
+export type ToolbarFirstSend = 'now' | 'later';
+
 export interface ToolbarSkill {
 	readonly id: string;
 	/** As typed after `/` or `$`: lower case, no spaces, like a CLI's own skills. */
@@ -106,6 +111,12 @@ export interface ToolbarSkill {
 	readonly result: ToolbarResult;
 	/** A VS Code notification when a run ends — done, failed, or stopped by its check; absent, none. */
 	readonly notify?: ToolbarNotify;
+	/**
+	 * For a result in the chat: pressed while the agent works, the first prompt
+	 * is added to the running turn (`now`) or waits for it to end (`later`, and
+	 * absent). Idle, both send at once.
+	 */
+	readonly firstSend?: ToolbarFirstSend;
 	/** Which agents offer it: every one, or one. */
 	readonly agents: 'all' | AgentId;
 	/** A codicon name, without `codicon-`. */
@@ -310,7 +321,7 @@ export interface ToolEntry {
 }
 
 /**
- * How much of a turn's work the thread shows (`aiBrowser.chat.viewMode`):
+ * How much of a turn's work the thread shows (`hoverdeck.chat.viewMode`):
  * `standard` every tool call unfolded, `compact` every call folded, `minimal`
  * only the prompts and the replies — each turn's tool calls, thinking and
  * answered approvals folded under one line that counts them and says what the
@@ -467,7 +478,10 @@ export interface ChatNews {
 	readonly intro: string;
 	/** The features an empty chat lists above "Show changelog": a codicon, a name, one line. */
 	readonly features: readonly { readonly icon: string; readonly title: string; readonly text: string }[];
-	readonly entries: readonly { readonly title: string; readonly items: readonly string[] }[];
+	/** Announcements drawn as a highlighted card above the features: `> $(icon) **Title** — text` before the first entry. */
+	readonly notices?: readonly { readonly icon: string; readonly title: string; readonly text: string }[];
+	/** `highlights` are an entry's `> ` lines, shown first and marked as important in the changelog. */
+	readonly entries: readonly { readonly title: string; readonly items: readonly string[]; readonly highlights?: readonly string[] }[];
 }
 
 /** A folder the composer's folder button offers: its path, and the name it is shown by. */
@@ -677,11 +691,11 @@ export interface TerminalTabSummary {
 export type TerminalSupport =
 	| {
 		readonly available: true; readonly limit: number; readonly agents: readonly AgentId[];
-		/** `false`: a plain shell may not be opened here (a remote surface with `aiBrowser.chat.remoteTerminalShell` off). Absent: it may. */
+		/** `false`: a plain shell may not be opened here (a remote surface with `hoverdeck.chat.remoteTerminalShell` off). Absent: it may. */
 		readonly shell?: false;
 		/**
 		 * Whether a terminal may be shared with the Exchange website ("Allow website access",
-		 * `setTerminalRemote`): `reason` says why not (the `aiBrowser.chat.remoteTerminal`
+		 * `setTerminalRemote`): `reason` says why not (the `hoverdeck.chat.remoteTerminal`
 		 * setting is off, the connection is not encrypted …). Absent: the row is not offered.
 		 */
 		readonly website?: { readonly allowed: true } | { readonly allowed: false; readonly reason: string };
@@ -788,10 +802,14 @@ export interface ChatViewState {
 	readonly news?: ChatNews;
 	/** The user hid "What's new", and no entry has been added since. */
 	readonly newsHidden: boolean;
+	/** The product's name as the user reads it: `HoverDeck` or `AI Browser`, by build. Absent from an older host. */
+	readonly product?: string;
+	/** Whether this build offers the Connect commands for agents outside the chat (AI Browser yes, HoverDeck no). Absent from an older host: yes. */
+	readonly externalAgents?: boolean;
 	/** The open conversations, in tab order; `chatId`, `entries` and the rest are the active one's. */
 	readonly tabs: readonly ChatTabSummary[];
 	readonly activeTab: string;
-	/** `aiBrowser.chat.tabLimit`; more tabs than this can be open when it was lowered. */
+	/** `hoverdeck.chat.tabLimit`; more tabs than this can be open when it was lowered. */
 	readonly tabLimit: number;
 	/** Terminal tabs, in strip order (editor only). They come after the conversations in the strip. */
 	readonly terminals?: readonly TerminalTabSummary[];
@@ -799,7 +817,7 @@ export interface ChatViewState {
 	readonly terminalFront?: string;
 	/** Whether a terminal can be started here, and why not (editor only). */
 	readonly terminalSupport?: TerminalSupport;
-	/** The finish sound from the user settings `aiBrowser.chat.sound.*`; every surface plays it. */
+	/** The finish sound from the user settings `hoverdeck.chat.sound.*`; every surface plays it. */
 	readonly sound?: ChatSoundSettings;
 	/** On Chrome and the website: how many earlier entries were not sent (`windowEntries`); `loadEarlier` asks for more. */
 	readonly entriesOffset?: number;
@@ -828,7 +846,7 @@ export interface ChatViewState {
 	readonly toolbarRuns: Readonly<Record<string, ToolbarRun>>;
 	/** The toolbar skills run in the background from this chat, as rows of its agents list. */
 	readonly skillAgents: readonly ToolEntry[];
-	/** `aiBrowser.chat.viewMode`: how much of a turn's work the thread shows; see `ChatViewMode`. */
+	/** `hoverdeck.chat.viewMode`: how much of a turn's work the thread shows; see `ChatViewMode`. */
 	readonly viewMode: ChatViewMode;
 	/** Tool calls start folded: every mode but Standard. */
 	readonly collapseTools: boolean;
@@ -855,6 +873,8 @@ export interface PendingSend {
 	readonly id: string;
 	readonly text: string;
 	readonly kind: 'steer' | 'queue';
+	/** A `queue` message scheduled for a time (epoch ms): it goes out then, or when the turn running at that moment ends. */
+	readonly at?: number;
 	/** A `steer` message the agent can still drop (Claude Code); its × asks it to. */
 	readonly withdrawable?: boolean;
 	/** The agent has been asked to drop it and has not answered yet. */
@@ -867,7 +887,23 @@ export interface PendingSend {
 	readonly skill?: { readonly name: string; readonly step: number; readonly steps: number; readonly check?: string; readonly background?: boolean };
 }
 
+/**
+ * The latest sound or alert an agent asked for in a tab (`chat_play_sound`, `chat_alert`). Carried
+ * in the tab list so every surface showing the tab hears it: the editor's view plays it, the
+ * website plays it and shows a browser notification; Chrome leaves both to VS Code beside it.
+ * A view plays an `id` it has not seen, once, and seeds the ids it finds in its first state.
+ */
+export interface ChatTabSignal {
+	readonly id: number;
+	readonly at: number;
+	readonly sound?: ChatSound;
+	readonly repeat: number;
+	readonly alert?: { readonly title: string; readonly text: string };
+}
+
 export interface ChatTabSummary {
+	/** The latest sound or alert an agent asked for here (see `ChatTabSignal`). */
+	readonly signal?: ChatTabSignal;
 	readonly canResumeInTerminal?: boolean;
 	readonly id: string;
 	readonly chatId: string;
@@ -920,15 +956,15 @@ export interface ChatSoundSettings {
 	readonly enabled: boolean; readonly sound: ChatSound; readonly volume: number;
 	/** Play even when the finished conversation is selected and visible. Absent: false (older hosts). */
 	readonly activeChat?: boolean;
-	/** `aiBrowser.chat.sound.repeat`: how many times in a row, 1 to 5. */
+	/** `hoverdeck.chat.sound.repeat`: how many times in a row, 1 to 5. */
 	readonly repeat: number;
-	/** `aiBrowser.chat.notifications.enabled`: a system notification when an agent finishes. */
+	/** `hoverdeck.chat.notifications.enabled`: a system notification when an agent finishes. */
 	readonly notify: boolean;
-	/** `aiBrowser.chat.notifications.onlyWhenAway`: only while the window is not focused. */
+	/** `hoverdeck.chat.notifications.onlyWhenAway`: only while the window is not focused. */
 	readonly notifyAway: boolean;
-	/** `aiBrowser.chat.sound.githubRun`: the sound when a watched GitHub Actions run ends, or `none`. Absent: `success` (older hosts). */
+	/** `hoverdeck.chat.sound.githubRun`: the sound when a watched GitHub Actions run ends, or `none`. Absent: `success` (older hosts). */
 	readonly githubRun?: ChatSound | 'none';
-	/** `aiBrowser.chat.notifications.githubRun`: a system notification when a watched run ends. Absent: true. */
+	/** `hoverdeck.chat.notifications.githubRun`: a system notification when a watched run ends. Absent: true. */
 	readonly githubRunNotify?: boolean;
 }
 
@@ -966,6 +1002,8 @@ export interface PastedAttachment {
 	readonly kind: AttachmentKind;
 	readonly label: string;
 	readonly filePath?: string;
+	/** The file name the chip carries, for its icon while the host is still making it again. */
+	readonly iconName?: string;
 }
 
 /** Runtime-only process metadata for the local editor; never part of conversation entries. */
@@ -1020,7 +1058,10 @@ export type HostToView =
 	/** Focus this terminal's keyboard input (a terminal tab was selected, or the view was revealed on it). */
 	| { readonly type: 'terminalFocus'; readonly id: string }
 	/** The view's title bar cup: open the keep-awake popup. */
-	| { readonly type: 'openSettings' }
+	| { readonly type: 'openSettings'; readonly tab?: 'security' }
+	/** Chat Settings → Security: each guard's state, and the sites agents were allowed to open in this window. */
+	| { readonly type: 'mcpFeatures'; readonly disabled: readonly McpFeatureId[]; readonly error?: string }
+	| { readonly type: 'securitySettings'; readonly guards: Readonly<Record<SecurityGuardId, boolean>>; readonly sites: readonly SecuritySiteApproval[]; readonly error?: string }
 	| { readonly type: 'featureAiSaved'; readonly settings?: FeatureAiSettings; readonly recordingQuality?: RecordingQuality; readonly recordingSeconds?: number; readonly error?: string }
 	/**
 	 * The OpenRouter section of Chat Settings: whether a key is stored (never the key), the configured models, and the
@@ -1029,7 +1070,7 @@ export type HostToView =
 	| { readonly type: 'openrouter'; readonly keySet: boolean; readonly models: readonly OpenRouterModelConfig[]; readonly error?: string; readonly notice?: string;
 		readonly catalog?: { readonly query: string; /** Original local address, echoed even on validation errors to match the request. */ readonly requestedEndpoint?: string;
 			/** Canonical local address for adding a model; present only after validation. */ readonly endpoint?: string; readonly items: readonly OpenRouterCatalogItem[]; readonly total: number; readonly error?: string } }
-	/** The Remote terminals section of Chat Settings: the three `aiBrowser.chat.remoteTerminal*` switches as stored, or the reason a change was refused. */
+	/** The Remote terminals section of Chat Settings: the three `hoverdeck.chat.remoteTerminal*` switches as stored, or the reason a change was refused. */
 	| { readonly type: 'remoteTerminalSettings'; readonly remoteTerminal: boolean; readonly shell: boolean; readonly agent: boolean; readonly chrome?: { readonly allowed: boolean; readonly shell: boolean; readonly agent: boolean }; readonly files?: import('./core/remoteFiles').RemoteFileSettings; readonly error?: string }
 	| { readonly type: 'openSleep' }
 	/** Cmd/Ctrl+W with focus in the chat: close the tab in front, as its × does (asking first while it works). */
@@ -1039,7 +1080,14 @@ export type HostToView =
 	/** Queued messages given back by Stop: added to what is in the message box, not sent. */
 	| { readonly type: 'restoreDraft'; readonly chatId: string; readonly text: string }
 	/** Messages sent from this workspace, oldest first, for the composer's ↑ / ↓. */
-	| { readonly type: 'inputHistory'; readonly items: readonly string[] }
+	| {
+		readonly type: 'inputHistory'; readonly items: readonly string[];
+		/**
+		 * The same messages with the attachment each badge stood for (`AttachmentText`), so a message
+		 * recalled with ↑ gets real badges again. `items` stays for a view built before this field.
+		 */
+		readonly entries?: readonly import('./attachmentText').AttachmentText[];
+	}
 	/** A Stop for one agent was refused; its button comes back. */
 	| { readonly type: 'agentStopFailed'; readonly id: string }
 	/** A toolbar skill saved, by its id: the editor closes. */
@@ -1064,6 +1112,7 @@ export type HostToView =
 	/** The Actions runs whose bell is on, as `runWatchKey` spells them. */
 	| { readonly type: 'githubRunWatches'; readonly runs: readonly string[] }
 	/** A watched run has ended: the view plays the Actions sound and refreshes the GitHub tab. */
+	/** An agent asked for a sound (`chat_play_sound`, `chat_alert`): played whatever the speaker button says, at the user's volume. */
 	| { readonly type: 'githubRunEnded'; readonly key: string; readonly state: import('./githubStatus').GithubRunState }
 	| { readonly type: 'githubStatus'; readonly folder: string; readonly status?: import('./githubStatus').GithubStatus; readonly error?: string; /** Signing in to GitHub would show more (a private repository, no `gh`). */ readonly signIn?: boolean; /** A pull request was just opened from the tab. */ readonly created?: import('./githubStatus').GithubCreatedPr; /** Opening one failed; the list is unchanged. */ readonly createError?: string }
 	| { readonly type: 'workdirGit'; readonly folder: string; readonly status?: WorkdirGitStatus; readonly branches?: GitBranchState; readonly error?: string; readonly fetchError?: string }
@@ -1082,7 +1131,7 @@ export type ViewToHost =
 	| { readonly type: 'inspectAgentProcess'; readonly chatId: string; readonly id: string }
 	/** The Bash tab is on screen (or not): the process monitor samples often only while someone looks. */
 	| { readonly type: 'watchAgentProcesses'; readonly on: boolean }
-	/** Keyboard focus entered or left this chat's webview: drives `aiBrowser.chatFocused`, the Cmd+W (close chat tab) keybinding's condition. */
+	/** Keyboard focus entered or left this chat's webview: drives `hoverdeck.chatFocused`, the Cmd+W (close chat tab) keybinding's condition. */
 	| { readonly type: 'chatFocus'; readonly focused: boolean }
 	| { readonly type: 'connectChat'; readonly chatId: string; readonly targetChatId?: string }
 	| { readonly type: 'disconnectChat'; readonly chatId: string; readonly targetChatId: string }
@@ -1102,6 +1151,12 @@ export type ViewToHost =
 	/** Chrome and the website: send more of the conversation's earlier turns. Answered by the surface's bridge. */
 	| { readonly type: 'loadEarlier'; readonly chatId: string; readonly reset?: boolean }
 	| { readonly type: 'setConnectionPermission'; readonly surface: 'chrome' | 'exchange'; readonly group: import('./core/commands').ConnectionPermission; readonly allowed: boolean }
+	| { readonly type: 'securitySettings'; readonly action: 'load' }
+	| { readonly type: 'securitySettings'; readonly action: 'set'; readonly guard: SecurityGuardId; readonly value: boolean }
+	/** Chat Settings → MCP: `load` asks for the switched-off features, `set` turns one on or off (`hoverdeck.mcp.disabledFeatures`, user settings). */
+	| { readonly type: 'mcpFeatures'; readonly action: 'load' } | { readonly type: 'mcpFeatures'; readonly action: 'set'; readonly feature: McpFeatureId; readonly enabled: boolean }
+	| { readonly type: 'securitySettings'; readonly action: 'allOn' }
+	| { readonly type: 'securitySettings'; readonly action: 'forget'; readonly key?: string; readonly site?: string }
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'load' }
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'set'; readonly key: 'remoteTerminal' | 'remoteTerminalShell' | 'remoteTerminalAgent' | 'chromeTerminalAccess' | 'chromeTerminalShell' | 'chromeTerminalAgent'; readonly value: boolean }
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'setFiles'; readonly surface: import('./core/commands').RemoteSurface; readonly value: import('./core/remoteFiles').RemoteFileLevel }
@@ -1128,9 +1183,15 @@ export type ViewToHost =
 	 * `queue`: hold it until the running turn ends, then send it as a turn of its
 	 * own (⌘/Ctrl+Enter). Otherwise, during a turn, it is added to that turn.
 	 */
-	| { readonly type: 'send'; readonly text: string; readonly tabId?: string; readonly mode?: 'queue' }
+	| { readonly type: 'send'; readonly text: string; readonly tabId?: string; readonly mode?: 'queue'; readonly at?: number }
 	/** A queued message taken back before it was sent. */
 	| { readonly type: 'unqueue'; readonly id: string }
+	/**
+	 * A queued message rearranged: moved before another (`before`, or to the end
+	 * when absent), sent now (into the running turn if there is one), or given a
+	 * send time (`at`) or none ("when the turn ends").
+	 */
+	| { readonly type: 'queueAction'; readonly id: string; readonly action: QueueAction; readonly before?: string; readonly at?: number }
 	| { readonly type: 'resumeQueue'; readonly tabId: string }
 	/** The "/" menu: the tab in front starts over; its conversation stays in the history. */
 	| { readonly type: 'clearChat' }
@@ -1163,7 +1224,7 @@ export type ViewToHost =
 	| { readonly type: 'listHistory' }
 	| { readonly type: 'listAllAgents' }
 	/** The GitHub tab asks for `folder`'s pull requests and runs; `signIn` may ask VS Code's GitHub sign-in. */
-	| { readonly type: 'githubStatus'; readonly folder: string; readonly signIn?: boolean }
+	| { readonly type: 'githubStatus'; readonly folder: string; readonly signIn?: boolean; /** The Refresh button: read GitHub again rather than answer from the host's 30 s cache. */ readonly refresh?: boolean }
 	/** The GitHub tab's bell on an Actions run: tell me when it ends (sound and a system notification), or stop. */
 	| { readonly type: 'githubWatchRun'; readonly folder: string; readonly runId: number; readonly watch: boolean }
 	/** Opens the workflow file an Actions run came from, from the folder's own repository. */
@@ -1209,6 +1270,8 @@ export type ViewToHost =
 	| { readonly type: 'reattachAttachment'; readonly id: string; readonly entry?: number }
 	| { readonly type: 'cancelProgress'; readonly chatId: string; readonly id: string }
 	| { readonly type: 'saveArtifact'; readonly chatId: string; readonly revision: string }
+	/** The user's answer on a card naming a file outside the visualization directory (`blockedPath`). */
+	| { readonly type: 'presentationAccess'; readonly chatId: string; readonly path: string; readonly allow: boolean }
 	| { readonly type: 'saveAttachment'; readonly id: string }
 	/** A tool call's input or output, opened as a read-only text in an editor tab. */
 	| { readonly type: 'openText'; readonly name: string; readonly text: string }
@@ -1240,7 +1303,7 @@ export type ViewToHost =
 	| { readonly type: 'terminalAskAgent'; readonly id: string; readonly target: { readonly kind: 'new'; readonly agent?: AgentId } | { readonly kind: 'tab'; readonly tabId: string }; readonly selection?: string; readonly mode?: 'watch' | 'control' }
 	/** The emergency stop and its release: while `allowed` is false the agent's input to this terminal is refused. */
 	| { readonly type: 'setTerminalAgentControl'; readonly id: string; readonly allowed: boolean }
-	/** "Allow website access": the terminal is shared with the Exchange website (editor only; needs `aiBrowser.chat.remoteTerminal`). */
+	/** "Allow website access": the terminal is shared with the Exchange website (editor only; needs `hoverdeck.chat.remoteTerminal`). */
 	| { readonly type: 'setTerminalRemote'; readonly id: string; readonly remote: boolean }
 	| { readonly type: 'selectTerminal'; readonly id: string }
 	| { readonly type: 'closeTerminal'; readonly id: string }
@@ -1263,7 +1326,7 @@ export type ViewToHost =
 	| { readonly type: 'runInTerminal'; readonly text: string; readonly target: 'vscode' | 'tab' | 'newTab'; readonly id?: string }
 	/** The composer's browser button: a new browser tab, nothing else. */
 	| { readonly type: 'openBrowser'; readonly where?: 'vscode' | 'chrome' }
-	/** The approval menu's View Mode: `aiBrowser.chat.viewMode`. */
+	/** The approval menu's View Mode: `hoverdeck.chat.viewMode`. */
 	| { readonly type: 'setViewMode'; readonly mode: ChatViewMode }
 	/** A file a tool row names (Read, an edit), clicked: opened in an editor tab, whatever kind of file. */
 	| { readonly type: 'openFile'; readonly path: string }
@@ -1298,7 +1361,7 @@ export type ViewToHost =
 	/** The folder button's "Choose folder…": the system's folder dialog. */
 	| { readonly type: 'chooseWorkdir' }
 	/** The folder button opened: list the tab in front's working folder. */
-	| { readonly type: 'gitCommit'; readonly folder: string; readonly tabId: string; readonly scope?: 'staged' | 'all'; /** Push afterwards, publishing a branch with no upstream. */ readonly push?: boolean }
+	| { readonly type: 'gitCommit'; readonly folder: string; readonly tabId: string; readonly scope?: 'staged' | 'all'; /** Push afterwards, publishing a branch with no upstream. */ readonly push?: boolean; /** The user's own message: no agent is asked. */ readonly message?: string }
 	| { readonly type: 'gitIndexAction'; readonly folder: string; readonly tabId: string; readonly action: 'stage' | 'unstage'; readonly path?: string }
 	| { readonly type: 'openGitDiff'; readonly folder: string; readonly tabId: string; readonly path: string; readonly staged: boolean }
 	| { readonly type: 'fixGitCommit' | 'dismissGitCommit'; readonly folder: string; readonly id: string; readonly tabId: string }
@@ -1328,3 +1391,17 @@ export interface AllAgentsChat {
 	readonly here: boolean;
 	readonly agents: readonly ToolEntry[];
 }
+
+/** One caller's site approvals, as Chat Settings → Security lists them. `site: '*'` in a forget is "any site". */
+export interface SecuritySiteApproval {
+	readonly key: string;
+	readonly label: string;
+	readonly sites: readonly string[];
+	readonly all: boolean;
+}
+
+/** The `hoverdeck.security.*` switches, written here too: the webview may not import the vscode-side module. */
+/** What Chat Settings → MCP can switch off. Written twice: `mcpFeatures` in `src/mcp/mcpFeatures.ts`; `mcpFeatures.test.ts` holds them equal. */
+export type McpFeatureId = 'sounds' | 'alerts' | 'cards' | 'keepAwake' | 'chatControl' | 'recording' | 'annotations' | 'cookies' | 'editor';
+
+export type SecurityGuardId = 'confirmNewSites' | 'protectSecretFields' | 'hideOtherChromeTabs' | 'confirmCookies' | 'markPageContent';

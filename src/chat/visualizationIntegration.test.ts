@@ -14,6 +14,7 @@ import * as attachmentReferences from './attachmentReferences.ts';
 import * as terminalPins from './terminalPins.ts';
 import * as toolbarText from './toolbarText.ts';
 import * as notifyText from '../core/notifyText.ts';
+import * as flavor from '../core/flavor.ts';
 import * as visualizationProtocol from './visualizationProtocol.ts';
 import * as visualizationStore from './visualizationStore.ts';
 import * as messageFiles from './messageFiles.ts';
@@ -33,7 +34,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>): T {
 const { ChatTab, newChat, settled } = load<typeof import('./chatTab.ts')>('src/chat/chatTab.ts', {
 	vscode: { l10n: { t: (text: string) => text } }, './agentProtocol': protocol, './agents': { agentNames: { codex: 'Codex' } },
 	'./attachmentReferences': attachmentReferences, './terminalPins': terminalPins, './toolbarText': toolbarText,
-	'../core/notifyText': notifyText, '../core/uuid': { generateUuid: randomUUID },
+	'../core/notifyText': notifyText, '../core/flavor': flavor, '../core/uuid': { generateUuid: randomUUID },
 	'./visualizationProtocol': visualizationProtocol, './visualizationStore': visualizationStore,
 	'./messageFiles': messageFiles,
 });
@@ -200,7 +201,7 @@ for (const agent of ['codex', 'claude'] as const) {
 
 test('Claude Code plain markers and MCP completions reach the same image and table cards', async () => fixture(async (tab, _host, htmlFile) => {
 	const instruction = await Reflect.get(tab, '_visualizationInstruction').call(tab);
-	assert.match(instruction, /mcp__ai-browser__chat_present_image/);
+	assert.match(instruction, /mcp__hoverdeck__chat_present_image/);
 	const image = path.join(path.dirname(htmlFile), 'claude.gif');
 	await fs.writeFile(image, Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
 	const table = path.join(path.dirname(htmlFile), 'table.json');
@@ -397,3 +398,67 @@ for (const error of [undefined, 'Stopped.']) {
 		assert.equal(tab.chat.entries.find(entry => entry.kind === 'progress')!.status, 'done');
 	}, 'codex'));
 }
+
+test('a file outside the directory asks on its card, and only the user\'s answer shows or refuses it', async () => fixture(async (tab, _host, htmlFile) => {
+	const outside = path.join(path.dirname(path.dirname(path.dirname(path.dirname(htmlFile)))), 'shot.png');
+	const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+	await fs.writeFile(outside, png);
+	// The model publishes it: no error to the model, a card asking the user instead.
+	const answer = await tab.presentImage(outside, 'Shot') as { displayed: boolean };
+	assert.equal(answer.displayed, false);
+	const entry = tab.chat.entries[0];
+	if (entry.kind !== 'assistant') { assert.fail('expected an assistant entry'); }
+	assert.equal(entry.visualizations![0].blockedPath, outside);
+	assert.equal(entry.visualizations![0].revision, undefined);
+	// Only a path a card is asking about can be decided.
+	assert.equal(await tab.decideFileAccess(path.join(path.dirname(outside), 'other.png'), true), false);
+	assert.equal(tab.chat.fileAccess, undefined);
+	assert.equal(await tab.decideFileAccess(outside, true), true);
+	await drain(tab);
+	const shown = entry.visualizations![0];
+	assert.equal(shown.blockedPath, undefined);
+	assert.equal(tab.visualizations[shown.revision!].image?.base64, png.toString('base64'));
+	// A refusal replaces the question with a line and stays refused for a later marker.
+	const refused = path.join(path.dirname(outside), 'refused.png');
+	await fs.writeFile(refused, png);
+	feed(tab, { type: 'text', text: `\nimage${JSON.stringify({ path: refused })}` });
+	await drain(tab);
+	const card = () => tab.chat.entries.flatMap(e => e.kind === 'assistant' ? e.visualizations ?? [] : []).find(ref => ref.title === 'refused.png');
+	assert.equal(card()?.blockedPath, refused);
+	assert.equal(await tab.decideFileAccess(refused, false), true);
+	await drain(tab);
+	assert.equal(card()?.blockedPath, undefined);
+	assert.match(card()?.error ?? '', /chose not to show/);
+	assert.equal(card()?.revision, undefined);
+	await assert.rejects(tab.presentImage(refused, 'Again'), /visualization directory/);
+}));
+
+test('"Files outside the project" on Auto shows an outside file at once; a refusal on its card still wins', async () => fixture(async (tab, host, htmlFile) => {
+	let mode: 'ask' | 'auto' | 'deny' = 'ask';
+	host.approvalMode = (key: string) => key === 'outside' ? mode : 'ask';
+	const dir = path.dirname(path.dirname(path.dirname(path.dirname(htmlFile))));
+	const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+	const waiting = path.join(dir, 'waiting.png');
+	await fs.writeFile(waiting, png);
+	assert.equal((await tab.presentImage(waiting, 'Waiting') as { displayed: boolean }).displayed, false);
+	// Switching the menu to Auto publishes the card that was asking.
+	mode = 'auto';
+	tab.approvalModesChanged();
+	await drain(tab);
+	const card = (title: string) => tab.chat.entries.flatMap(e => e.kind === 'assistant' ? e.visualizations ?? [] : []).find(ref => ref.title === title);
+	assert.equal(card('Waiting')?.blockedPath, undefined);
+	assert.ok(card('Waiting')?.revision);
+	// On Auto a new outside file is displayed with no card question.
+	const direct = path.join(dir, 'direct.png');
+	await fs.writeFile(direct, png);
+	assert.equal((await tab.presentImage(direct, 'Direct') as { displayed: boolean }).displayed, true);
+	// Deny asks as before.
+	mode = 'deny';
+	const asked = path.join(dir, 'asked.png');
+	await fs.writeFile(asked, png);
+	assert.equal((await tab.presentImage(asked, 'Asked') as { displayed: boolean }).displayed, false);
+	// A file refused on its card stays refused under Auto.
+	assert.equal(await tab.decideFileAccess(asked, false), true);
+	mode = 'auto';
+	await assert.rejects(tab.presentImage(asked, 'Again'), /visualization directory/);
+}));

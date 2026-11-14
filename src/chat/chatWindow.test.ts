@@ -24,14 +24,14 @@ function setup(supported = true, failMove = false) {
 		dispose() { this.disposed = true; }
 	}
 	const create = runInNewContext(transpileModule(`${method}\ncreateChat;`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, {
-		ChatViewProvider: Child, newChat: (agent: string) => ({ agent }), refuse: (text: string) => errors.push(text),
+		ChatViewProvider: Child, productName: () => 'AI Browser', newChat: (agent: string) => ({ agent }), refuse: (text: string) => errors.push(text),
 		vscode: { l10n: { t: (text: string) => text }, ViewColumn: { Active: -1 },
 			window: { createWebviewPanel: () => panel }, commands: {
 				getCommands: async () => supported ? ['workbench.action.moveEditorToNewWindow'] : [],
 				executeCommand: async (command: string) => { commands.push(command); if (failMove) { throw new Error('move failed'); } },
 			} },
 	});
-	const host = { _remembered: { agent: 'codex' }, _selection: () => ({}), _active: { chat: { folder: '/project', copy: { repo: 'a/b' }, references: [] } },
+	const host = { _remembered: { agent: 'codex' }, _preferredAgent() { return this._remembered.agent; }, _selection: () => ({}), _active: { chat: { folder: '/project', copy: { repo: 'a/b' }, references: [] } },
 		_tabs: [] as any[], _selectTab: (_id: string) => {}, _focusInput: () => {}, _chromeCommand: undefined,
 		_tabProjectId: (tab: any) => tab.project ?? tab.chat?.folder ?? '/project',
 		_windows: new Set(), _postMessage: (message: any) => messages.push(message), _addTab: (agent: string) => added.push(agent), _fail: (error: unknown) => errors.push(error) };

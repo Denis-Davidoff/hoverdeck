@@ -338,19 +338,19 @@ export class AgentRegistry implements vscode.Disposable {
 		};
 		if (!binary) {
 			this._drop(id, true);
-			const configured = vscode.workspace.getConfiguration('aiBrowser.chat').get<string>(`${id}Path`, '').trim();
+			const configured = vscode.workspace.getConfiguration('hoverdeck.chat').get<string>(`${id}Path`, '').trim();
 			return {
 				id, name, available: false, models: [], ...about,
 				problem: configured
-					? vscode.l10n.t("aiBrowser.chat.{0}Path is set to {1}, which is not an executable file.", id, configured)
+					? vscode.l10n.t("hoverdeck.chat.{0}Path is set to {1}, which is not an executable file.", id, configured)
 					: id === 'gemini'
 						// Its companion extension carries no CLI, so it is no way to install one.
-						? vscode.l10n.t("Gemini CLI was not found. Install it (`npm install -g @google/gemini-cli` or `brew install gemini-cli`), or set aiBrowser.chat.geminiPath.")
+						? vscode.l10n.t("Gemini CLI was not found. Install it (`npm install -g @google/gemini-cli` or `brew install gemini-cli`), or set hoverdeck.chat.geminiPath.")
 						: id === 'opencode'
-							? vscode.l10n.t("OpenCode was not found. Install it (`curl -fsSL https://opencode.ai/install | bash`, or `npm install -g opencode-ai`), or set aiBrowser.chat.opencodePath.")
+							? vscode.l10n.t("OpenCode was not found. Install it (`curl -fsSL https://opencode.ai/install | bash`, or `npm install -g opencode-ai`), or set hoverdeck.chat.opencodePath.")
 							: id === 'pi'
-								? vscode.l10n.t("Pi was not found. Install it (`npm install -g @earendil-works/pi-coding-agent`), or set aiBrowser.chat.piPath.")
-								: vscode.l10n.t("{0} was not found. Install its CLI or its VS Code extension, or set aiBrowser.chat.{1}Path.", name, id),
+								? vscode.l10n.t("Pi was not found. Install it (`npm install -g @earendil-works/pi-coding-agent`), or set hoverdeck.chat.piPath.")
+								: vscode.l10n.t("{0} was not found. Install its CLI or its VS Code extension, or set hoverdeck.chat.{1}Path.", name, id),
 			};
 		}
 

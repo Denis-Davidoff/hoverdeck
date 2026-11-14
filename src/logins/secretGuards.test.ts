@@ -5,7 +5,7 @@
 
 import * as assert from 'node:assert';
 import { suite, test } from 'node:test';
-import { comparesFieldValue, isSecretField, redactSecretValues } from './secretGuards.ts';
+import { comparesFieldValue, isProtectedField, isSecretField, redactSecretValues } from './secretGuards.ts';
 
 suite('comparesFieldValue', () => {
 
@@ -191,5 +191,27 @@ suite('redactSecretValues', () => {
 	test('markup with no secret is returned unchanged', () => {
 		const html = '<div><input type="search" value="query"> <p>value="x"</p><input name="passengers" value="2"></div>';
 		assert.strictEqual(redactSecretValues(html), html);
+	});
+});
+
+suite('isProtectedField', () => {
+	test('passwords and payment fields are protected', () => {
+		assert.ok(isProtectedField({ type: 'password' }));
+		assert.ok(isProtectedField({ autocomplete: 'cc-number' }));
+		assert.ok(isProtectedField({ autocomplete: 'billing cc-csc' }));
+		assert.ok(isProtectedField({ name: 'cardNumber' }));
+		assert.ok(isProtectedField({ name: 'cvv' }));
+		assert.ok(isProtectedField({ id: 'cc-cvc' }));
+		for (const name of ['card-number', 'cc-number', 'credit_card', 'creditCardNumber', 'security_code', 'card_no']) {
+			assert.ok(isProtectedField({ name }), name);
+		}
+	});
+	test('ordinary fields are not', () => {
+		assert.ok(!isProtectedField({ type: 'email', name: 'email' }));
+		assert.ok(!isProtectedField({ name: 'discount_code' }));
+		assert.ok(!isProtectedField({ name: 'cardholder_name' }));
+		assert.ok(!isProtectedField({ name: 'scorecard' }));
+		assert.ok(!isProtectedField({ name: 'credit_card_holder' }));
+		assert.ok(!isProtectedField({ name: 'creditCardType' }));
 	});
 });

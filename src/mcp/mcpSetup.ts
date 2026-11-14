@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import { execFile } from 'child_process';
 import * as crypto from 'crypto';
 import { promises as fs } from 'fs';
@@ -14,7 +15,7 @@ import { lockPath, withLock } from '../core/fileLock';
 import { serverName } from './mcpClientState';
 import {
 	codexOurTables, codexRetiredTables, codexTableLines, parseClaudeConfig, removeCodexTables,
-	repairClaudeJson, repairCodexToml, repairGeminiJson,
+	removeJsonServers, repairClaudeJson, repairCodexToml, repairGeminiJson,
 	spliceCodexTables, type Endpoint,
 } from './mcpRepair';
 import type { McpServer } from './mcpServer';
@@ -31,8 +32,7 @@ import { geminiPath, geminiTrustsFolder } from '../chat/geminiAgent';
  * Three clients, three places to configure, and only one of them has an API.
  */
 
-export const vsCodeProviderId = 'aiBrowserMcp';
-const providerLabel = 'AI Browser';
+export const vsCodeProviderId = 'hoverdeckMcp';
 
 /* ---------------------------------------------------------------- VS Code chat */
 
@@ -72,7 +72,7 @@ export function registerWithVsCode(server: McpServer, version: string): vscode.D
 			provideMcpServerDefinitions: () => [
 				// The constructor is positional; an options object does not work.
 				new Definition(
-					providerLabel,
+					productName(),
 					vscode.Uri.parse(server.url!),
 					{ Authorization: `Bearer ${server.token}` },
 					version),
@@ -766,6 +766,130 @@ export async function removeCodexGlobalEntry(server: McpServer): Promise<GlobalE
 	return ran ? outcome : 'busy';
 }
 
+/** What {@link removeOurConfigEntries} did, per file: its name, and removed, left alone, or could not. */
+export interface ConfigCleanup {
+	readonly removed: string[];
+	readonly failed: string[];
+}
+
+/**
+ * HoverDeck's "Remove AI Browser's MCP Entries": every entry carrying this
+ * workspace's token — the one AI Browser minted, moved over by the migration —
+ * taken out of `.mcp.json`, `.gemini/settings.json`, the project
+ * `.codex/config.toml` and the global one. HoverDeck itself writes none of
+ * them; its agents get the server from the chat.
+ *
+ * Matched by token, as everything here is (items 14, 92): another window's
+ * entry, or a server of the same name somebody else configured, stays. A file
+ * that cannot be read or parsed, or a link inside the workspace, is reported
+ * and left as it is.
+ */
+export async function removeOurConfigEntries(server: McpServer): Promise<ConfigCleanup> {
+	const token = server.token;
+	const folder = workspaceFolder();
+	const removed: string[] = [];
+	const failed: string[] = [];
+	const note = (outcome: 'removed' | 'absent' | 'failed', label: string) => {
+		if (outcome === 'removed') { removed.push(label); } else if (outcome === 'failed') { failed.push(label); }
+	};
+
+	const json = async (uri: vscode.Uri, label: string) => {
+		let outcome: 'removed' | 'absent' | 'failed' = 'absent';
+		const ran = await withLock(lockPath(configLockName(uri)), async () => {
+			const read = await readConfig(uri);
+			if (read.kind === 'absent') { return; }
+			if (read.kind !== 'text') { outcome = 'failed'; return; }
+			const out = removeJsonServers(read.text, token);
+			if (!out.changed) {
+				if (parseClaudeConfig(read.text) === undefined) { outcome = 'failed'; }
+				return;
+			}
+			await writeText(uri, out.text);
+			outcome = 'removed';
+		});
+		note(ran ? outcome : 'failed', label);
+	};
+	const toml = async (uri: vscode.Uri, lock: string, label: string) => {
+		let outcome: 'removed' | 'absent' | 'failed' = 'absent';
+		const ran = await withLock(lock, async () => {
+			const read = await readConfig(uri);
+			if (read.kind === 'absent') { return; }
+			if (read.kind !== 'text' || codexUnterminated(read.text)) { outcome = 'failed'; return; }
+			const entries = codexEntries(read.text);
+			const names = codexOurTables(entries, token);
+			if (names.length === 0) { return; }
+			const prune = removeCodexTables(read.text, entries, names,
+				(from, to) => codexRangeDeletable(read.text, from, to));
+			if (prune.refused) { outcome = 'failed'; return; }
+			if (!prune.changed) { return; }
+			await writeText(uri, prune.text);
+			outcome = 'removed';
+		});
+		note(ran ? outcome : 'failed', label);
+	};
+
+	const guarded = async (relatives: readonly string[], label: string, run: () => Promise<void>) => {
+		try {
+			if (folder) { await refuseWorkspaceLink(folder, relatives); }
+			await run();
+		} catch {
+			failed.push(label);
+		}
+	};
+
+	if (folder) {
+		await guarded(['.mcp.json'], '.mcp.json', () => json(claudeConfigUri(folder), '.mcp.json'));
+		await guarded(['.gemini', '.gemini/settings.json'], '.gemini/settings.json',
+			() => json(geminiConfigUri(folder), '.gemini/settings.json'));
+		if (!codexProjectIsGlobal(folder)) {
+			const uri = codexProjectConfigUri(folder);
+			await guarded(['.codex', '.codex/config.toml'], '.codex/config.toml',
+				() => toml(uri, lockPath(configLockName(uri)), '.codex/config.toml'));
+		}
+	}
+	await guarded([], '~/.codex/config.toml', () => toml(codexGlobalConfigUri(), codexGlobalLock(), '~/.codex/config.toml'));
+	return { removed, failed };
+}
+
+/**
+ * Which of the files {@link removeOurConfigEntries} cleans still hold an entry
+ * carrying this workspace's token. Read only, no lock: it decides whether to
+ * offer the cleanup, and the cleanup itself checks again under the lock. A file
+ * that cannot be read, or that a link leads out of the workspace, counts as
+ * holding nothing — the offer is a convenience, never a reason to fail.
+ */
+export async function findOurConfigEntries(server: McpServer): Promise<string[]> {
+	const token = server.token;
+	const folder = workspaceFolder();
+	const found: string[] = [];
+	const json = async (uri: vscode.Uri, relatives: readonly string[], label: string) => {
+		try {
+			if (folder) { await refuseWorkspaceLink(folder, relatives); }
+			const read = await readConfig(uri);
+			if (read.kind === 'text' && removeJsonServers(read.text, token).changed) { found.push(label); }
+		} catch { /* nothing to offer */ }
+	};
+	const toml = async (uri: vscode.Uri, relatives: readonly string[], label: string) => {
+		try {
+			if (folder && relatives.length) { await refuseWorkspaceLink(folder, relatives); }
+			const read = await readConfig(uri);
+			if (read.kind === 'text' && !codexUnterminated(read.text)
+				&& codexOurTables(codexEntries(read.text), token).length > 0) {
+				found.push(label);
+			}
+		} catch { /* nothing to offer */ }
+	};
+	if (folder) {
+		await json(claudeConfigUri(folder), ['.mcp.json'], '.mcp.json');
+		await json(geminiConfigUri(folder), ['.gemini', '.gemini/settings.json'], '.gemini/settings.json');
+		if (!codexProjectIsGlobal(folder)) {
+			await toml(codexProjectConfigUri(folder), ['.codex', '.codex/config.toml'], '.codex/config.toml');
+		}
+	}
+	await toml(codexGlobalConfigUri(), [], '~/.codex/config.toml');
+	return found;
+}
+
 /*
  * There is deliberately no `writeCodexGlobalConfig` any more.
  *
@@ -911,7 +1035,7 @@ export function connectionPrompt(entryName: string, configPath: string, shared?:
 /** Pi and OpenRouter receive their tools from the chat, without an MCP config file. */
 export function chatConnectionPrompt(name: string, shared?: SharedPage): string {
 	return [
-		`You are ${name} in AI Browser Chat. Your browser tools are provided automatically by the chat. Do not add or edit any MCP configuration.`,
+		`You are ${name} in ${productName()} Chat. Your browser tools are provided automatically by the chat. Do not add or edit any MCP configuration.`,
 		'Call the tool whose name ends in browser_state once to check the connection; nothing else yet. If it is unavailable, ask the user to check Chat Settings and start a new chat with this agent.',
 		...(shared ? [`The user has shared one browser tab with you: ${plainInPrompt(shared.title ?? shared.url)} (${shared.url}). Use only that tab.`] : []),
 		'After checking the connection, wait for the user’s request.',
@@ -1098,8 +1222,8 @@ function refuseRemoteWorkspace(shared: SharedPage | undefined): boolean {
 		return false;
 	}
 	vscode.window.showWarningMessage(vscode.l10n.t(
-		"This window's folder is on a remote machine ({0}), while AI Browser and its MCP server run on this one — an assistant running next to that folder cannot reach this machine's loopback. Open the folder locally, or run the assistant on this machine.",
-		vscode.env.remoteName ?? 'remote') + scopeNote(shared));
+		"This window's folder is on a remote machine ({0}), while {1} and its MCP server run on this one — an assistant running next to that folder cannot reach this machine's loopback. Open the folder locally, or run the assistant on this machine.",
+		vscode.env.remoteName ?? 'remote', productName()) + scopeNote(shared));
 	return true;
 }
 
@@ -1436,7 +1560,7 @@ export async function openGeminiHere(): Promise<void> {
 	const binary = (await chooseAgentBinary('gemini').catch(() => undefined))?.chosen?.path;
 	if (!binary) {
 		vscode.window.showWarningMessage(vscode.l10n.t(
-			"Gemini CLI was not found. Install it (`npm install -g @google/gemini-cli` or `brew install gemini-cli`), or set aiBrowser.chat.geminiPath."));
+			"Gemini CLI was not found. Install it (`npm install -g @google/gemini-cli` or `brew install gemini-cli`), or set hoverdeck.chat.geminiPath."));
 		return;
 	}
 	const folder = workspaceFolder();
@@ -1542,7 +1666,7 @@ export interface MissingWorkspaces {
 	 * distinction is worth stating because the obvious reading is wrong: a
 	 * folder that still *exists* and simply has not been opened for a while
 	 * never gets a marker, so it is stat'd again on every activation and every
-	 * `aiBrowser.mcp.*` change, for the life of the machine. On a long project
+	 * `hoverdeck.mcp.*` change, for the life of the machine. On a long project
 	 * history that is a few hundred `stat` calls per run — parallel and each
 	 * capped at {@link statTimeoutMs}, so it is cheap rather than free.
 	 *

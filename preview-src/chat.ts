@@ -11,7 +11,7 @@ import { downloadArtifact } from './artifactViews';
 import { presentationMarkers } from '../src/chat/visualizationProtocol';
 import { usageButtonLimit, usageButtonWindows } from '../src/chat/usageButton';
 import { updateVisualizationViews } from './visualizationViews';
-import { installChatSelectionCopy } from './chatSelection';
+import { copyRich, installChatSelectionCopy } from './chatSelection';
 import { selectionTree, treeHasMarkup, treeHtml, treeMarkdown } from './selectionRich';
 import { historyPeriodRange, type HistoryPeriod } from './historyPeriod';
 import { messageFileDiff, messageFileLabel, messageFiles } from '../src/chat/messageFiles';
@@ -19,17 +19,19 @@ import { messageContent, type MessageContent, type MessageContentKind } from '..
 import { fileGridNeighbor, type FileArrow } from './fileNavigation';
 import { composerLinks, composerListChecker, composerListEdit, composerListItem, type ComposerEdit } from './composerFormatting';
 import { codeBlock as mdCodeBlock, link as mdLink, placeholderNames, splitPlaceholders, toggleInline, toggleLines, type TextEdit } from './markdownEdit';
+import { fenceEnd } from './markdownFence';
 import { attachmentMarker, readAttachmentMarkers, selectedAttachmentMarkers } from './attachmentMarkers';
+import { portableAttachmentText, prepareAttachmentText, readAttachmentText, type AttachmentText, type PreparedAttachmentText } from '../src/chat/attachmentText';
 import type { TemporaryStorage } from '../src/core/temporaryFiles';
-import { aiFeatures, defaultFeaturePrompts, featureAgent, featurePromptLimit, readFeatureAiSettings, readTitleRefresh, titleRefreshLimits, type AiFeature, type FeatureAiSettings, type FeatureEffort } from '../src/chat/featureAi';
+import { aiFeatures, chatExcerptTurns, defaultFeaturePrompts, featureAgent, featurePromptLimit, readFeatureAiSettings, readTitleRefresh, titleRefreshLimits, type AiFeature, type FeatureAiSettings, type FeatureEffort } from '../src/chat/featureAi';
 import { createRecordingEncoder } from './recording';
 import { clipboardFiles, fileBase64 } from './clipboardFiles';
 import { pastedFileLimit } from '../src/chat/pastedFiles';
 import { maxRecordingSeconds, minRecordingSeconds, readRecordingQuality, readRecordingSeconds, recordingProfiles, type RecordingQuality } from '../src/browser/recordingQuality';
 import { localFileLink } from '../src/chat/fileLinks';
 import { namesFile, resolveFileIcon, type FileIconTable } from '../src/chat/fileIconTable';
-import { canOfferPullRequest, runInFlight, runWatchKey, workflowFileUrl } from '../src/chat/githubStatus';
-import { sleepMinutes, sleepHours, exchangeAwakeMinutes, type SleepChoice } from '../src/power/sleepProtocol';
+import { canOfferPullRequest, isOwnPullRequest, isOwnRun, runInFlight, runsForPullRequest, runWatchKey, workflowFileUrl } from '../src/chat/githubStatus';
+import { sleepMinutes, sleepHours, exchangeAwakeMinutes, type SleepChoice, type SleepState } from '../src/power/sleepProtocol';
 import { isAgentAuthenticationError } from '../src/chat/agentAuthText';
 import { frontStripId, shouldFocusComposer, stripTabs, terminalAddition, terminalCloseText, terminalTabShown, terminalTabTitle, visibleTerminalFront, withPendingTitle, type StripTab } from './terminalTabs';
 import type { TerminalView } from './terminalView';
@@ -41,6 +43,20 @@ import { agentControlRow, askAgentRows, type AskRow, chatTargetRows, chipShown, 
  * so it is read here, in the first statements.
  */
 const scriptNonce = (document.currentScript as HTMLScriptElement | null)?.nonce || undefined;
+/*
+ * Per-device choices kept before the split from AI Browser (2026-11-14) used
+ * `aiBrowser.*` keys; they are copied to `hoverdeck.*` where unset, before
+ * anything reads them. The old keys are left as they were.
+ */
+try {
+	const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+	for (const key of keys) {
+		if (!key?.startsWith('aiBrowser.')) { continue; }
+		const next = 'hoverdeck.' + key.slice('aiBrowser.'.length);
+		const value = localStorage.getItem(key);
+		if (value !== null && localStorage.getItem(next) === null) { localStorage.setItem(next, value); }
+	}
+} catch { /* storage unavailable: nothing to carry over */ }
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
@@ -70,13 +86,14 @@ import type {
 	ChatAgent,
 	AgentId, AllAgentsChat, AgentQuestion, AgentUsage, ApprovalEntry, UsageAlert, ToolbarParam, ToolbarResult, ToolbarRun, ToolbarSkill, ApprovalKind, ApprovalMode, AttachmentChip, AttachmentKind, PastedAttachment, ChatCommand, ChatEntry, ChatStats, ChatSummary, ChatTabStatus, ChatTabSummary, ChatViewMode, ChatViewState, HostToView, RepoMode, ToolEntry, ViewToHost, VoiceEvent, WorkdirFolder, GitBranchState, GitRemoteAction, WorkdirGitStatus,
 } from '../src/chat/chatProtocol';
-import type { ChatSound, ChatSoundSettings } from '../src/chat/chatProtocol';
+import type { ChatSound, ChatSoundSettings, PendingSend, SecurityGuardId, McpFeatureId } from '../src/chat/chatProtocol';
 import { chatSoundLabels, playChatSound, unlockChatSound } from './chatSound';
 unlockChatSound(document);
 import { ComposerSwipe, holdMs, swipeGapMs } from './composerSwipe';
 import { controlOf, connectionPermissionGroups, readConnectionPermissions, type ConnectionPermission, type Availability } from '../src/chat/core/commands';
 import { chatConnectionsEnabled } from '../src/chat/core/chatFeatures';
 import { describePrice, formatContext, modelFromCatalogItem, modelSummary, parseOptionalNumber } from '../src/chat/openrouterView';
+import { formatSendTime, localInputValue, parseLocalInput, scheduleHorizonMs, schedulePresets, untilSend } from './sendSchedule';
 // Every codicon the bundled font has, one per line (`name,char,code`); bundled
 // as text by esbuild, so the icon picker lists exactly what can be drawn.
 import codiconCsv from '@vscode/codicons/dist/codicon.csv';
@@ -355,11 +372,11 @@ const toolbarSettings = el('div', { class: 'toolbar-settings' }, selectorControl
 const toolbarAttachments = el('span', { class: 'toolbar-attachments' }, plusButton, browserButton, slashButton);
 /**
  * Sound when an agent finishes, or silence. The default is the user setting
- * `aiBrowser.chat.sound.enabled`; a press here overrides it on this device
+ * `hoverdeck.chat.sound.enabled`; a press here overrides it on this device
  * until that setting itself changes (the override remembers which default it overrode).
  */
 const soundButton = button([], { class: 'ghost round sound-button' });
-const soundOverrideKey = 'aiBrowser.chat.soundOverride';
+const soundOverrideKey = 'hoverdeck.chat.soundOverride';
 function readSoundOverride(): { on: boolean; base: boolean } | undefined {
 	try {
 		const v = JSON.parse(localStorage.getItem(soundOverrideKey) ?? 'null') as unknown;
@@ -373,7 +390,7 @@ let soundOverride = readSoundOverride();
  * (`soundSettings` is editor-only). A key not set here follows the editor.
  */
 type DeviceSound = Partial<Pick<ChatSoundSettings, 'sound' | 'volume' | 'repeat' | 'notify' | 'notifyAway' | 'activeChat'>>;
-const deviceSoundKey = 'aiBrowser.chat.deviceSound';
+const deviceSoundKey = 'hoverdeck.chat.deviceSound';
 function readDeviceSound(): DeviceSound {
 	try {
 		const v = JSON.parse(localStorage.getItem(deviceSoundKey) ?? 'null') as Record<string, unknown> | null;
@@ -448,6 +465,28 @@ function soundOnFinish(s: ChatViewState): void {
 	}
 	if (snd.notify) { notifyFinished(s, finished); }
 }
+/** The agent signal ids seen, per tab; seeded by the first state so a reload replays nothing. */
+let signalsSeen: Map<string, number> | undefined;
+/**
+ * A sound or an alert an agent asked for (`ChatTabSummary.signal`). The user asked for it through
+ * the agent, so the speaker button does not silence it, as a rung GitHub bell is not. The editor's
+ * host shows the system notification itself; the website shows the page's own, whatever the
+ * window's focus — it is urgent. Chrome leaves both to VS Code on the same computer.
+ */
+function agentSignals(s: ChatViewState): void {
+	const before = signalsSeen;
+	signalsSeen = new Map(s.tabs.flatMap(t => t.signal ? [[t.id, t.signal.id] as const] : []));
+	if (!before || s.surface === 'chrome') { return; }
+	for (const tab of s.tabs) {
+		const signal = tab.signal;
+		if (!signal || before.get(tab.id) === signal.id || Date.now() - signal.at > 60_000) { continue; }
+		const snd = effectiveSound(s);
+		if (snd && signal.sound && Object.hasOwn(chatSoundLabels, signal.sound)) { playChatSound(signal.sound, snd.volume, Math.min(5, Math.max(1, signal.repeat | 0))); }
+		if (signal.alert && remoteSurface(s) && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+			try { new Notification(signal.alert.title, { body: signal.alert.text, tag: `ai-browser-alert-${tab.id}`, requireInteraction: true }); } catch { /* not allowed here */ }
+		}
+	}
+}
 /**
  * A system notification for the tabs that just finished. The editor asks the
  * host, which knows whether the VS Code window is focused; Chrome and the
@@ -456,7 +495,7 @@ function soundOnFinish(s: ChatViewState): void {
 function notifyFinished(s: ChatViewState, tabs: readonly ChatTabSummary[]): void {
 	if (!completionAlertsEnabled(s)) { return; }
 	const failed = tabs.some(t => t.status === 'failed');
-	const title = tabs.length === 1 ? tabs[0].title || 'AI Browser chat' : `${tabs.length} chats finished`;
+	const title = tabs.length === 1 ? tabs[0].title || `${productLabel()} chat` : `${tabs.length} chats finished`;
 	const text = failed ? 'An agent finished with an error.' : tabs.length === 1 ? 'The agent finished its work.' : tabs.map(t => t.title).join(', ');
 	if (!s.surface || s.surface === 'editor') { post({ type: 'osNotify', title, text }); return; }
 	if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { return; }
@@ -465,7 +504,8 @@ function notifyFinished(s: ChatViewState, tabs: readonly ChatTabSummary[]): void
 }
 /** Chrome and the website may show a notification only once the user allowed it, asked on their first click. */
 document.addEventListener('pointerdown', () => {
-	if (!completionAlertsEnabled() || !effectiveSound()?.notify || !remoteSurface()) { return; }
+	// An agent's alert (`chat_alert`) needs the permission even with finish notifications off.
+	if (!completionAlertsEnabled() || !remoteSurface()) { return; }
 	if (typeof Notification !== 'undefined' && Notification.permission === 'default') { void Notification.requestPermission().catch(() => undefined); }
 }, { capture: true });
 const toolbarEnd = el('span', { class: 'toolbar-end' }, soundButton, contextButton, usageButton);
@@ -616,7 +656,7 @@ for (const tab of Object.values(composerTabButtons)) { tab.setAttribute('role', 
  * The composer tabs can be put in any order by dragging one onto another; the
  * order is per device (`localStorage`), and a tab a later build adds goes at the end.
  */
-const composerOrderKey = 'aiBrowser.chat.composerTabOrder';
+const composerOrderKey = 'hoverdeck.chat.composerTabOrder';
 function applyComposerOrder(): void {
 	let saved: unknown;
 	try { saved = JSON.parse(localStorage.getItem(composerOrderKey) ?? 'null'); } catch { saved = null; }
@@ -668,7 +708,7 @@ applyComposerOrder();
  * `localStorage`; all by default. Chat is always there, and with every other
  * tab off the whole row is hidden, Chat's title with it.
  */
-const composerHiddenKey = 'aiBrowser.chat.composerTabsHidden';
+const composerHiddenKey = 'hoverdeck.chat.composerTabsHidden';
 const optionalComposerTabs: [ComposerTab, string][] = [['skills', 'Skills'], ['activity', 'Activity'], ['history', 'Prompts'], ['bash', 'Bash'], ['files', 'Files'], ['github', 'GitHub']];
 function readHiddenComposerTabs(): Set<ComposerTab> {
 	let saved: unknown;
@@ -1288,10 +1328,38 @@ function renderComposerHistory(): void {
 	prompts.reverse();
 	const earlier = state?.entriesOffset ?? 0;
 	const root = state?.workdir.current?.path;
-	const shape = JSON.stringify([state?.chatId ?? '', root, earlier, composerHistoryShown, prompts]);
+	const waiting = (state?.pendingSends ?? []).map(p => ({ id: p.id, kind: pendingKind(p), text: p.text, at: p.at, cancel: p.kind === 'queue' || (!!p.withdrawable && !p.withdrawing) }));
+	const shape = JSON.stringify([state?.chatId ?? '', root, earlier, composerHistoryShown, prompts, waiting]);
 	if (shape === composerHistoryShape) { return; }
 	composerHistoryShape = shape;
 	composerHistoryList.replaceChildren();
+	// Messages not sent yet come first: scheduled ones by time, then the rest in the order they go.
+	if (waiting.length) {
+		composerHistoryList.append(clHead('Waiting to send', waiting.length, 'Messages that have not gone to the agent yet'));
+		const ordered = [...waiting].sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity));
+		for (const w of ordered) {
+			const line = (w.text.trim() || '(attachments)').replace(/\s+/g, ' ');
+			const when = w.at !== undefined ? el('span', { class: 'cl-when', text: `${formatSendTime(w.at, new Date())} · ${untilSend(w.at, Date.now())}` })
+				: el('span', { text: w.kind === 'steer' ? 'Send now' : 'Send later' });
+			if (w.at !== undefined) { when.dataset.at = String(w.at); }
+			const row = button(clRow(
+				el('span', { class: `cl-lead cl-icon pending-dot ${w.kind}` }, icon(w.kind === 'steer' ? 'arrow-up' : w.kind === 'scheduled' ? 'calendar' : 'clock')),
+				line.length > 200 ? `${line.slice(0, 200)}…` : line, [when], icon('arrow-down', 'cl-chevron')),
+				{ class: 'cl-row', title: `${w.text.slice(0, 1000)}\nShow it below the conversation` });
+			row.addEventListener('click', () => {
+				const card = pendingBox.querySelector<HTMLElement>(`.pending-send[data-id="${CSS.escape(w.id)}"]`);
+				card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+				card?.classList.remove('flash'); void card?.offsetWidth; card?.classList.add('flash');
+			});
+			const pair = el('div', { class: 'cl-row-pair' }, row);
+			if (w.cancel) {
+				const cancel = button([icon('close'), el('span', { text: 'Cancel' })], { class: 'cl-answer', title: 'Do not send it' });
+				cancel.addEventListener('click', () => post({ type: 'unqueue', id: w.id }));
+				pair.append(cancel);
+			}
+			composerHistoryList.append(pair);
+		}
+	}
 	composerHistoryList.append(clHead('Your messages', prompts.length, 'Messages you sent in this chat; click one to scroll to it'));
 	if (!prompts.length) { composerHistoryList.append(clEmpty('history', 'No messages in this chat yet.')); return; }
 	const shown = prompts.slice(0, composerHistoryShown);
@@ -1384,7 +1452,7 @@ function syncProcessWatch(): void {
 }
 document.addEventListener('visibilitychange', syncProcessWatch);
 /**
- * Focus in this webview, told to the host for `aiBrowser.chatFocused`: the
+ * Focus in this webview, told to the host for `hoverdeck.chatFocused`: the
  * Cmd/Ctrl+W keybinding closes a chat tab only while the chat has the keyboard,
  * and goes back to closing the editor everywhere else. Editor only.
  */
@@ -1574,6 +1642,11 @@ let githubAt = 0;
 let composerGithubShape = '';
 /** Actions runs whose bell is on (`runWatchKey`), as the host last said: it polls them and says when one ends. */
 let githubWatched = new Set<string>();
+/**
+ * The run picked under a pull request: its row in Actions is scrolled to and marked. Kept until
+ * the time passes, so a rebuild in between (a poll, a refresh) draws the mark again.
+ */
+let githubFocusRun: { key: string; until: number } | undefined;
 /** The run whose bell was just rung here, so it plays its ring once rather than on every rebuild. */
 let githubBellRang = '';
 /** A press inside the GitHub list holds its rebuild until release (#365): a refresh landing mid-click lost it. */
@@ -1630,13 +1703,44 @@ setInterval(() => {
 	if (composerTab !== 'github' || document.hidden || githubPending) { return; }
 	if (Date.now() - githubAt >= githubAutoMs) { requestGithub(true); }
 }, 5_000);
-function requestGithub(force = false, signIn = false): void {
+function requestGithub(force = false, signIn = false, refresh = false): void {
 	if (!gitFolder || (githubPending && !signIn)) { renderComposerGithub(); return; }
 	if (!force && !signIn && githubAnswer && Date.now() - githubAt < 30_000) { renderComposerGithub(); return; }
 	githubPending = true;
 	githubAskedAt = Date.now();
-	post({ type: 'githubStatus', folder: gitFolder, ...(signIn ? { signIn } : {}) });
+	if (refresh) { githubRefreshOwed = false; }
+	post({ type: 'githubStatus', folder: gitFolder, ...(signIn ? { signIn } : {}), ...(refresh ? { refresh } : {}) });
 	renderComposerGithub();
+}
+/**
+ * The Refresh button reads GitHub again, bypassing the host's 30 s cache, at most
+ * once per `githubRefreshMs`. A press inside that window, or while a request is
+ * on its way, is not dropped (asked for): it is remembered, once however many
+ * presses, and runs as soon as the window ends — the button shows it is queued.
+ */
+const githubRefreshMs = 10_000;
+let githubRefreshOwed = false;
+let githubRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+function githubManualRefresh(): void {
+	if (!gitFolder) { return; }
+	githubRefreshOwed = true;
+	if (githubPending) { renderComposerGithub(); return; }
+	const wait = githubAskedAt + githubRefreshMs - Date.now();
+	if (wait > 0) {
+		githubRefreshTimer ??= setTimeout(() => {
+			githubRefreshTimer = undefined;
+			if (!githubRefreshOwed) { return; }
+			if (composerTab !== 'github') { githubRefreshOwed = false; githubAt = 0; renderComposerGithub(); return; }
+			githubManualRefresh();
+		}, wait);
+		renderComposerGithub();
+		return;
+	}
+	requestGithub(true, false, true);
+}
+function githubForgetRefresh(): void {
+	githubRefreshOwed = false;
+	if (githubRefreshTimer) { clearTimeout(githubRefreshTimer); githubRefreshTimer = undefined; }
 }
 /**
  * "Create pull request" for the working folder's branch, when it has none. The
@@ -1718,19 +1822,22 @@ function renderComposerGithub(): void {
 }
 function renderComposerGithubList(): void {
 	if (composerTab !== 'github') { return; }
-	const shape = JSON.stringify([gitFolder ?? '', githubPending, githubAnswer ?? null, githubPrOpen, githubPrCreatingHere(), githubPrError, githubPrCreated ?? null, [...githubWatched]]);
+	const shape = JSON.stringify([gitFolder ?? '', githubPending, githubRefreshOwed, githubAnswer ?? null, githubPrOpen, githubPrCreatingHere(), githubPrError, githubPrCreated ?? null, [...githubWatched]]);
 	if (shape === composerGithubShape) { return; }
 	if (githubPressed) { githubStale = true; return; }
 	composerGithubShape = shape;
 	composerGithubList.replaceChildren();
 	// VS Code's own refresh: an icon button whose glyph becomes the spinning `loading` codicon
 	// while a request runs (asked for), in a box of the same size so nothing moves.
-	const refresh = button([githubPending ? codiconSpinner() : icon('refresh')],
-		{ class: 'ghost gh-refresh', title: githubPending ? 'Refreshing…' : 'Refresh' });
-	refresh.setAttribute('aria-label', githubPending ? 'Refreshing' : 'Refresh');
+	// A press while one is running or inside the throttle is queued, not ignored: the
+	// button then reads "Refresh queued" until it runs (once, however many presses).
+	const queued = githubRefreshOwed;
+	const refreshTip = githubPending ? (queued ? 'Refreshing… another refresh is queued' : 'Refreshing…') : queued ? 'Refresh queued — runs in a moment' : 'Refresh';
+	const refresh = button([githubPending ? codiconSpinner() : icon(queued ? 'watch' : 'refresh')],
+		{ class: `ghost gh-refresh${queued ? ' queued' : ''}`, title: refreshTip });
+	refresh.setAttribute('aria-label', refreshTip);
 	refresh.setAttribute('aria-busy', String(githubPending));
-	refresh.addEventListener('click', () => requestGithub(true));
-	refresh.disabled = githubPending;
+	refresh.addEventListener('click', githubManualRefresh);
 	const status = githubAnswer?.status;
 	const head = clHead(status ? status.repo : 'GitHub', undefined, status ? `Read with the ${githubSourceName[status.source]}` : undefined, refresh);
 	// The repository's name opens its root on GitHub, in the system browser (asked for), and so
@@ -1790,6 +1897,16 @@ function renderComposerGithubList(): void {
 		log.setAttribute('role', 'status');
 		composerGithubList.append(log);
 	}
+	// Merged and the remote branch kept: say so where the offer would be, rather than offering it again.
+	const merged = status.mergedPr;
+	if (merged && !(created && !createdListed)) {
+		const link = button(['View', icon('link-external')], { class: 'gh-log-link', title: merged.url });
+		link.addEventListener('click', open(merged.url));
+		composerGithubList.append(el('div', { class: 'gh-log merged' },
+			el('span', { class: 'gh-log-icon' }, icon('git-merge')),
+			el('span', { class: 'gh-log-text' }, `${status.branch ?? 'This branch'} was merged in `, el('strong', { text: `#${merged.number}` })),
+			link));
+	}
 	if (canOfferPullRequest(status) && status.branch && !(created && !createdListed)) {
 		if (!githubPrOpen) {
 			const unpublished = status.published === false;
@@ -1829,7 +1946,10 @@ function renderComposerGithubList(): void {
 	}
 	if (!status.prs.length) { composerGithubList.append(clEmpty('git-pull-request', 'No open pull requests.')); }
 	for (const pr of status.prs) {
-		const meta: Child[] = [el('span', { text: `#${pr.number}` }), el('span', { class: 'cl-sep', text: '·' }), el('span', { text: pr.author })];
+		// Your own login in blue, and a blue edge at the left of the row (asked for): enough to tell at a glance whose it is.
+		const own = isOwnPullRequest(pr, status.viewer);
+		const meta: Child[] = [el('span', { text: `#${pr.number}` }), el('span', { class: 'cl-sep', text: '·' }),
+			el('span', { class: own ? 'gh-pr-author own' : 'gh-pr-author', text: pr.author })];
 		if (pr.updatedAt) { meta.push(el('span', { class: 'cl-sep', text: '·' }), el('span', { text: ago(Date.parse(pr.updatedAt)) })); }
 		if (pr.current) { meta.push(chip('this branch', 'mine')); }
 		if (created?.number === pr.number) { meta.push(el('span', { class: 'cl-chip new' }, icon('sparkle'), 'just opened')); }
@@ -1843,10 +1963,35 @@ function renderComposerGithubList(): void {
 		// A pull request just opened glows once, the first time the list carries it.
 		const fresh = created?.number === pr.number && githubPrGlowed !== pr.number;
 		if (fresh) { githubPrGlowed = pr.number; }
-		const row = button(clRow(lead, pr.title, meta, icon('link-external', 'cl-chevron')), { class: `cl-row gh-pr-row${pr.current ? ' current' : ''}${created?.number === pr.number ? ' just-opened' : ''}${fresh ? ' glow' : ''}`, title: `${pr.title}\n${pr.branch}\n${pr.url}` });
+		const row = button(clRow(lead, pr.title, meta, icon('link-external', 'cl-chevron')), { class: `cl-row gh-pr-row${own ? ' own' : ''}${pr.current ? ' current' : ''}${created?.number === pr.number ? ' just-opened' : ''}${fresh ? ' glow' : ''}`, title: `${pr.title}\n${pr.branch}\n${pr.url}` });
 		row.addEventListener('click', open(pr.url));
 		composerGithubList.append(row);
 		if (wanted && pr.current && !focusAfter) { focusAfter = row; }
+		// Its Actions runs, small, under it (asked for): the newest of each workflow on its branch.
+		// A click scrolls to that run in the Actions list below and marks it.
+		const prRuns = runsForPullRequest(status.repo, pr, status.runs);
+		if (prRuns.length) {
+			const list = el('div', { class: 'gh-pr-runs' });
+			for (const run of prRuns) {
+				const key = runWatchKey(status.repo, run.id);
+				const mark = el('span', { class: `gh-run ${run.state}` }, run.state === 'running' ? codiconSpinner() : icon(runIcon[run.state] ?? 'circle-outline'));
+				// The same line as the run's own meta in Actions (asked for): name · branch · event · time · file.
+				const line: Child[] = [mark, el('span', { class: 'gh-pr-run-name', text: run.name || run.title })];
+				const sep = () => el('span', { class: 'cl-sep', text: '·' });
+				line.push(sep(), el('span', { class: 'gh-pr-run-part', text: run.branch }), sep(), el('span', { class: 'gh-pr-run-part', text: run.event }));
+				if (run.actor) { line.push(sep(), el('span', { class: `gh-pr-run-part gh-run-actor${isOwnRun(run, status.viewer) ? ' own' : ''}`, text: run.actor })); }
+				if (run.updatedAt) { line.push(sep(), el('span', { class: 'gh-pr-run-part', text: ago(Date.parse(run.updatedAt)) })); }
+				if (run.current) { line.push(chip('this branch', 'mine')); }
+				if (run.workflowPath) { line.push(sep(), el('span', { class: 'gh-pr-run-file', text: run.workflowPath.slice(run.workflowPath.lastIndexOf('/') + 1) })); }
+				const item = button(line, { class: `gh-pr-run ${run.state}` });
+				item.dataset.tip = `${run.title && run.title !== run.name ? `${run.title}\n` : ''}${run.state} · ${run.event}\nShow in Actions`;
+				hoverTip.attach(item);
+				item.setAttribute('aria-label', `${run.name}: ${run.state}. Show in Actions`);
+				item.addEventListener('click', () => { hoverTip.hide(); showGithubRun(key); });
+				list.append(item);
+			}
+			composerGithubList.append(list);
+		}
 	}
 	if (focusAfter) {
 		const target = focusAfter;
@@ -1857,7 +2002,10 @@ function renderComposerGithubList(): void {
 	else if (!status.runs.length) { composerGithubList.append(clEmpty('play-circle', 'No workflow runs.')); }
 	for (const run of status.runs) {
 		const meta: Child[] = [el('span', { text: run.name })];
+		// Who started it, your own login in blue with a blue edge on the row, as for pull requests (asked for).
+		const own = isOwnRun(run, status.viewer);
 		meta.push(el('span', { class: 'cl-sep', text: '·' }), el('span', { text: run.branch }), el('span', { class: 'cl-sep', text: '·' }), el('span', { text: run.event }));
+		if (run.actor) { meta.push(el('span', { class: 'cl-sep', text: '·' }), el('span', { class: `gh-run-actor${own ? ' own' : ''}`, text: run.actor })); }
 		if (run.updatedAt) { meta.push(el('span', { class: 'cl-sep', text: '·' }), el('span', { text: ago(Date.parse(run.updatedAt)) })); }
 		if (run.current) { meta.push(chip('this branch', 'mine')); }
 		// The workflow file the run came from: a repository often has several workflows on
@@ -1888,7 +2036,9 @@ function renderComposerGithubList(): void {
 		const watched = githubWatched.has(key);
 		const bellable = (runInFlight(run.state) || watched) && !!gitFolder && gate('githubWatchRun').s === 'on';
 		const trail = el('span', { class: 'gh-run-trail' }, ...(bellable ? [el('span', { class: 'gh-watch-slot' })] : []), icon('link-external', 'cl-chevron'));
-		const row = button(clRow(lead, run.title || run.name, meta, trail), { class: `cl-row${run.current ? ' current' : ''}`, title: `${run.state} · ${run.event}${workflowFile ? `\n${workflowFile}` : ''}\n${run.url}` });
+		const focused = githubFocusRun?.key === key && githubFocusRun.until > Date.now();
+		const row = button(clRow(lead, run.title || run.name, meta, trail), { class: `cl-row gh-run-row${own ? ' own' : ''}${run.current ? ' current' : ''}${focused ? ' picked' : ''}`, title: `${run.state} · ${run.event}${workflowFile ? `\n${workflowFile}` : ''}\n${run.url}` });
+		row.dataset.runKey = key;
 		row.addEventListener('click', open(run.url));
 		if (bellable && gitFolder) {
 			const folder = gitFolder;
@@ -1918,6 +2068,18 @@ function renderComposerGithubList(): void {
 	}
 	if (githubAnswer.signIn) { composerGithubList.append(el('div', { class: 'cl-empty' }, el('span', { text: 'Only public data is shown.' }), signIn())); }
 }
+/** Scrolls the Actions list to a run picked under a pull request, marks it and gives it the focus. */
+function showGithubRun(key: string): void {
+	githubFocusRun = { key, until: Date.now() + 2000 };
+	const row = [...composerGithubList.querySelectorAll<HTMLElement>('.gh-run-row')].find(node => node.dataset.runKey === key);
+	if (!row) { return; }
+	row.classList.remove('picked');
+	void row.offsetWidth; // restart the mark's animation on a second click
+	row.classList.add('picked');
+	row.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+	row.focus({ preventScroll: true });
+	setTimeout(() => { if (githubFocusRun?.key === key && githubFocusRun.until <= Date.now()) { githubFocusRun = undefined; row.classList.remove('picked'); } }, 2050);
+}
 /**
  * The Files tab: the working folder as an explorer — list or tiles, a path bar,
  * selection (click, ⌘/Ctrl, Shift), open, attach, copy, cut, paste, copy path,
@@ -1928,7 +2090,7 @@ type FilesView = 'list' | 'grid';
 type FilesSort = 'name' | 'size' | 'mtime';
 let filesSort: FilesSort = 'name';
 let filesSortDescending = false;
-let filesView: FilesView = (localStorage.getItem('aiBrowser.files.view') as FilesView | null) === 'grid' ? 'grid' : 'list';
+let filesView: FilesView = (localStorage.getItem('hoverdeck.files.view') as FilesView | null) === 'grid' ? 'grid' : 'list';
 let filesDir = '';
 let filesFolder: string | undefined;
 let filesEntries: readonly FileEntryView[] = [];
@@ -2087,7 +2249,7 @@ function openFilesTab(): void {
 }
 function setFilesView(view: FilesView): void {
 	filesView = view;
-	localStorage.setItem('aiBrowser.files.view', view);
+	localStorage.setItem('hoverdeck.files.view', view);
 	renderFiles();
 }
 function selectedPaths(): string[] { return [...filesSelected].map(filesPathOf); }
@@ -2582,7 +2744,44 @@ const gitPopupError = el('div', { class: 'git-branch-error' });
 gitPopupError.setAttribute('role', 'status');
 const gitPopupList = el('div', { class: 'git-changes-list' });
 const gitPopupActions = el('div', { class: 'git-changes-actions' });
-gitPopup.append(gitPopupHeader, gitPopupError, gitPopupList, gitPopupActions);
+/**
+ * The commit message the user writes by hand, opened from the footer's "Write
+ * message" link. It lives outside `gitPopupActions`, which is rebuilt when the
+ * Git state changes, so typing is never rebuilt away (#365); its text outlives
+ * the window closing and is cleared only once a commit with it went through.
+ */
+const gitMessage = el('textarea', { class: 'git-commit-message' });
+gitMessage.rows = 2;
+gitMessage.spellcheck = true;
+gitMessage.placeholder = 'Commit message';
+gitMessage.setAttribute('aria-label', 'Commit message — the first line is the subject');
+const gitMessageHint = el('div', { class: 'git-commit-message-hint' }, el('span', {}, 'First line is the subject'), el('kbd', {}, /Mac/.test(navigator.platform) ? '⌘↵' : 'Ctrl+↵'));
+const gitMessageBox = el('div', { class: 'git-commit-message-box' }, gitMessage, gitMessageHint);
+gitMessageBox.hidden = true;
+gitPopup.append(gitPopupHeader, gitPopupError, gitPopupList, gitMessageBox, gitPopupActions);
+/** The message is the user's (the box is open), not the agent's. */
+let gitManual = false;
+/** A commit with the user's message was sent; it is cleared once that commit went through. */
+let gitManualSent: 'sent' | 'busy' | undefined;
+function fitGitMessage(): void {
+	gitMessage.style.height = 'auto';
+	gitMessage.style.height = `${Math.min(gitMessage.scrollHeight + 2, 160)}px`;
+}
+function setGitManual(on: boolean): void {
+	gitManual = on;
+	gitPopupPinned = true;
+	renderGitChanges();
+	if (on) { fitGitMessage(); gitMessage.focus(); } else { gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit.primary:not(:disabled)')?.focus(); }
+}
+gitMessage.addEventListener('input', () => { fitGitMessage(); renderGitChanges(); });
+gitMessage.addEventListener('keydown', e => {
+	if (e.isComposing) { return; }
+	if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+		// Stopped as well: VS Code's webview forwards every key to the workbench.
+		e.preventDefault(); e.stopPropagation();
+		if (gitMessage.value.trim() && (gitFiles?.staged.length ?? 0) > 0) { commitGitFiles('staged'); }
+	}
+});
 let gitFiles: WorkdirGitStatus | undefined;
 let gitError = '';
 let gitFetchError = '';
@@ -2603,9 +2802,12 @@ function changeGitFiles(action: 'stage' | 'unstage', path?: string): void {
 }
 function commitGitFiles(scope: 'staged' | 'all', push = false): void {
 	if (!gitFolder || !state || gitIndexPending) { return; }
+	const message = gitManual ? gitMessage.value : undefined;
+	if (message !== undefined && !message.trim()) { gitMessage.focus(); return; }
 	closePopups();
 	if (push) { pushAfterCommit = true; }
-	post({ type: 'gitCommit', folder: gitFolder, tabId: state.activeTab, scope, ...(push ? { push: true } : {}) });
+	gitManualSent = message !== undefined ? 'sent' : undefined;
+	post({ type: 'gitCommit', folder: gitFolder, tabId: state.activeTab, scope, ...(push ? { push: true } : {}), ...(message !== undefined ? { message } : {}) });
 }
 const fileThemeFonts = new Map<string, string>();
 /** The font family a file icon theme's font is loaded under, loading it once. */
@@ -2720,9 +2922,13 @@ function renderGitChanges(): void {
 	const commitAgentId = featureAgent(commitChoice, state?.selection.agent, id => !!state?.agents.some(a => a.id === id && a.available && a.models.length > 0));
 	const commitAgent = state?.agents.find(a => a.id === commitAgentId && a.available);
 	const modelAvailable = !!commitAgent?.models.length;
-	const busyReason = committing ? commit?.message ?? 'Committing…' : gitIndexPending ? 'Updating Git changes…' : branchBusy ? 'Switching branch…' : state?.running ? 'Wait for the agent to finish before changing Git files.' : '';
-	const commitReason = busyReason || (!modelAvailable ? 'Choose an available agent for commit messages in Chat Settings.' : '');
-	const shape = JSON.stringify([gitFiles, gitError, busyReason, commitReason, commitAgentId, commitChoice.effort]);
+	const busyReason = committing ? commit?.message ?? 'Committing…' : gitIndexPending ? 'Updating Git changes…' : branchBusy ? 'Switching branch…' : '';
+	const messageEmpty = !gitMessage.value.trim();
+	// A message written by hand needs no agent, only some text.
+	const commitReason = busyReason || (gitManual ? (messageEmpty ? 'Write a commit message first' : '') : !modelAvailable ? 'Choose an available agent for commit messages in Chat Settings.' : '');
+	gitMessageBox.hidden = !gitManual || !gitFiles || !(staged || unstaged);
+	gitMessage.disabled = !!busyReason;
+	const shape = JSON.stringify([gitFiles, gitError, busyReason, commitReason, commitAgentId, commitChoice.effort, gitManual]);
 	if (shape === gitPopupShape) { return; }
 	gitPopupShape = shape;
 	gitPopupError.textContent = gitError;
@@ -2759,42 +2965,62 @@ function renderGitChanges(): void {
 			gitPopupList.append(el('div', { class: 'git-changes-file' }, gitFileIcon(file), open, statusMark, move));
 		}
 	}
-	const note = (text: string) => gitPopupActions.append(el('div', { class: 'git-changes-hint' }, text));
-	const commitAction = (label: string, scope: 'staged' | 'all', pushLabel?: string) => {
-		const action = button([icon('git-commit'), label], { class: 'git-changes-commit', title: commitReason || `Generate a commit message with ${commitAgent?.name ?? 'the configured agent'}` });
-		action.disabled = !!commitReason;
-		action.addEventListener('click', () => commitGitFiles(scope));
-		// Below it, the same commit followed by a push — or a publish when the branch has no upstream.
-		gitPopupActions.append(action);
-		if (!pushLabel) { return; }
-		gitPopupActions.append(pushAction(scope, pushLabel));
+	// The footer: a row per commit choice, then one line saying who writes the
+	// message, or why nothing can be done.
+	const hint = (text: string, kind: 'info' | 'warning' = 'info', glyph?: string): HTMLElement => {
+		const line = el('div', { class: `git-changes-hint ${kind}` }, icon(glyph ?? (kind === 'warning' ? 'info' : 'sparkle')), el('span', {}, text));
+		gitPopupActions.append(line);
+		return line;
 	};
-	const pushAction = (scope: 'staged' | 'all', label: string) => {
-		const andPush = button([icon('cloud-upload'), label], { class: 'git-changes-commit', title: commitReason || 'Commit, then push the branch (publishing it if it has no upstream yet)' });
-		andPush.disabled = !!commitReason;
-		andPush.addEventListener('click', () => commitGitFiles(scope, true));
-		return andPush;
+	/** The footer's switch between the agent's message and one written by hand. */
+	const messageToggle = (): HTMLButtonElement => {
+		const label = gitManual ? `Let ${commitAgent?.name ?? 'the agent'} write it` : 'Write message';
+		const toggle = button([icon(gitManual ? 'sparkle' : 'edit'), label], { class: 'git-changes-link git-message-toggle', title: gitManual ? 'Generate the commit message instead (your text is kept)' : 'Write the commit message yourself' });
+		toggle.setAttribute('aria-expanded', String(gitManual));
+		toggle.addEventListener('click', () => setGitManual(!gitManual));
+		return toggle;
 	};
-	if (staged && unstaged) {
-		note('What would you like to commit?');
-		commitAction(`Commit staged (${staged})`, 'staged');
-		commitAction('Commit all changes', 'all', 'Commit all changes & Push');
-	} else if (staged) { commitAction(`Commit staged (${staged})`, 'staged'); }
-	else if (unstaged) {
-		note('Nothing staged. Add all changed files to Staged?');
-		const stage = button([icon('add'), 'Stage all files'], { class: 'git-changes-commit' });
+	if (!staged && !unstaged) {
+		gitPopupActions.append(el('div', { class: 'git-changes-clean' }, icon('check'), el('span', {}, 'Working tree clean — nothing to commit')));
+		return;
+	}
+	if (!staged) {
+		const stage = button([icon('add'), 'Stage all files'], { class: 'git-changes-commit primary', title: busyReason || 'Add every changed file to Staged' });
 		stage.disabled = !!busyReason;
 		stage.addEventListener('click', () => changeGitFiles('stage'));
-		gitPopupActions.append(stage);
-	} else { note('No changes to commit.'); }
-	if (busyReason || (staged && commitReason)) { note(busyReason || commitReason); }
-	if (staged && !modelAvailable && !busyReason) {
-		const choose = button(['Choose model…'], { class: 'ghost' });
+		gitPopupActions.append(el('div', { class: 'git-changes-row' }, stage));
+		hint(busyReason || 'Nothing staged yet. Stage files above, or all of them here.', busyReason ? 'warning' : 'info');
+		return;
+	}
+	// One row per commit choice — Commit staged, Commit all — each with a small
+	// Push on its right that commits and then pushes (asked for: minimal).
+	const total = new Set([...gitFiles.staged, ...gitFiles.unstaged].map(f => f.path)).size;
+	// Staged is the usual choice and gets the accent; All is the secondary one.
+	const row = (scope: 'staged' | 'all', label: string, count: number) => {
+		const files = `${count} ${count === 1 ? 'file' : 'files'}`;
+		const commit = button([icon('git-commit'), label, el('span', { class: 'git-commit-count' }, String(count))], { class: scope === 'staged' ? 'git-changes-commit primary' : 'git-changes-commit wide', title: commitReason || (gitManual ? `Commit ${files} with your message` : `Commit ${files} with a message from ${commitAgent?.name ?? 'the configured agent'}`) });
+		commit.disabled = !!commitReason;
+		commit.addEventListener('click', () => commitGitFiles(scope));
+		const push = button([icon('cloud-upload'), 'Push'], { class: 'git-changes-commit push', title: commitReason || `Commit ${files}, then push the branch (publishing it if it has no upstream yet)` });
+		push.setAttribute('aria-label', `${label} and push`);
+		push.disabled = !!commitReason;
+		push.addEventListener('click', () => commitGitFiles(scope, true));
+		gitPopupActions.append(el('div', { class: 'git-changes-row' }, commit, push));
+	};
+	row('staged', 'Commit staged', staged);
+	if (unstaged) { row('all', 'Commit all', total); }
+	if (busyReason) {
+		hint(busyReason, 'warning');
+	} else if (gitManual) {
+		hint(messageEmpty ? 'Write the message above' : 'Your message', 'info', 'edit').append(messageToggle());
+	} else if (commitReason) {
+		hint(commitReason, 'warning').append(messageToggle());
+		const choose = button(['Choose model…'], { class: 'git-changes-link' });
 		choose.addEventListener('click', () => { closePopups(); modelPill.click(); });
 		gitPopupActions.append(choose);
+	} else {
+		hint(`Message written by ${commitAgent?.name ?? 'the configured agent'}${commitChoice.effort ? ` · ${commitChoice.effort}` : ''}`).append(messageToggle());
 	}
-	// Commit staged & Push stands last in the window, below everything else (asked for).
-	if (staged) { gitPopupActions.append(pushAction('staged', `Commit staged (${staged}) & Push`)); }
 }
 function openGitChanges(pin: boolean): void {
 	if (!gitFolder) { return; }
@@ -2819,7 +3045,8 @@ commitButton.addEventListener('click', () => {
 	clearTimeout(gitOpenTimer); clearTimeout(gitCloseTimer);
 	if (gitPopup.classList.contains('open') && gitPopupPinned) { closePopups(); return; }
 	openGitChanges(true);
-	gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit:not(:disabled)')?.focus();
+	if (gitManual && !gitMessageBox.hidden) { fitGitMessage(); gitMessage.focus(); return; }
+	gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit.primary:not(:disabled)')?.focus();
 });
 commitButton.addEventListener('mouseenter', () => {
 	clearTimeout(gitCloseTimer);
@@ -3223,6 +3450,11 @@ app.append(featureSettingsPanel, sleepPopup, tabStrip, chatMain, selectorStrip, 
 
 let state: ChatViewState | undefined;
 
+/** The product's name, from the host; an older host sends none. */
+function productLabel(): string {
+	return state?.product || 'AI Browser';
+}
+
 /** Rows the user opened or closed by hand, by key; everything else uses its default. The shown chat's. */
 let toggled = new Map<string, boolean>();
 /**
@@ -3290,7 +3522,9 @@ function followDraft(s: ChatViewState): void {
 		closePalette();
 	}
 	draftTab = s.activeTab;
-	input.value = drafts[s.chatId] ?? (first ? savedView?.draft ?? '' : '');
+	endRecall();
+	// A draft kept with `[att:…]` markers — badges whose chips went while it was put away — gets them made again.
+	input.value = draftText(drafts[s.chatId] ?? (first ? savedView?.draft ?? '' : ''));
 	historyAt = inputHistory.length;
 	fromHistory = false;
 	const open = new Set(s.tabs.map(t => t.chatId));
@@ -3325,10 +3559,10 @@ let composerFocusPending = false;
  * without leaving it. Nothing is built twice: it is the same node, the same draft and the same send.
  * The host keeps `activeTab` on the pinning conversation while such a terminal is in front (`_syncTerminalOwner`).
  */
-const terminalMessagesKey = 'aiBrowser.terminal.messages';
+const terminalMessagesKey = 'hoverdeck.terminal.messages';
 let terminalMessages = (() => { try { return localStorage.getItem(terminalMessagesKey) === '1'; } catch { return false; } })();
 /** Height of the docked messages in px (per device); absent: 45% of the column. */
-const terminalChatHeightKey = 'aiBrowser.terminal.messagesHeight';
+const terminalChatHeightKey = 'hoverdeck.terminal.messagesHeight';
 let terminalChatHeight: number | undefined = (() => { try { const v = Number(localStorage.getItem(terminalChatHeightKey)); return v >= 80 ? v : undefined; } catch { return undefined; } })();
 const terminalChatResize = el('div', { class: 'terminal-chat-resize', title: 'Drag to resize · double-click to reset' });
 function applyTerminalChatHeight(): void {
@@ -3570,6 +3804,7 @@ vscode.onMessage(message => {
 			githubNoteWindowFocus(state.windowFocused);
 			{ const shape = [...attachedFilePaths()].join('\n'); if (shape !== filesAttachedShape) { filesAttachedShape = shape; renderFiles(); } }
 			soundOnFinish(state);
+			agentSignals(state);
 			renderSoundButton();
 			renderChromeConnection(state.chromeConnectionRequest);
 			render();
@@ -3708,7 +3943,8 @@ vscode.onMessage(message => {
    githubAnswer = message;
    githubAt = Date.now();
    renderComposerGithub();
-   if (githubAgain) { githubAgain = false; refreshGithubIfOpen(); }
+   if (githubRefreshOwed) { githubAgain = false; githubManualRefresh(); }
+   else if (githubAgain) { githubAgain = false; refreshGithubIfOpen(); }
    return;
   }
   case 'githubRunWatches': {
@@ -3791,7 +4027,9 @@ vscode.onMessage(message => {
 				// for good, and the queued message — usually the newest in the
 				// history, so the one recalled — went in twice. Left walking, the
 				// queue given back was lost at the next tab switch instead.
-				const base = currentDraft();
+				// A draft whose badges were settled away during the walk carries them as markers.
+				const base = fromHistory && !walkDraftLive ? draftText(currentDraft()) : currentDraft();
+				endRecall();
 				fromHistory = false;
 				historyAt = inputHistory.length;
 				input.value = base.trim() ? `${base}\n\n${message.text}` : message.text;
@@ -3799,6 +4037,7 @@ vscode.onMessage(message => {
 				saveDraft();
 				renderSend();
 				paintInput();
+				if (state) { syncAttachmentTokens(state); }
 				input.focus();
 			} else {
 				drafts[message.chatId] = drafts[message.chatId] ? `${drafts[message.chatId]}\n\n${message.text}` : message.text;
@@ -3819,8 +4058,16 @@ vscode.onMessage(message => {
 			remoteTerminalRender?.();
 			return;
 		case 'openSettings':
-            openFeatureSettings();
-            return;
+			openFeatureSettings(message.tab);
+			return;
+		case 'securitySettings':
+			securityData = message;
+			securityRender?.();
+			return;
+		case 'mcpFeatures':
+			mcpFeaturesData = message;
+			mcpFeaturesRender?.();
+			return;
         case 'featureAiSaved':
             featureSettingsSaving = false;
             // A change made while this save was on its way goes next; the fields keep what was typed.
@@ -3840,7 +4087,7 @@ vscode.onMessage(message => {
 		case 'setTabDraft':
 			drafts[message.chatId] = message.text;
 			if (state?.chatId === message.chatId) {
-				fromHistory = false; historyAt = inputHistory.length; input.value = message.text;
+				endRecall(); fromHistory = false; historyAt = inputHistory.length; input.value = message.text;
 				autosize(); saveDraft(); renderSend(); paintInput(); input.focus();
 			}
 			return;
@@ -3903,7 +4150,8 @@ vscode.onMessage(message => {
 			// It arrives after a send, which may be after the user has started
 			// walking again; a walk in progress keeps its place.
 			const atEnd = historyAt >= inputHistory.length;
-			inputHistory = [...message.items];
+			// Each entry carries what its badges stood for, so a recalled message's badges work again.
+			inputHistory = (message.entries ?? message.items).flatMap(entry => readAttachmentText(entry) ?? []);
 			historyAt = atEnd ? inputHistory.length : Math.min(historyAt, inputHistory.length);
 			return;
 		}
@@ -4074,7 +4322,7 @@ function terminalMenuItems(): MenuItem[] {
 		...(offer.shell ? [{ icon: 'terminal', label: 'New terminal', description: 'A shell in the folder of this chat', command: 'newTerminal' as const, run: () => post({ type: 'newTerminal' }) }] : []),
 		...offer.agents.map((agent, index) => ({
 			heading: index === 0 ? 'Open CLI agent terminal' : undefined,
-			icon: 'terminal', label: agent.name, description: agent.id === 'gemini' ? `${agent.name}'s own CLI (browser tools: Connect Gemini CLI)` : agent.id === 'opencode' || agent.id === 'pi' ? `${agent.name}'s own CLI (no browser tools in a terminal)` : `${agent.name}'s own CLI, with the browser tools`, command: 'newTerminal',
+			icon: 'terminal', label: agent.name, description: agent.id !== 'gemini' ? `${agent.name}'s own CLI, with the browser tools` : state?.externalAgents === false ? `${agent.name}'s own CLI (no browser tools in a terminal)` : `${agent.name}'s own CLI (browser tools: Connect Gemini CLI)`, command: 'newTerminal',
 			run: () => post({ type: 'newTerminal', agent: agent.id }),
 		})),
 	];
@@ -4207,7 +4455,7 @@ tabAdd.addEventListener('click', () => post({ type: 'newTab', location: 'here' }
 /**
  * "Allow remote access" on a terminal tab (the editor only): Chrome's side panel and the Exchange website may then watch it,
  * and type once it takes control. Disabled with the host's reason while it cannot be shared (the
- * `aiBrowser.chat.remoteTerminal` setting off, no encrypted connection); absent with a host that does not say.
+ * `hoverdeck.chat.remoteTerminal` setting off, no encrypted connection); absent with a host that does not say.
  */
 function websiteAccessRow(terminal: { readonly id: string; readonly remote?: boolean }): MenuItem[] {
 	const support = state?.terminalSupport;
@@ -4750,8 +4998,8 @@ function stripOf(s: ChatViewState): readonly StripTab[] {
  * own that folds. Both appear only once tabs of two projects are open.
  * The choice and the folded headings are per device (`localStorage`).
  */
-const projectFilterKey = 'aiBrowser.chat.projectFilter';
-const projectFoldKey = 'aiBrowser.chat.foldedProjects';
+const projectFilterKey = 'hoverdeck.chat.projectFilter';
+const projectFoldKey = 'hoverdeck.chat.foldedProjects';
 let projectFilter: string | undefined = (() => { try { return localStorage.getItem(projectFilterKey) ?? undefined; } catch { return undefined; } })();
 const foldedProjects = new Set<string>((() => { try { const v = JSON.parse(localStorage.getItem(projectFoldKey) ?? '[]') as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } })());
 /** The tab last in front in each project, brought back when the project is chosen again. */
@@ -4765,7 +5013,7 @@ projectBar.setAttribute('role', 'tablist');
 projectBar.setAttribute('aria-label', 'Projects');
 const projectHeads = new Map<string, { root: HTMLElement; shape: string }>();
 /** Each project's folder colour, a slot of the palette in chat.css (`.pc-0` … `.pc-11`), kept per device. */
-const projectColorKey = 'aiBrowser.chat.projectColors';
+const projectColorKey = 'hoverdeck.chat.projectColors';
 const projectColorSlots = 12;
 let projectColorMap: Record<string, number> = (() => {
 	try {
@@ -5827,7 +6075,9 @@ function renderThread(s: ChatViewState): void {
 		threadInner.replaceChildren(spacer);
 	}
 
-	if (!s.entries.length) {
+	// A message scheduled before anything was sent waits in the chat's own
+	// layout: the welcome would leave its card nowhere to be seen.
+	if (!s.entries.length && !s.pendingSends.length) {
 		// No spacer here: an empty chat centres its welcome in the panel rather
 		// than anchoring it to the bottom like a conversation. Rebuilt only when
 		// what it shows changes: another tab streaming posts the state every
@@ -5980,13 +6230,45 @@ thread.addEventListener('scroll', () => {
 }, { passive: true });
 
 /**
- * Messages not in the conversation yet, below it: one sent during a turn that
- * Claude Code has not taken in ("Waiting for the agent"), and the queue
- * (⌘/Ctrl+Enter, "Sent when this turn ends", with an x to take it back). Built
- * like prompts, so a sent message's flight lands on its row here.
+ * Messages not in the conversation yet, below it, as cards with a colour each
+ * (asked for, "Deferred messages 2.0"): **Send now** — sent during a turn and
+ * waiting for the agent to take it in (blue); **Send later** — queued for after
+ * the turn (amber), in the order the agent will get them, draggable; and
+ * **Scheduled** — a Send later with a time (violet), sent at that time, or when
+ * the turn running then ends. Every card has an ×; a queued one also Send now
+ * and a clock to give it a time. Built like prompts, so a sent message's flight
+ * lands on its bubble here.
  */
 const pendingBox = el('div', { class: 'pending-sends' });
 let pendingShown = '';
+/** The queued card being dragged: the box is not rebuilt under it, or the drag ends with no drop (#365). */
+let pendingDrag: string | undefined;
+let pendingDue = false;
+
+/** What a waiting message is, for its badge, colour and tooltip. */
+function pendingKind(p: PendingSend): 'steer' | 'queue' | 'scheduled' {
+	return p.kind === 'steer' ? 'steer' : p.at !== undefined ? 'scheduled' : 'queue';
+}
+
+/** A queued message the user may reorder, send now or schedule: not one prompt of a skill's chain. */
+function pendingMovable(p: PendingSend): boolean {
+	return p.kind === 'queue' && !(p.skill && !p.skill.background && p.skill.steps > 1);
+}
+
+/** The line under a card's badge: what it waits for. */
+function pendingStatus(p: PendingSend, place: number | undefined): string {
+	if (p.kind !== 'queue') {
+		return p.withdrawing ? 'Withdrawing…' : 'Waiting for the agent to take it in';
+	}
+	if (p.at !== undefined) {
+		return `${formatSendTime(p.at, new Date())} · ${untilSend(p.at, Date.now())}`;
+	}
+	const turn = place === 1 ? 'Next, when this turn ends' : place ? `#${place} in line` : 'When this turn ends';
+	return p.skill?.background ? `/${p.skill.name} — runs in the background · ${turn}`
+		: p.skill && p.skill.steps === 1 ? `/${p.skill.name} · ${turn}`
+		: p.skill ? `/${p.skill.name}, prompt ${p.skill.step} of ${p.skill.steps} — ${p.skill.check ? `sent if: ${p.skill.check}` : 'sent when the prompt before it is answered'}`
+		: turn;
+}
 
 function renderPendingSends(s: ChatViewState): void {
 	if (threadInner.lastElementChild !== pendingBox) {
@@ -5994,6 +6276,10 @@ function renderPendingSends(s: ChatViewState): void {
 	}
 	const shown = JSON.stringify([s.pendingSends, s.queuePaused, s.activeTab]);
 	if (shown === pendingShown) {
+		return;
+	}
+	if (pendingDrag) {
+		pendingDue = true;
 		return;
 	}
 	pendingShown = shown;
@@ -6007,6 +6293,9 @@ function renderPendingSends(s: ChatViewState): void {
 		paused.push(el('div', { class: 'pending-note queue-paused' }, icon('debug-pause'),
 			el('span', { text: `Queue paused by ${s.queuePaused.by} — nothing queued goes out until it is resumed` }), resume));
 	}
+	// The place in line counts what goes out when the turn ends; a scheduled one waits for its time.
+	let place = 0;
+	const movable = s.pendingSends.filter(pendingMovable);
 	pendingBox.replaceChildren(...paused, ...s.pendingSends.map(p => {
 		const bubble = el('div', { class: 'bubble' });
 		// Drawn as a sent prompt is: `@N` tokens in the text become badges, the rest go above it.
@@ -6033,26 +6322,176 @@ function renderPendingSends(s: ChatViewState): void {
 			});
 			bubble.append(text);
 		}
-		const note = el('div', { class: 'pending-note' },
-			icon(p.kind === 'queue' ? 'list-ordered' : 'watch'),
-			el('span', { text: p.kind !== 'queue' ? 'Waiting for the agent to take it in'
-				: p.skill?.background ? `/${p.skill.name} — runs in the background when this turn ends`
-				: p.skill && p.skill.steps === 1 ? `/${p.skill.name} — sent when this turn ends`
-				: p.skill ? `/${p.skill.name}, prompt ${p.skill.step} of ${p.skill.steps} — ${p.skill.check ? `sent if: ${p.skill.check}` : 'sent when the turn before it ends'}`
-					: 'Sent when this turn ends' }));
-		// The × sits inside the message's own box, at its right — asked for: under
-		// it, at the end of the note, it was small and far from what it removes.
-		const body = el('div', { class: 'pending-body' }, bubble);
-		if (p.kind === 'queue' || p.withdrawable) {
-			const remove = button([icon(p.withdrawing ? 'loading' : 'close')], { class: 'pending-remove',
-				title: p.kind === 'queue' ? 'Remove from the queue — do not send'
-					: p.withdrawing ? 'Withdrawing…' : 'Withdraw — if the agent has not taken it in yet' });
-			if (p.withdrawing) { remove.disabled = true; }
-			remove.addEventListener('click', () => post({ type: 'unqueue', id: p.id }));
-			body.append(remove);
+		const kind = pendingKind(p);
+		const placeHere = kind === 'queue' ? ++place : undefined;
+		const badge = el('span', { class: 'pending-badge' },
+			icon(kind === 'steer' ? 'arrow-up' : kind === 'scheduled' ? 'calendar' : 'clock'),
+			el('span', { text: kind === 'steer' ? 'Send now' : kind === 'scheduled' ? 'Scheduled' : 'Send later' }));
+		const status = el('span', { class: 'pending-status', text: pendingStatus(p, placeHere) });
+		if (p.at !== undefined) { status.dataset.at = String(p.at); status.title = new Date(p.at).toLocaleString(); }
+		const actions = el('div', { class: 'pending-actions' });
+		const head = el('div', { class: 'pending-head' });
+		const card = el('div', { class: `prompt pending-send ${kind}${p.kind === 'queue' ? ' queue' : ''}` });
+		card.dataset.id = p.id;
+		if (pendingMovable(p)) {
+			const index = movable.indexOf(p);
+			// A handle to drag by, and to move with the keyboard: Alt+↑ / Alt+↓.
+			const grip = button([icon('gripper')], { class: 'pending-grip', title: 'Drag to change the order the agent takes them in (Alt+↑ / Alt+↓)' });
+			grip.addEventListener('keydown', event => {
+				if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) { return; }
+				event.preventDefault();
+				const to = event.key === 'ArrowUp' ? index - 1 : index + 2;
+				if (to < 0 || (event.key === 'ArrowDown' && index >= movable.length - 1)) { return; }
+				post({ type: 'queueAction', id: p.id, action: 'move', before: movable[to]?.id });
+				refocusPendingGrip = p.id;
+			});
+			// The handle only once there is something to reorder: a lone card's text starts at the edge.
+			if (movable.length > 1) { card.draggable = true; head.append(grip); }
+			wirePendingDrag(card, p.id);
+			const now = button([icon('send')], { class: 'pending-action pending-now', title: p.skill?.background ? 'Run it now, in the background' : 'Send now — into the running turn if there is one' });
+			now.addEventListener('click', () => post({ type: 'queueAction', id: p.id, action: 'sendNow' }));
+			actions.append(now);
+			if (!p.skill) {
+				const when = button([icon(kind === 'scheduled' ? 'calendar' : 'watch')], { class: 'pending-action pending-when', title: kind === 'scheduled' ? 'Change the time' : 'Send at a time…' });
+				when.addEventListener('click', () => openSchedulePicker(when, p.at, at => {
+					post(at === undefined ? { type: 'queueAction', id: p.id, action: 'unschedule' } : { type: 'queueAction', id: p.id, action: 'schedule', at });
+				}, kind === 'scheduled'));
+				actions.append(when);
+			}
 		}
-		return el('div', { class: `prompt pending-send ${p.kind}` }, body, note);
+		head.append(badge, status);
+		// The × for every card: a queued one is taken back at once; a Send now one
+		// only while the agent can still drop it (Claude Code), else it says why not.
+		const remove = button([icon(p.withdrawing ? 'loading' : 'close')], { class: 'pending-action pending-remove',
+			title: p.kind === 'queue' ? 'Cancel — do not send'
+				: p.withdrawing ? 'Withdrawing…'
+				: p.withdrawable ? 'Cancel — withdraw it if the agent has not taken it in yet'
+				: 'Cannot be cancelled: this agent takes a message into the running turn at once' });
+		if (p.withdrawing || (p.kind !== 'queue' && !p.withdrawable)) { remove.disabled = true; }
+		remove.addEventListener('click', () => post({ type: 'unqueue', id: p.id }));
+		actions.append(remove);
+		head.append(actions);
+		card.append(head, el('div', { class: 'pending-body' }, bubble));
+		return card;
 	}));
+	if (refocusPendingGrip) {
+		pendingBox.querySelector<HTMLElement>(`.pending-send[data-id="${CSS.escape(refocusPendingGrip)}"] .pending-grip`)?.focus();
+		refocusPendingGrip = undefined;
+	}
+}
+let refocusPendingGrip: string | undefined;
+
+/** Refills the scheduled cards' "in 25 min" in place, once a minute — never a rebuild (#365). */
+setInterval(() => {
+	for (const span of pendingBox.querySelectorAll<HTMLElement>('.pending-status[data-at]')) {
+		const time = Number(span.dataset.at);
+		span.textContent = `${formatSendTime(time, new Date())} · ${untilSend(time, Date.now())}`;
+	}
+	for (const span of composerHistoryList.querySelectorAll<HTMLElement>(".cl-when[data-at]")) {
+		const time = Number(span.dataset.at);
+		span.textContent = `${formatSendTime(time, new Date())} · ${untilSend(time, Date.now())}`;
+	}
+}, 30_000);
+
+/**
+ * Drag a queued card onto another to put it before or after that one, by
+ * which half of the card the pointer is on. Only among queued cards that may
+ * move; a skill's chain stays together (the host puts a drop on it before it).
+ */
+function wirePendingDrag(card: HTMLElement, id: string): void {
+	card.addEventListener('dragstart', event => {
+		// Not from a selection or a badge inside the bubble: those drag their own data.
+		if (!(event.target instanceof HTMLElement) || event.target !== card) { return; }
+		pendingDrag = id;
+		event.dataTransfer?.setData('application/x-ai-browser-pending', id);
+		if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; }
+		requestAnimationFrame(() => card.classList.add('dragging'));
+	});
+	card.addEventListener('dragend', () => {
+		pendingDrag = undefined;
+		card.classList.remove('dragging');
+		pendingBox.querySelectorAll('.drop-before, .drop-after').forEach(node => node.classList.remove('drop-before', 'drop-after'));
+		if (pendingDue && state) { pendingDue = false; renderPendingSends(state); }
+	});
+	card.addEventListener('dragover', event => {
+		if (!pendingDrag || pendingDrag === id || !card.classList.contains('queue')) { return; }
+		event.preventDefault();
+		if (event.dataTransfer) { event.dataTransfer.dropEffect = 'move'; }
+		const box = card.getBoundingClientRect();
+		const after = event.clientY > box.top + box.height / 2;
+		pendingBox.querySelectorAll('.drop-before, .drop-after').forEach(node => node !== card && node.classList.remove('drop-before', 'drop-after'));
+		card.classList.toggle('drop-after', after);
+		card.classList.toggle('drop-before', !after);
+	});
+	card.addEventListener('dragleave', event => {
+		if (!card.contains(event.relatedTarget as Node | null)) { card.classList.remove('drop-before', 'drop-after'); }
+	});
+	card.addEventListener('drop', event => {
+		const dragged = pendingDrag;
+		if (!dragged || dragged === id) { return; }
+		event.preventDefault();
+		const after = card.classList.contains('drop-after');
+		card.classList.remove('drop-before', 'drop-after');
+		// "After this one" is "before the next queued card", or the end.
+		const cards = [...pendingBox.querySelectorAll<HTMLElement>('.pending-send.queue')].map(node => node.dataset.id).filter(x => x && x !== dragged);
+		const before = after ? cards[cards.indexOf(id) + 1] : id;
+		post({ type: 'queueAction', id: dragged, action: 'move', before });
+	});
+}
+
+/**
+ * When to send: quick choices, a date and time of one's own, and — for a
+ * message that has one — "when this turn ends" to take the time away. Drawn in
+ * the parameters popover, never a QuickPick (it would pause a browser tab).
+ */
+function openSchedulePicker(anchor: HTMLElement, current: number | undefined, choose: (at: number | undefined) => void, clearable = false): void {
+	const now = new Date();
+	const presets = schedulePresets(now).map(preset => {
+		const row = button([el('span', { class: 'sched-label', text: preset.label }), el('span', { class: 'sched-time', text: formatSendTime(preset.at, now) })], { class: 'sched-preset' });
+		row.addEventListener('click', () => {
+			// Relative presets are counted from the click, not from when the picker
+			// opened: "In 15 minutes" chosen 20 minutes later must not send at once.
+			const fresh = schedulePresets(new Date()).find(p => p.label === preset.label)?.at ?? preset.at;
+			if (fresh <= Date.now()) { return; }
+			closePopups();
+			choose(fresh);
+		});
+		return row;
+	});
+	const field = el('input', { class: 'sched-input' }) as HTMLInputElement;
+	field.type = 'datetime-local';
+	field.min = localInputValue(Date.now() + 60_000);
+	field.max = localInputValue(Date.now() + scheduleHorizonMs);
+	field.value = localInputValue(current ?? Date.now() + 60 * 60_000);
+	const error = el('div', { class: 'sched-error' });
+	error.hidden = true;
+	const set = button([el('span', { text: 'Schedule' })], { class: 'primary', title: 'Send at this time (Enter)' });
+	const pick = () => {
+		const at = parseLocalInput(field.value);
+		if (at === undefined) { error.textContent = 'Enter a date and a time.'; error.hidden = false; return; }
+		if (at <= Date.now()) { error.textContent = 'That time has passed.'; error.hidden = false; return; }
+		if (at > Date.now() + scheduleHorizonMs) { error.textContent = 'At most a year ahead.'; error.hidden = false; return; }
+		closePopups();
+		choose(at);
+	};
+	set.addEventListener('click', pick);
+	field.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); pick(); } });
+	const parts: HTMLElement[] = [
+		el('div', { class: 'menu-heading', text: 'Send at a time' }),
+		el('div', { class: 'sched-presets' }, ...presets),
+		el('div', { class: 'sched-custom' }, field, set),
+		error,
+	];
+	if (clearable) {
+		const clear = button([icon('clock'), el('span', { text: 'Send when this turn ends instead' })], { class: 'ghost sched-clear' });
+		clear.addEventListener('click', () => { closePopups(); choose(undefined); });
+		parts.push(clear);
+	}
+	parts.push(el('div', { class: 'sched-hint', text: 'It goes out at that time, or once the turn running then ends. VS Code has to be open.' }));
+	paramsPopup.replaceChildren(...parts);
+	paramsPopup.onkeydown = null;
+	openAbove(paramsPopup, anchor, 'right');
+	(presets[0] ?? field).focus();
 }
 
 /**
@@ -6292,15 +6731,17 @@ function renderTail(tail: HTMLElement, s: ChatViewState, turn: Turn, last: boole
 				liquidLoader('working-glyph'),
 				el('span', { class: 'shimmer', text: `${runningAgents.length} agent${runningAgents.length === 1 ? '' : 's'} running` })) : '',
 			runningAgents.length ? el('ul', { class: 'agents-running-list' },
-				...runningAgents.map(a => el('li', {}, agentRunningRow(a)))) : '');
+				...runningAgents.map((a, i) => el('li', {}, agentRunningRow(a, i)))) : '');
 	}
 }
 
 /** A background agent under a finished turn; its title opens its own card. */
-function agentRunningRow(a: ToolEntry): HTMLElement {
+function agentRunningRow(a: ToolEntry, index: number): HTMLElement {
 	const title = agentTitle(a);
 	const dot = el('span', { class: `agents-running-dot ${a.status}` });
 	dot.setAttribute('aria-hidden', 'true');
+	// each dot breathes a fixed step after the one above, so the list pulses top to bottom (asked for)
+	dot.style.setProperty('--agent-row', String(index));
 	const line = button([
 		dot,
 		el('span', { class: 'agents-running-title', text: title }),
@@ -6380,7 +6821,7 @@ reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) { st
  * says what the agents can do with what is available.
  */
 function showChromeInstall(trigger: HTMLElement): void {
-	const heading = el('h2', { class: 'news-dialog-title', text: 'Install AI Browser for Chrome' });
+	const heading = el('h2', { class: 'news-dialog-title', text: `Install ${productLabel()} for Chrome` });
 	heading.id = 'chrome-install-title';
 	const close = button([icon('close')], { class: 'ghost round', title: 'Close installation guide' });
 	close.setAttribute('aria-label', 'Close installation guide');
@@ -6389,7 +6830,7 @@ function showChromeInstall(trigger: HTMLElement): void {
 		'Download the ZIP and extract it to a folder you will keep.',
 		'Open chrome://extensions in Chrome and enable Developer mode.',
 		'Click Load unpacked and select the extracted folder containing manifest.json.',
-		'Open AI Browser from Chrome’s Extensions menu and click Connect.',
+		`Open ${productLabel()} from Chrome’s Extensions menu and click Connect.`,
 		'Click Allow in your VS Code chat. If several editor windows are open, choose one in Chrome first.',
 	]) { steps.append(el('li', { text })); }
 	const dialog = el('dialog', { class: 'news-dialog' },
@@ -6414,7 +6855,7 @@ function welcome(s: ChatViewState): HTMLElement {
 	const available = s.agents.filter(a => a.available);
 	const box = el('div', { class: 'welcome' },
 		icon('globe', 'welcome-icon'),
-		el('div', { class: 'welcome-title', text: 'AI Browser' }));
+		el('div', { class: 'welcome-title', text: productLabel() }));
 	const lead = el('div', { class: 'welcome-text' });
 	inline(lead, s.news?.intro || 'Work with the pages you have open, right inside VS Code.');
 	box.append(lead);
@@ -6423,6 +6864,19 @@ function welcome(s: ChatViewState): HTMLElement {
 		: s.detecting ? 'Looking for Claude Code, Codex, Gemini CLI, OpenCode, Pi and OpenRouter…' : 'No agent is available yet.' }));
 	for (const agent of s.agents.filter(a => a.id !== 'openrouter' && !a.available && a.problem)) {
 		box.append(el('div', { class: 'welcome-problem', text: `${agent.name}: ${agent.problem}` }));
+	}
+	for (const notice of s.news?.notices ?? []) {
+		// An announcement the user must not miss: a highlighted card above the features.
+		const body = el('div', { class: 'welcome-notice-body' });
+		if (notice.title) { body.append(el('div', { class: 'welcome-notice-title', text: notice.title })); }
+		const text = el('div', { class: 'welcome-notice-text' });
+		inline(text, notice.text);
+		body.append(text);
+		const card = el('div', { class: 'welcome-notice' },
+			icon(/^[a-z0-9-]+$/.test(notice.icon) ? notice.icon : 'megaphone', 'welcome-notice-icon'),
+			body);
+		card.setAttribute('role', 'note');
+		box.append(card);
 	}
 	if (s.news?.features?.length) {
 		// What is worth trying first, between the hint and the changelog link.
@@ -6434,7 +6888,7 @@ function welcome(s: ChatViewState): HTMLElement {
 				// Installation links belong in the system browser.
 				for (const link of text.querySelectorAll<HTMLElement>('[role="link"]')) {
 					const url = link.title.split('\n')[0];
-					const isZip = /^https:\/\/github\.com\/Denis-Davidoff\/vs-code-tab-browser-ultimate\/raw\/.+\.zip$/.test(url);
+					const isZip = /^https:\/\/github\.com\/Denis-Davidoff\/(?:hoverdeck|vs-code-tab-browser-ultimate)\/raw\/.+\.zip$/.test(url);
 					const isStore = url === 'https://chromewebstore.google.com/detail/ai-browser/jhdffimahnoijnnfnjadghjhkacheogn';
 					if (!isZip && !isStore) { continue; }
 					link.title = isZip ? 'Download Chrome extension ZIP' : 'Open Chrome Web Store';
@@ -6476,6 +6930,11 @@ function welcome(s: ChatViewState): HTMLElement {
 			const news = el('div', { class: 'news' });
 			for (const entry of s.news!.entries) {
 				const items = el('ul', { class: 'news-items' });
+				for (const highlight of entry.highlights ?? []) {
+					const li = el('li', { class: 'news-highlight' });
+					inline(li, highlight);
+					items.append(li);
+				}
 				for (const item of entry.items) {
 					const li = el('li');
 					inline(li, item);
@@ -6610,8 +7069,11 @@ function updateAssistantNode(node: HTMLElement, entry: Extract<ChatEntry, { kind
 		},
 		sourceLink: (url, title) => linkNode(url, title),
 		openLink: (url, external) => post({ type: 'openLink', url, external }),
-		openLinkLabel: state?.surface === 'chrome' ? 'Open in new tab' : state?.surface === 'exchange' ? 'Open in remote browser' : 'Open in AI Browser',
+		openLinkLabel: state?.surface === 'chrome' ? 'Open in new tab' : state?.surface === 'exchange' ? 'Open in remote browser' : `Open in ${productLabel()}`,
 		externalLinkLabel: state?.surface === 'chrome' || state?.surface === 'exchange' ? undefined : 'Open in System Browser ↗',
+		// Only VS Code decides which files outside the directory a conversation may show.
+		fileAccess: state?.surface === 'chrome' || state?.surface === 'exchange' ? undefined
+			: (file, allow) => { if (state) { post({ type: 'presentationAccess', chatId: state.chatId, path: file, allow }); } },
 	});
 }
 
@@ -6699,7 +7161,7 @@ function approvalKeyOf(entry: { readonly what: string; readonly server?: string 
 /** The fixed categories of the approval menu, in its order; servers go before `other`. */
 const approvalRows: readonly { readonly key: string; readonly label: string; readonly hint: string }[] = [
 	{ key: 'web', label: 'Internet', hint: 'Fetching pages and searching the web (Claude Code); network access for a command (Codex)' },
-	{ key: 'browser', label: 'AI Browser', hint: "This window's browser tools: reading, clicking, filling, screenshots" },
+	{ key: 'browser', get label() { return productLabel(); }, hint: "This window's browser tools: reading, clicking, filling, screenshots" },
 	{ key: 'chat', label: 'Chat control', hint: 'Stopping an agent, pausing a chat\'s queue, keeping the computer awake' },
 	{ key: 'command', label: 'Terminal', hint: 'Shell commands, and input to a command already running' },
 	{ key: 'edit', label: 'Files in the project', hint: 'Writing and editing files inside the open folder' },
@@ -7166,7 +7628,7 @@ const viewModeHints: Record<ChatViewMode, string> = {
 
 /**
  * View Mode — asked for, replacing the Compact switch: Minimal, Compact and
- * Standard. It is `aiBrowser.chat.viewMode`, written by the host, so the menu
+ * Standard. It is `hoverdeck.chat.viewMode`, written by the host, so the menu
  * and Settings agree; rows the user opened or closed keep that.
  */
 function viewModeRow(): HTMLElement {
@@ -7535,7 +7997,7 @@ function toolTitle(t: ToolEntry): Child[] {
 
 /**
  * Every call with something to show opens by default — its input and output
- * are the point of the row — unless `aiBrowser.chat.collapseToolCalls` folds
+ * are the point of the row — unless `hoverdeck.chat.collapseToolCalls` folds
  * them all (asked for). A row the user opened or closed keeps that.
  */
 function openByDefault(): boolean {
@@ -7845,14 +8307,16 @@ function renderMarkdown(text: string): DocumentFragment {
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		const fence = /^\s*(`{3,}|~{3,})\s*([\w+#.-]*)/.exec(line);
+		const fence = /^\s*(`{3,}|~{3,})\s*([\w+#.-]*)(.*)$/.exec(line);
 		if (fence) {
 			flush();
-			const code: string[] = [];
-			for (i++; i < lines.length && !lines[i].trim().startsWith(fence[1]); i++) {
-				code.push(lines[i]);
-			}
-			out.append(codeBlock(code.join('\n'), fence[2]));
+			const paste = pasteLangs.has(fence[2].toLowerCase());
+			const end = fenceEnd(lines, i, { marker: fence[1] }, paste);
+			const code = lines.slice(i + 1, end);
+			i = end;
+			out.append(paste
+				? pasteBlock(code.join('\n'), fence[3].trim())
+				: codeBlock(code.join('\n'), fence[2]));
 			continue;
 		}
 		if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
@@ -8035,6 +8499,38 @@ function tableCells(row: string): string[] {
 	return cells;
 }
 
+/**
+ * Fence languages of a "To paste" block: text an agent wrote for the user to
+ * paste somewhere else (a ticket comment, an email, a PR description). It is
+ * rendered as Markdown, not as code, in a frame with a Copy button that puts the
+ * Markdown on text/plain and the rendered HTML on text/html. The rest of the
+ * fence line is the frame's title: ```paste Comment for the ticket
+ */
+const pasteLangs = new Set(['paste', 'clipboard']);
+
+function pasteBlock(source: string, title: string): HTMLElement {
+	source = source.replace(/ \uE200citation:\d+\uE201/g, '');
+	const body = el('div', { class: 'paste-body' }, renderMarkdown(source));
+	const copy = button([icon('copy'), el('span', { text: 'Copy' })], { class: 'paste-copy', title: 'Copy to paste elsewhere (Markdown and formatted text)' });
+	copy.addEventListener('click', event => {
+		event.stopPropagation();
+		let html: string | undefined;
+		try {
+			const range = document.createRange();
+			range.selectNodeContents(body);
+			const rich = selectionTree(range, body);
+			html = rich && treeHasMarkup(rich.tree) ? treeHtml(rich.tree) : undefined;
+		} catch { html = undefined; }
+		copyRich(document, { text: source.trim(), html }, text => post({ type: 'copy', text }));
+		// copyRich stops its copy event, so the document listener that refreshes Paste never hears it.
+		setTimeout(() => peekClipboard(true), 150);
+		copy.replaceChildren(icon('check'), el('span', { text: 'Copied' }));
+		setTimeout(() => copy.replaceChildren(icon('copy'), el('span', { text: 'Copy' })), 1500);
+	});
+	const head = el('div', { class: 'paste-head' }, icon('clippy'), el('span', { class: 'paste-title', text: title || 'To paste' }), copy);
+	return el('div', { class: 'paste-block' }, head, body);
+}
+
 /** Fence languages whose block is a command line someone may want to run as it is. */
 const shellLangs = new Set(['bash', 'sh', 'shell', 'zsh', 'console', 'shellsession', 'fish', 'ksh', 'powershell', 'ps1', 'pwsh', 'cmd', 'bat', 'batch']);
 
@@ -8161,7 +8657,7 @@ const modKey = isMacView ? '⌘' : 'Ctrl';
  */
 function linkNode(url: string, text?: string): HTMLElement {
 	const local = !!localFileLink(url);
-	const link = el('span', { class: 'link', title: local ? `${url}\nOpen file in editor; project folder in VS Code Explorer, other folder in file manager` : `${url}\nClick: open in AI Browser · ${modKey}+click: system browser`, text });
+	const link = el('span', { class: 'link', title: local ? `${url}\nOpen file in editor; project folder in VS Code Explorer, other folder in file manager` : `${url}\nClick: open in ${productLabel()} · ${modKey}+click: system browser`, text });
 	// Read by the selection copy, which writes the link back as Markdown and HTML.
 	link.dataset.href = url;
 	link.tabIndex = 0;
@@ -8210,7 +8706,7 @@ function linkMenu(link: HTMLElement, url: string, directory?: boolean, inWorkspa
 			{ icon: 'folder-opened', label: isMacView ? 'Show in Finder' : navigator.platform.startsWith('Win') ? 'Show in File Explorer' : 'Show in File Manager', disabled: directory === undefined,
 				run: () => post({ type: 'openLink', url, external: false, reveal: true }) },
 		] : [
-			{ icon: 'globe', label: 'Open in AI Browser', shortcut: 'Click', run: () => post({ type: 'openLink', url, external: false }) },
+			{ icon: 'globe', label: `Open in ${productLabel()}`, shortcut: 'Click', run: () => post({ type: 'openLink', url, external: false }) },
 			{ icon: 'link-external', label: 'Open in System Browser', shortcut: `${modKey}+Click`, run: () => post({ type: 'openLink', url, external: true }) },
 		]),
 		{ icon: 'copy', label: 'Copy Link', run: () => post({ type: 'copy', text: url }) },
@@ -8391,8 +8887,68 @@ function setInputText(value: string, caret: number): void {
 	paintInput();
 }
 
+/**
+ * Badges on show before the host has made their attachment — a paste on its way, a message
+ * recalled with ↑ — keyed by chat and reference. Each is drawn from what its source attachment
+ * was (kind, name, icon, path), so it looks and opens like any other badge the moment it is in
+ * the box; the real chip takes its token over when it arrives (`syncAttachmentTokens`).
+ */
+const previewChips = new Map<string, { chat: string; chip: AttachmentChip; token: string; recall: boolean }>();
+const previewKey = (chat: string, reference: string) => `${chat}\u0000${reference}`;
+
+function forgetPreviews(which: (entry: { chat: string; token: string; recall: boolean }) => boolean): void {
+	for (const [key, entry] of previewChips) { if (which(entry)) { previewChips.delete(key); } }
+}
+
+/** Ask the host to make the attachments of badges just put into the draft shown. */
+function requestAttachments(pending: readonly PastedAttachment[]): void {
+	const chatId = draftChat;
+	if (!pending.length || !chatId) { return; }
+	const request = newId();
+	pendingAttachmentPastes.set(request, chatId);
+	post({ type: 'pasteAttachments', request, chatId, items: pending });
+}
+
+/**
+ * Every way badged text comes into the box goes through here — a paste, a drop, a message
+ * recalled with ↑, a draft whose badges' chips are gone. Each badge gets a reference no other
+ * badge of this draft uses, is drawn at once from what it names (`previewChips`), and — unless
+ * `request` is false, as for a recalled message only on show — the host is asked to make its
+ * attachment again (`pasteAttachments`). Outside VS Code nothing can be made: badges become what
+ * they name. Returns the text to put in and what is still to be asked for.
+ */
+function enterBadgedText(data: AttachmentText, options: { request?: boolean; recall?: boolean; alsoUsed?: Iterable<string> } = {}): PreparedAttachmentText {
+	const chat = draftChat;
+	const make = !!chat && gate('pasteAttachments').s === 'on';
+	const used = [
+		...draftChips(state).map(chip => chip.reference!),
+		...[...previewChips.values()].filter(entry => entry.chat === chat).map(entry => entry.chip.reference!),
+		...(options.alsoUsed ?? []),
+	];
+	const prepared = prepareAttachmentText(data, used, (item, reference) => {
+		const chip: AttachmentChip = {
+			id: item.id, kind: item.kind, label: item.label, reference,
+			...(item.filePath ? { filePath: item.filePath } : {}),
+			...(item.iconName ? { iconName: item.iconName } : {}),
+		};
+		const token = attachmentToken(chip);
+		if (chat) { previewChips.set(previewKey(chat, reference), { chat, chip, token, recall: !!options.recall }); }
+		return token;
+	}, make);
+	if (options.request !== false) { requestAttachments(prepared.pending); }
+	return prepared;
+}
+
+/** Text for the box from a draft: `[att:…]` markers in it — badges whose chips are gone — become badges again. */
+function draftText(text: string): string {
+	const marked = text.includes('[att:') ? readAttachmentMarkers(text) : undefined;
+	return marked ? enterBadgedText(marked).text : text;
+}
+
 function syncAttachmentTokens(s: ChatViewState): void {
-	if (!s.chatId || draftChat !== s.chatId || fromHistory) { return; }
+	// A recalled message only on show leaves the draft's chips alone: walking on, or back down to
+	// the draft, must find them where they were (`settleRecall`).
+	if (!s.chatId || draftChat !== s.chatId || recallShown) { return; }
 	const chips = draftChips(s);
 	let known = tokenedChips.get(s.chatId);
 	if (!known) { tokenedChips.set(s.chatId, known = new Set()); }
@@ -8450,9 +9006,13 @@ function syncAttachmentTokens(s: ChatViewState): void {
 		changed = true;
 	}
 	if (changed) { setInputText(text, caret); }
+	// A placeholder whose token has gone — taken over by its chip, or deleted — draws nothing any more.
+	forgetPreviews(entry => entry.chat === s.chatId && !input.value.includes(entry.token));
+	sendWhenSettled();
 }
 
-input.addEventListener('input', () => { if (state) { syncAttachmentTokens(state); } });
+// An edit of a recalled message makes it the draft: its badges are made then, before the sync.
+input.addEventListener('input', () => { settleRecall(); if (state) { syncAttachmentTokens(state); } });
 
 /**
  * A token put into text: a space before it only when it would otherwise touch the word before
@@ -8464,7 +9024,10 @@ function spacedToken(before: string, token: string, after: string): string {
 
 /** The chip a token stands for, in the draft shown. */
 function chipOfToken(reference: string): AttachmentChip | undefined {
-	return draftChips(state).find(c => c.reference === reference);
+	const chip = draftChips(state).find(c => c.reference === reference);
+	if (chip || !draftChat) { return chip; }
+	const preview = previewChips.get(previewKey(draftChat, reference));
+	return preview && input.value.includes(preview.token) ? preview.chip : undefined;
 }
 
 /** The text a token reads as outside this chat: a path where there is one, else its name. */
@@ -8481,10 +9044,8 @@ function copyAttachments(event: ClipboardEvent, cut: boolean): void {
 	const tokens = tokensIn(text);
 	if (!tokens.length) { return; }
 	event.preventDefault();
-	const items = tokens.flatMap(t => {
-		const chip = chipOfToken(t.reference);
-		return chip ? [{ token: text.slice(t.start, t.end), id: chip.id, kind: chip.kind, label: chip.label, filePath: chip.filePath }] : [];
-	});
+	const portable = portableAttachmentText(text, chipOfToken);
+	const items = portable.items ?? [];
 	event.clipboardData.setData('text/plain', text.replace(attachmentTokenPattern, (_, n: string, label: string) => {
 		const chip = chipOfToken(`@${n}`);
 		return chip ? attachmentMarker(chip) : plainToken(undefined, label);
@@ -8502,38 +9063,18 @@ input.addEventListener('cut', event => copyAttachments(event, true));
 /** A paste carrying tokens: the text goes in as copied, and the host is asked for the chips. */
 function pasteAttachmentTokens(event: Pick<ClipboardEvent, 'clipboardData' | 'preventDefault'>): boolean {
 	const raw = event.clipboardData?.getData(attachmentClipboardType);
-	let data: { text?: unknown; items?: unknown } | undefined;
-	if (raw) { try { data = JSON.parse(raw); } catch { /* Text-only clipboard fallback below. */ } }
-	if (!data || typeof data.text !== 'string' || !Array.isArray(data.items)) { data = readAttachmentMarkers(event.clipboardData?.getData('text/plain') ?? ''); }
-	if (!data || typeof data.text !== 'string' || !Array.isArray(data.items)) { return false; }
+	let data: AttachmentText | undefined;
+	if (raw) { try { data = readAttachmentText(JSON.parse(raw)); } catch { /* Text-only clipboard fallback below. */ } }
+	if (!data?.items?.length) { data = readAttachmentMarkers(event.clipboardData?.getData('text/plain') ?? '') ?? data; }
+	if (!data || (!data.items && !raw)) { return false; }
 	event.preventDefault();
-	const items = (data.items as PastedAttachment[]).filter(i => i && typeof i.token === 'string' && typeof i.id === 'string' && typeof i.label === 'string');
-	// Outside VS Code nothing can be made again: the tokens are pasted as what they name.
-	const canMake = gate('pasteAttachments').s === 'on';
-	const used = new Set([...tokensIn(input.value).map(token => token.reference), ...draftChips(state).map(chip => chip.reference)]);
-	let nextReference = 999999;
-	const pending: PastedAttachment[] = [];
-	const text = data.text.replace(attachmentTokenPattern, (whole: string, _n: string, label: string) => {
-		const item = items.find(item => item.token === whole);
-		if (!canMake || !item || pending.length >= 50) { return item?.filePath ?? label.trim(); }
-		while (used.has(`@${nextReference}`) && nextReference > 0) { nextReference--; }
-		if (!nextReference) { return plainToken(undefined, label); }
-		const reference = `@${nextReference--}`;
-		used.add(reference);
-		const token = `[${reference}\u00a0${label}]`;
-		pending.push({ ...item, token });
-		return token;
-	});
-	const request = newId();
-	const chatId = draftChat;
-	if (pending.length && chatId) { pendingAttachmentPastes.set(request, chatId); }
+	const { text } = enterBadgedText(data, { alsoUsed: tokensIn(input.value).map(token => token.reference) });
 	// A badge at either edge of the paste is spaced off its neighbours as an inserted one is.
 	const before = input.value.slice(0, input.selectionStart), after = input.value.slice(input.selectionEnd);
 	const spaced = (text.startsWith('[') && before && !/\s$/.test(before) ? ' ' : '') + text + (text.endsWith(']') && after && !/^\s/.test(after) ? ' ' : '');
 	input.setRangeText(spaced, input.selectionStart, input.selectionEnd, 'end');
 	rememberAttachmentCaret();
 	input.dispatchEvent(new Event('input', { bubbles: true }));
-	if (pending.length && chatId) { post({ type: 'pasteAttachments', request, chatId, items: pending }); }
 	return true;
 }
 
@@ -8561,6 +9102,7 @@ function pastedAttachments(results: readonly { readonly token: string; readonly 
 		if (active) { setInputText(text, caret); }
 		else { drafts[chatId] = text; saveDraft(); }
 	}
+	if (!active) { forgetPreviews(entry => entry.chat === chatId && !text.includes(entry.token)); }
 	if (active && state) { syncAttachmentTokens(state); }
 	if (active) { renderSend(); }
 }
@@ -9434,15 +9976,71 @@ new ResizeObserver(() => alignLineStartBadges()).observe(inputMirror);
  * Typing makes the current text the new starting point, but the draft from
  * before the walk is kept: an edited recalled message is history, not a draft.
  */
-let inputHistory: string[] = [];
+let inputHistory: AttachmentText[] = [];
 let historyAt = 0;
 let historyDraft = '';
 /** The box shows, or was edited from, a recalled message. */
 let fromHistory = false;
+/**
+ * A recalled message on show and not yet made the draft's own: its badges are previews, nothing
+ * has been asked of the host, and the draft's own chips are left where they were — so walking on,
+ * or back down to the draft, changes nothing. The first edit, paste or send settles it
+ * (`settleRecall`).
+ */
+let recallShown: { text: string; pending: readonly PastedAttachment[]; chat: string | undefined } | undefined;
+/** The draft from before the walk still has its chips: nothing was settled since the walk began. */
+let walkDraftLive = false;
+/** A send asked for while the badges of a recalled message were still being made. */
+let sendWhenReady: { mode?: 'queue'; at?: number; chat: string | undefined } | undefined;
 
 /** An unedited recalled message is on show. */
 function walking(): boolean {
-	return historyAt < inputHistory.length && input.value === inputHistory[historyAt];
+	return !!recallShown && input.value === recallShown.text;
+}
+
+/** Leave the walk without touching what the box holds (another chat, a transcript, a send). */
+function endRecall(): void {
+	recallShown = undefined;
+	walkDraftLive = false;
+	sendWhenReady = undefined;
+	forgetPreviews(entry => entry.recall);
+}
+
+/**
+ * The recalled message on show becomes the draft: the host is asked to make its badges' attachments,
+ * and the draft from before the walk — whose chips the sync is about to remove, their tokens being
+ * gone from the box — keeps its badges as `[att:…]` markers, its attachments retained by the host,
+ * so ↓ back to it makes them again (`draftText`).
+ */
+function settleRecall(): void {
+	const shown = recallShown;
+	if (!shown) { return; }
+	recallShown = undefined;
+	for (const entry of previewChips.values()) { entry.recall = false; }
+	if (walkDraftLive) {
+		walkDraftLive = false;
+		const live: AttachmentChip[] = [];
+		historyDraft = historyDraft.replace(attachmentTokenPattern, (whole: string, n: string) => {
+			const chip = draftChips(state).find(c => c.reference === `@${n}`);
+			if (!chip) { return whole; }
+			live.push(chip);
+			return attachmentMarker(chip);
+		});
+		if (live.length && gate('rememberAttachments').s === 'on') { post({ type: 'rememberAttachments', ids: [...new Set(live.map(chip => chip.id))] }); }
+	}
+	if (shown.chat && shown.chat === draftChat) {
+		requestAttachments(shown.pending.filter(item => input.value.includes(item.token)));
+	}
+}
+
+/** A send held for a recalled message's badges goes once they are made. */
+function sendWhenSettled(): void {
+	const wanted = sendWhenReady;
+	if (!wanted) { return; }
+	if (wanted.chat !== draftChat) { sendWhenReady = undefined; return; }
+	if (!canSend()) { return; }
+	sendWhenReady = undefined;
+	send(wanted.mode, wanted.at);
 }
 
 function recall(step: -1 | 1): boolean {
@@ -9455,15 +10053,27 @@ function recall(step: -1 | 1): boolean {
 	}
 	if (historyAt === inputHistory.length && !fromHistory) {
 		historyDraft = input.value;
+		walkDraftLive = true;
 	}
+	forgetPreviews(entry => entry.recall);
 	historyAt = next;
 	fromHistory = next < inputHistory.length;
-	input.value = fromHistory ? inputHistory[next] : historyDraft;
+	if (fromHistory) {
+		const shown = enterBadgedText(inputHistory[next], { request: false, recall: true });
+		recallShown = { text: shown.text, pending: shown.pending, chat: draftChat };
+		input.value = shown.text;
+	} else {
+		recallShown = undefined;
+		input.value = walkDraftLive ? historyDraft : draftText(historyDraft);
+		walkDraftLive = false;
+	}
 	input.setSelectionRange(input.value.length, input.value.length);
 	saveDraft();
 	autosize();
 	renderSend();
 	paintInput();
+	// Back at the draft: the chips of a recalled message settled on the way go with their tokens.
+	if (!fromHistory && state) { syncAttachmentTokens(state); }
 	return true;
 }
 
@@ -9586,6 +10196,8 @@ function sendMenuItems(): MenuItem[] {
 		{ icon: 'arrow-up', label: 'Send now', shortcut: 'Enter', disabled: !hasContent || !canSend(), run: () => send() },
 		{ icon: 'clock', label: 'Send later', shortcut: `${mod}Enter`, disabled: !state?.running || !hasContent || !canSend(),
 			description: state?.running ? 'After the current turn ends' : 'Available while the agent is working', run: () => send('queue') },
+		{ icon: 'calendar', label: 'Schedule…', disabled: !hasContent || !canSend(), description: 'Send at a time you choose',
+			run: () => openSchedulePicker(sendButton, undefined, at => { if (at !== undefined) { send('queue', at); } }) },
 	];
 }
 
@@ -9944,11 +10556,13 @@ function insertTranscript(text: string): void {
 	// The caret goes to the end of the whole text — asked for — ready to go on writing or press Enter.
 	input.setSelectionRange(input.value.length, input.value.length);
 	input.scrollTop = input.scrollHeight;
+	settleRecall();
 	fromHistory = false;
 	historyAt = inputHistory.length;
 	paintInput();
 	autosize();
 	saveDraft();
+	if (state) { syncAttachmentTokens(state); }
 	input.focus();
 }
 
@@ -9957,12 +10571,20 @@ function clock(seconds: number): string {
 	return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-/** `queue`: held until the running turn ends (⌘/Ctrl+Enter); otherwise added to it (Enter). */
-function send(mode?: 'queue'): void {
+/** `queue`: held until the running turn ends (⌘/Ctrl+Enter); otherwise added to it (Enter). `at`: sent at that time. */
+function send(mode?: 'queue', at?: number): void {
+	// A recalled message sent as it was recalled: its badges are made first, and the chips of the
+	// draft from before the walk are taken out (the host sends every chip the tab holds), then it goes.
+	if (recallShown) {
+		settleRecall();
+		if (state) { syncAttachmentTokens(state); }
+		if (!canSend()) { sendWhenReady = { mode, at, chat: draftChat }; return; }
+	}
 	const text = input.value;
 	if ((!text.trim() && !state?.attachments.some(chip => !isPinChip(chip))) || !canSend()) {
 		return;
 	}
+	sendWhenReady = undefined;
 	closeSendMenu();
 	// "/name args" naming a toolbar skill runs it: the arguments fill its
 	// parameters in order, and what is still missing is asked for.
@@ -9981,7 +10603,7 @@ function send(mode?: 'queue'): void {
 	paletteDismissed = undefined;
 	// The host decides whether there is anything to queue behind: the queue can
 	// still be waiting to go out for a moment after the turn has ended.
-	post({ type: 'send', text, tabId: state?.activeTab, mode });
+	post(at === undefined ? { type: 'send', text, tabId: state?.activeTab, mode } : { type: 'send', text, tabId: state?.activeTab, mode: 'queue', at });
 	historyAt = inputHistory.length;
 	historyDraft = '';
 	fromHistory = false;
@@ -10622,7 +11244,7 @@ agentPill.addEventListener('click', () => {
  * Which copy of each agent's CLI this project uses. Detection finds every copy
  * — on PATH, in the usual install places, inside the assistant's own VS Code
  * extension — and uses the newest (Auto); here a project can pick one by hand.
- * VS Code's own `aiBrowser.chat.<agent>Path` setting still overrides both, and
+ * VS Code's own `hoverdeck.chat.<agent>Path` setting still overrides both, and
  * a button opens it. Rebuilt only when what it shows changes: a native select
  * whose element is replaced closes under the user's pointer.
  */
@@ -10631,7 +11253,7 @@ let agentAuthShown = '';
 function agentAuthenticationActions(agent: ChatAgent, detecting: boolean): HTMLElement {
 	const row = el('div', { class: 'agent-auth-actions' });
 	if (gate('authenticateAgent').s !== 'on') {
-		row.append(el('span', { text: 'Open AI Browser Chat in VS Code → Agent apps to sign in, then refresh here.' }));
+		row.append(el('span', { text: `Open ${productLabel()} Chat in VS Code → Agent apps to sign in, then refresh here.` }));
 		return row;
 	}
 	const login = button([el('span', { text: agent.authentication?.signingIn ? 'Show sign-in terminal' : 'Sign in / Reauthorize' })], { class: 'agent-app-link' });
@@ -10747,7 +11369,7 @@ function fillAgentApps(s: ChatViewState): void {
 
 		const notes: HTMLElement[] = [];
 		if (agent.choice === 'setting') {
-			notes.push(el('div', { class: 'agent-app-note', text: `Set by aiBrowser.chat.${agent.id}Path in VS Code settings, which overrides the choice here.` }));
+			notes.push(el('div', { class: 'agent-app-note', text: `Set by hoverdeck.chat.${agent.id}Path in VS Code settings, which overrides the choice here.` }));
 		} else if (agent.pinMissing && copies.length) {
 			notes.push(el('div', { class: 'agent-app-note warn', text: 'The copy picked for this project is no longer found; the newest is used. Pick Auto to stop looking for it.' }));
 		}
@@ -10784,7 +11406,7 @@ modelPill.addEventListener('click', () => {
 	// Measured: a model Gemini CLI lists, Auto's pick included, can go
 	// unanswered for an account while the CLI retries in silence.
 	agent.id === 'gemini'
-		? 'Not every model listed here may work for your account: some can be unavailable or overloaded for reasons outside AI Browser. If no reply comes, pick another model.'
+		? `Not every model listed here may work for your account: some can be unavailable or overloaded for reasons outside ${productLabel()}. If no reply comes, pick another model.`
 		: undefined);
 });
 
@@ -11206,8 +11828,11 @@ function insertCommand(c: ChatCommand): void {
 	let caret: number;
 	if (paletteWasInline) {
 		const end = inlineEnd;
-		value = value.slice(0, inlineStart) + text + value.slice(end).replace(/^ /, '');
-		caret = inlineStart + text.length;
+		// Typed right after an attachment badge ("[@1 src/]/rev"), the command gets
+		// a space of its own, or it would read as part of the badge's word.
+		const pad = inlineStart > 0 && !/\s/.test(value[inlineStart - 1]) ? ' ' : '';
+		value = value.slice(0, inlineStart) + pad + text + value.slice(end).replace(/^ /, '');
+		caret = inlineStart + pad.length + text.length;
 	} else if (c.insert.startsWith('/') && paletteTarget === input) {
 		// Over a "/command" already at the start — a bare "/" or one the agent
 		// lists — never over a path the message begins with ("/etc/hosts …").
@@ -11263,7 +11888,10 @@ function openPalette(mode: PaletteMode): void {
 		if (paletteTarget === input) {
 			closePopups(palette);
 		}
-		showAnchoredOverlay(palette, paletteTarget === input ? composer : paletteTarget, 'left');
+		// Anchored to the message part, not the whole composer: under Skills,
+		// Activity or another composer tab the composer also holds that panel, and
+		// the palette opened above it, far from the caret.
+		showAnchoredOverlay(palette, paletteTarget === input ? inputArea : paletteTarget, 'left');
 	}
 	renderPalette(s);
 	if (mode === 'button') {
@@ -11355,6 +11983,18 @@ function inlineToken(): number | undefined {
 	const after = paletteTarget.value.slice(caret);
 	if (after && !/^\s/.test(after)) {
 		return undefined;
+	}
+	// Right after an attachment badge, which ends in "]" with no space after it
+	// (the badge adds one only when a word follows), a sigil starts a query too:
+	// otherwise "/" typed after a badge opened nothing until a space was typed.
+	if (paletteTarget === input) {
+		const t = /\]([/@$][^\s\]]*)$/.exec(before);
+		if (t) {
+			const end = t.index + 1;
+			if ([...before.slice(0, end).matchAll(attachmentTokenPattern)].some(b => b.index! + b[0].length === end)) {
+				return end;
+			}
+		}
 	}
 	const m = (paletteTarget === input ? /(^|\s)[/@$]\S*$/ : /(^|\s)[/$]\S*$/).exec(before);
 	return m ? m.index + m[1].length : undefined;
@@ -11714,6 +12354,7 @@ function renderWorkdir(s: ChatViewState): void {
 		githubPending = false;
 		githubBranchShape = '';
 		githubAgain = false;
+		githubForgetRefresh();
 		if (composerTab === 'github') { requestGithub(); }
 		if (composerTab === 'files') { openFilesTab(); }
 		branchState = undefined;
@@ -11729,12 +12370,25 @@ function renderWorkdir(s: ChatViewState): void {
 		gitError = '';
 		gitIndexPending = false;
 		gitPopupShape = '';
+		// A message written for one folder is not the next folder's.
+		gitMessage.value = '';
+		gitManual = false;
+		gitManualSent = undefined;
 		refreshGitStatus();
 	}
 	const commit = w.commit;
 	const committing = commit?.phase === 'generating' || commit?.phase === 'committing';
 	// A failed commit is never pushed: Commit & Push must not open the Branches window later.
 	if (commit?.phase === 'error') { pushAfterCommit = false; }
+	// The message written by hand goes once its commit went through — seen running,
+	// then gone without an error. A failure, or a commit never seen running, keeps it.
+	if (gitManualSent && committing) { gitManualSent = 'busy'; }
+	else if (gitManualSent === 'busy' && !commit) {
+		gitManualSent = undefined;
+		gitMessage.value = '';
+		gitManual = false;
+		gitPopupShape = '';
+	} else if (commit?.phase === 'error') { gitManualSent = undefined; }
 	const modelAvailable = s.agents.some(a => a.id === s.selection.agent && a.available);
 	commitButton.disabled = false;
 	renderGitChanges();
@@ -12109,7 +12763,7 @@ function toolbarSkill(id: string): ToolbarSkill | undefined {
 }
 
 /** A press: answer or stop a run in the background, else run — asking for parameters first. */
-function pressSkill(id: string, anchor: HTMLElement, queue = false): void {
+function pressSkill(id: string, anchor: HTMLElement, other = false): void {
 	const skill = toolbarSkill(id);
 	if (!skill) {
 		return;
@@ -12118,8 +12772,9 @@ function pressSkill(id: string, anchor: HTMLElement, queue = false): void {
 		closePopups();
 		return;
 	}
-	if (queue) {
-		queueSkill(skill, anchor);
+	if (other) {
+		// ⌘/Ctrl+click: the other way from the skill's own first-message choice.
+		queueSkill(skill, anchor, skill.result === 'chat' ? !skillSendsLater(skill) : true);
 		return;
 	}
 	requestSkill(skill, anchor, {});
@@ -12132,8 +12787,13 @@ function pressSkill(id: string, anchor: HTMLElement, queue = false): void {
  * With nothing running it starts at once. Not asked "run it again?": queuing
  * another run is what was chosen.
  */
-function queueSkill(skill: ToolbarSkill, anchor: HTMLElement): void {
-	invokeSkill(skill, anchor, {}, true, state?.activeTab, true);
+function queueSkill(skill: ToolbarSkill, anchor: HTMLElement, queue = true): void {
+	invokeSkill(skill, anchor, {}, true, state?.activeTab, queue);
+}
+
+/** A chat skill's first prompt, while the agent works: queued after the turn unless the skill says "now". */
+function skillSendsLater(skill: ToolbarSkill): boolean {
+	return skill.firstSend !== 'now';
 }
 
 /** The skill's own button when the bar shows it, else the "/" button: where its popovers open. */
@@ -12165,7 +12825,7 @@ function requestSkill(skill: ToolbarSkill, anchor: HTMLElement, given: Readonly<
 }
 
 /** Runs a skill whose every parameter has a valid value; otherwise asks for them, `given` filled in. */
-function invokeSkill(skill: ToolbarSkill, anchor: HTMLElement, given: Readonly<Record<string, string>>, again: boolean, tabId: string | undefined, queue = false): void {
+function invokeSkill(skill: ToolbarSkill, anchor: HTMLElement, given: Readonly<Record<string, string>>, again: boolean, tabId: string | undefined, queue?: boolean): void {
 	const values: Record<string, string> = {};
 	for (const p of skill.params) {
 		values[p.name] = given[p.name] ?? p.preset ?? '';
@@ -12178,8 +12838,8 @@ function invokeSkill(skill: ToolbarSkill, anchor: HTMLElement, given: Readonly<R
 	openParams(skill, anchor, values, again, tabId, queue);
 }
 
-function postRun(skill: ToolbarSkill, values: Record<string, string>, again: boolean, tabId: string | undefined, queue = false): void {
-	post({ type: 'runToolbarSkill', id: skill.id, values, tabId, again: again || undefined, queue: queue || undefined });
+function postRun(skill: ToolbarSkill, values: Record<string, string>, again: boolean, tabId: string | undefined, queue?: boolean): void {
+	post({ type: 'runToolbarSkill', id: skill.id, values, tabId, again: again || undefined, queue });
 }
 
 /**
@@ -12288,7 +12948,7 @@ function valueProblem(param: ToolbarParam, value: string): string | undefined {
 	return undefined;
 }
 
-function openParams(skill: ToolbarSkill, anchor: HTMLElement, values: Record<string, string>, again: boolean, tabId: string | undefined, queue = false): void {
+function openParams(skill: ToolbarSkill, anchor: HTMLElement, values: Record<string, string>, again: boolean, tabId: string | undefined, queue?: boolean): void {
 	const fields = skill.params.map(param => {
 		let field: HTMLInputElement | HTMLSelectElement;
 		if (param.type === 'choice') {
@@ -12385,13 +13045,29 @@ function skillMenu(id: string, anchor: HTMLElement): void {
 		return;
 	}
 	const busy = !!state?.tabs.find(t => t.id === state?.activeTab)?.busy;
-	openMenu(anchor, [
+	const chat = skill.result === 'chat';
+	const later = !chat || skillSendsLater(skill);
+	const runRows: MenuItem[] = chat ? [
+		{
+			icon: 'arrow-up', label: 'Run now', shortcut: later ? `${modKey}+Click` : 'Click',
+			description: busy ? 'Its first prompt goes into the running turn' : 'Nothing is running: it runs now',
+			run: () => queueSkill(skill, anchor, false),
+		},
+		{
+			icon: 'list-ordered', label: 'Run after this turn', shortcut: later ? 'Click' : `${modKey}+Click`,
+			description: busy ? 'Waits in the queue until the agent has finished' : 'Nothing is running: it runs now',
+			run: () => queueSkill(skill, anchor, true),
+		},
+	] : [
 		{ icon: 'play', label: 'Run', shortcut: 'Click', run: () => requestSkill(skill, anchor, {}) },
 		{
 			icon: 'list-ordered', label: 'Run after this turn', shortcut: `${modKey}+Click`,
 			description: busy ? 'Waits in the queue until the agent has finished' : 'Nothing is running: it runs now',
-			run: () => queueSkill(skill, anchor),
+			run: () => queueSkill(skill, anchor, true),
 		},
+	];
+	openMenu(anchor, [
+		...runRows,
 		{ icon: 'edit', label: 'Edit toolbar skill…', run: () => openSkillEditor(skill) },
 		{ icon: 'trash', label: 'Delete toolbar skill', run: () => confirmDeleteSkill(skill, anchor) },
 		{ icon: 'arrow-left', label: 'Move left', disabled: at <= 0, run: () => post({ type: 'moveToolbarSkill', id, by: -1 }) },
@@ -12872,10 +13548,16 @@ function openSkillEditor(skill?: ToolbarSkill): void {
 		radio.type = 'radio';
 		radio.name = `result-${id}`;
 		radio.checked = value === chosenResult;
-		radio.addEventListener('change', () => { chosenResult = value; });
+		radio.addEventListener('change', () => { chosenResult = value; firstSendRow.hidden = value !== 'chat'; });
 		return el('label', { class: 'result-card' }, radio, icon(iconName, 'result-icon'),
 			el('span', { class: 'result-text' }, el('span', { class: 'result-title', text }), el('span', { class: 'form-hint', text: hint })));
 	}));
+
+	// The first prompt while the agent works (asked for): queued after the turn — the default — or now, into it.
+	const firstSendPick = selectField<'later' | 'now'>([['later', 'Send later — after the current turn (default)'], ['now', 'Send now — into the running turn']], skill?.firstSend ?? 'later');
+	const firstSendRow = el('div', { class: 'form-row' }, el('span', { class: 'form-label', text: 'First message' }), firstSendPick,
+		el('span', { class: 'form-hint', text: 'What a press does while the agent is working. Idle, it is sent at once either way. The menu and ⌘/Ctrl+click give the other one.' }));
+	firstSendRow.hidden = chosenResult !== 'chat';
 
 	// How its end is told: not at all, in a sentence of ours, or in the user's own words.
 	type NotifyMode = 'none' | 'auto' | 'text';
@@ -13039,6 +13721,7 @@ function openSkillEditor(skill?: ToolbarSkill): void {
 		post({
 			type: 'saveToolbarSkill', skill: {
 				id, name: n, prompt: prompt.value, result: chosenResult, agents: editorAgents, icon: chosenIcon,
+				firstSend: chosenResult === 'chat' && firstSendPick.value === 'now' ? 'now' : undefined,
 				notify: notifyMode === 'auto' ? { mode: 'auto' } : notifyMode === 'text' ? { mode: 'text', text: notifyText.value.trim() } : undefined,
 				followUps: steps.filter(step => step.prompt.trim()).map(step => ({ prompt: step.prompt, check: step.check.trim() || undefined })),
 				colors: { text: colors.text.value(), border: colors.border.value(), icon: colors.icon.value() },
@@ -13065,7 +13748,7 @@ function openSkillEditor(skill?: ToolbarSkill): void {
 			el('span', { class: 'form-hint', text: 'Markdown is supported. Type / or $ for a skill, and {{parameter}} where a value goes.' })),
 		skillSection('symbol-parameter', 'Parameters', 'Asked for when the skill runs; each is required. Use {{name}} in a prompt.', paramList, addParam),
 		skillSection('debug-step-over', 'Next prompts', 'Sent one after another, each once the agent has finished the one before — like messages queued with ⌘Enter. A check between two stops the skill there unless it holds.', stepList, addStep),
-		skillSection('output', 'Result', undefined, resultGroup,
+		skillSection('output', 'Result', undefined, resultGroup, firstSendRow,
 			el('div', { class: 'form-row' }, el('span', { class: 'form-label', text: 'Notify when it ends' }), notifyPick, notifyTextRow,
 				el('span', { class: 'form-hint', text: 'When the skill is done or something went wrong — not when you stop it. A notification pauses a browser tab on screen until it is dismissed.' }))),
 		skillSection('paintcan', 'Appearance', undefined,
@@ -13984,64 +14667,126 @@ function renderSleep(): void {
 		sleepSignature = signature;
 		buildSleepPopup();
 	}
-	const status = sleepPopup.querySelector('.sleep-status');
-	if (status) {
-		status.textContent = tip;
-		status.classList.toggle('sleep-enabled-status', !!sleep && (sleep.mode !== 'off' || sleep.automaticActive) && !sleep.error);
-	}
+	fillSleepHero(sleep, active, seconds, tabScoped, countdown);
+	sleepPopup.querySelector('.sleep-hero')?.setAttribute('title', tip);
 }
+/** The hero's big line, its line under it and the ring: refilled every second, never rebuilt. */
+function fillSleepHero(sleep: SleepState | undefined, active: boolean, seconds: number, tabScoped: boolean, countdown: string): void {
+	const big = sleepPopup.querySelector('.sleep-big');
+	const status = sleepPopup.querySelector('.sleep-status');
+	const ring = sleepPopup.querySelector<HTMLElement>('.sleep-ring');
+	if (!big || !status || !ring) { return; }
+	const timer = sleep?.mode === 'timer';
+	const ends = timer && sleep.until ? new Date(sleep.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+	big.textContent = sleep?.error ? 'Unavailable'
+		: timer ? (seconds >= 3600 ? countdown : countdown.slice(3))
+		: sleep?.mode === 'forever' ? 'Awake'
+		: sleep?.mode === 'agents' ? 'Until agents finish'
+		: sleep?.automaticActive ? 'Awake' : 'Off';
+	status.textContent = sleep?.error ? sleep.error
+		: timer ? (active ? `left · ends at ${ends}` : 'starting…')
+		: sleep?.mode === 'forever' ? 'Until you turn it off or close this window'
+		: tabScoped ? `In ${sleepTabTitle(sleep?.tabId)}`
+		: sleep?.mode === 'agents' ? 'In every tab of this window'
+		: sleep?.automaticActive ? 'Automatically, while tasks run'
+		: sleep?.automatic ? 'Automatic mode is waiting for a task'
+		: 'Your computer sleeps as usual';
+	status.classList.toggle('error', !!sleep?.error);
+	big.classList.toggle('numeric', timer);
+	const held = !!sleep && (sleep.mode !== 'off' || sleep.automaticActive === true) && !sleep.error;
+	sleepPopup.classList.toggle('held', held);
+	// The ring empties as a timer runs out; any other hold is a full ring.
+	const total = timer ? (sleep.minutes ?? 0) * 60 : 0;
+	ring.style.setProperty('--sleep-p', String(timer ? (total > 0 ? Math.min(1, seconds / total) : 0) : held ? 1 : 0));
+}
+/** Whether the full grid of durations is unfolded; kept across rebuilds. */
+let sleepAllDurations = false;
+/** The durations most people want, one tap away; the rest fold under "All durations". */
+const sleepQuick = [15, 30, 60, 120, 240, 480] as const;
 function buildSleepPopup(): void {
 	const sleep = state?.sleep;
+	const on = !!sleep && sleep.mode !== 'off';
+	const chosenMinutes = sleep?.mode === 'timer' ? sleep.minutes : undefined;
 	const choose = (choice: SleepChoice) => { post({ type: 'setSleep', choice }); closePopups(); };
-	const option = (label: string, choice: SleepChoice, selected: boolean) => {
-		const b = button([label], { class: 'sleep-option' });
+	const pressable = (b: HTMLButtonElement, choice: SleepChoice, selected: boolean) => {
 		b.classList.toggle('selected', selected); b.setAttribute('aria-pressed', String(selected));
 		b.addEventListener('click', () => choose(choice)); return b;
 	};
-	/** A wide row: an icon, a label, and a line under it saying what it waits on. */
-	const wideOption = (glyph: string, label: string, detail: string, choice: SleepChoice, selected: boolean) => {
-		const b = option('', choice, selected);
-		b.replaceChildren(icon(glyph), el('span', { class: 'sleep-option-text' },
-			el('span', { class: 'sleep-option-label', text: label }), el('span', { class: 'sleep-option-detail', text: detail })));
-		if (selected) { b.append(icon('check')); }
-		b.classList.add('sleep-agents-option');
+	/** A time chip: the number large, its unit small beside it. */
+	const chip = (minutes: number, extra = '') => {
+		const hours = minutes >= 60 && minutes % 60 === 0;
+		const n = hours ? minutes / 60 : minutes;
+		const b = pressable(button([el('span', { class: 'sleep-chip-n', text: String(n) }), el('span', { class: 'sleep-chip-u', text: hours ? 'h' : 'm' })],
+			{ class: `sleep-option sleep-chip${extra}` }), { mode: 'timer', minutes }, chosenMinutes === minutes);
+		b.setAttribute('aria-label', `${n} ${hours ? (n === 1 ? 'hour' : 'hours') : 'minutes'}`);
 		return b;
 	};
-	const minutes = el('div', { class: 'sleep-options' });
-	for (const n of sleepMinutes) { minutes.append(option(String(n), { mode: 'timer', minutes: n }, sleep?.mode === 'timer' && sleep.minutes === n)); }
-	const hours = el('div', { class: 'sleep-options' });
-	for (const n of sleepHours) { hours.append(option(String(n), { mode: 'timer', minutes: n * 60 }, sleep?.mode === 'timer' && sleep.minutes === n * 60)); }
+	/** A row of a grouped list: an icon in a tinted tile, a label, what it waits on, a radio mark. */
+	const row = (glyph: string, tone: string, label: string, detail: string, choice: SleepChoice, selected: boolean) =>
+		pressable(button([
+			el('span', { class: `sleep-card-icon tone-${tone}` }, icon(glyph)),
+			el('span', { class: 'sleep-option-text' },
+				el('span', { class: 'sleep-option-label', text: label }), el('span', { class: 'sleep-option-detail', text: detail })),
+			el('span', { class: 'sleep-radio' }),
+		], { class: 'sleep-option sleep-card' }), choice, selected);
+	const section = (title: string, ...children: Node[]) =>
+		el('section', { class: 'sleep-section' }, el('div', { class: 'sleep-label', text: title }), ...children);
+
+	// Hero: the cup inside a ring that empties as a timer runs out, the state in large type.
+	const hero = el('header', { class: 'sleep-hero' },
+		el('span', { class: 'sleep-ring' }, el('span', { class: 'sleep-ring-core' }, icon('coffee'))),
+		el('span', { class: 'sleep-head-text' },
+			el('span', { class: 'sleep-heading', text: 'Keep awake' }),
+			el('span', { class: 'sleep-big' }),
+			el('span', { class: 'sleep-status' })));
+	if (on) {
+		const off = button([icon('debug-stop'), el('span', { text: sleep.automatic ? 'Stop manual' : 'Turn off' })], { class: 'sleep-off' });
+		off.addEventListener('click', () => choose({ mode: 'off' }));
+		hero.append(off);
+	}
+
+	// A chosen duration outside the quick row opens the full grid, so the choice is visible.
+	const open = sleepAllDurations || (chosenMinutes !== undefined && !(sleepQuick as readonly number[]).includes(chosenMinutes));
+	const more = button([el('span', { text: 'All durations' }), icon('chevron-down')], { class: `sleep-more${open ? ' open' : ''}` });
+	more.setAttribute('aria-expanded', String(open));
+	const all = el('div', { class: 'sleep-all' },
+		el('div', { class: 'sleep-grid-label', text: 'Minutes' }),
+		el('div', { class: 'sleep-options' }, ...sleepMinutes.map(n => chip(n))),
+		el('div', { class: 'sleep-grid-label', text: 'Hours' }),
+		el('div', { class: 'sleep-options' }, ...sleepHours.map(n => chip(n * 60))));
+	all.hidden = !open;
+	more.addEventListener('click', () => {
+		sleepAllDurations = all.hidden; all.hidden = !all.hidden;
+		more.classList.toggle('open', !all.hidden); more.setAttribute('aria-expanded', String(!all.hidden));
+	});
+
 	const tabId = state?.activeTab;
 	const watched = sleep?.mode === 'agents' && sleep.scope === 'tab' ? sleep.tabId : undefined;
-	const thisTab = tabId ? wideOption('comment-discussion', 'This tab', `Until the agents and subagents in ${sleepTabTitle(tabId)} finish`,
-		{ mode: 'agents', scope: 'tab', tabId }, watched === tabId) : undefined;
-	const allTabs = wideOption('hubot', 'All tabs', 'Until the agents and subagents in every tab of this window finish',
-		{ mode: 'agents', scope: 'window' }, sleep?.mode === 'agents' && sleep.scope !== 'tab');
-	sleepPopup.replaceChildren(el('div', { class: 'sleep-heading', text: 'Keep computer awake' }),
-		el('div', { class: 'sleep-status' }),
-		el('div', { class: 'sleep-label', text: 'For a time — the whole app' }),
-		el('div', { class: 'sleep-label sleep-sublabel', text: 'Minutes' }), minutes,
-		el('div', { class: 'sleep-label sleep-sublabel', text: 'Hours' }), hours,
-		wideOption('coffee', 'Keep awake indefinitely', 'Until you turn this off or close this VS Code window', {mode:'forever'}, sleep?.mode==='forever'),
-		el('div', { class: 'sleep-label', text: 'Until the agents finish' }),
-		...(thisTab ? [thisTab] : []), allTabs);
+	const list = el('div', { class: 'sleep-list' },
+		...(tabId ? [row('comment-discussion', 'yellow', 'Until this tab finishes', `The agents in ${sleepTabTitle(tabId)}`,
+			{ mode: 'agents', scope: 'tab', tabId }, watched === tabId)] : []),
+		row('hubot', 'blue', 'Until all tabs finish', 'Every tab of this window',
+			{ mode: 'agents', scope: 'window' }, sleep?.mode === 'agents' && sleep.scope !== 'tab'),
+		row('coffee', 'orange', 'Indefinitely', 'Until you turn it off', { mode: 'forever' }, sleep?.mode === 'forever'));
+	const other = section('Or keep it awake', list);
 	// Another tab holds it: say so, so moving the hold here is a visible change.
 	if (watched && watched !== tabId) {
-		sleepPopup.append(el('div', { class: 'sleep-note', text: `Now held by ${sleepTabTitle(watched)}.` }));
+		other.append(el('div', { class: 'sleep-note' }, icon('info'), el('span', { text: `Now held by ${sleepTabTitle(watched)}.` })));
 	}
-	if (sleep && sleep.mode !== 'off') {
-		const off = option(sleep.automatic ? 'Turn off manual awake' : 'Turn off', { mode: 'off' }, false);
-		off.prepend(icon('circle-slash'));
-		sleepPopup.append(off);
-	}
-	const automatic = el('input'); automatic.type = 'checkbox'; automatic.checked = sleep?.automatic === true;
+	const automatic = el('input', { class: 'sleep-switch' }); automatic.type = 'checkbox'; automatic.checked = sleep?.automatic === true;
+	automatic.setAttribute('role', 'switch');
 	automatic.addEventListener('change', () => {
 		post({ type: 'setAutomaticAwake', enabled: automatic.checked });
 		automatic.checked = sleep?.automatic === true;
 	});
-	sleepPopup.append(el('label', { class: 'sleep-automatic' }, automatic,
-		el('span', {}, el('span', { text: 'Keep awake automatically while tasks are running' }),
-			el('span', { class: 'sleep-option-detail', text: 'Across all chat tabs · turns off when all tasks finish' }))));
+	sleepPopup.replaceChildren(hero,
+		section('For a set time', el('div', { class: 'sleep-quick' }, ...sleepQuick.map(m => chip(m, ' quick'))), more, all),
+		other,
+		el('label', { class: 'sleep-automatic' },
+			el('span', { class: 'sleep-card-icon tone-green' }, icon('sparkle')),
+			el('span', { class: 'sleep-option-text' }, el('span', { class: 'sleep-option-label', text: 'While tasks run' }),
+				el('span', { class: 'sleep-option-detail', text: 'Turns on and off by itself' })),
+			automatic));
 }
 /**
  * Opened from the cup in the view's title bar, which is outside the webview:
@@ -14170,8 +14915,8 @@ function createServerSettings(): HTMLElement {
 	const form = el('div', { class: 'server-connection-form' },
 		el('label', {}, 'Server address', server), el('label', {}, 'Connection ID', point),
 		el('label', {}, 'Connection key', key, keyStatus), el('label', {}, 'Workspace password', password, passwordStatus), clearPassword);
-	content.append(el('h3', { text: 'AI Browser Server' }),
-		el('p', { text: 'Connect this chat to your AI Browser account to read and control it from the website.' }),
+	content.append(el('h3', { text: `${productLabel()} Server` }),
+		el('p', { text: `Connect this chat to your ${productLabel()} account to read and control it from the website.` }),
 		connectionStatus, form, error, el('div', { class: 'server-connection-actions' }, connect, disconnect),
 		el('label',{class:'server-keep-awake'},'Keep awake after someone connects',awake),
 		el('p',{class:'feature-settings-note',text:'Applies on each new website connection. The timer starts again when another viewer joins and continues after disconnect. It prevents automatic system sleep; the display can still turn off. Saved immediately.'}),
@@ -14180,31 +14925,53 @@ function createServerSettings(): HTMLElement {
 	return content;
 }
 
+/**
+ * One row of a settings card, the Security tab's look shared by Appearance and
+ * Sound: a tinted icon, a title with an optional note, and the control at the
+ * right. A checkbox becomes a switch and the whole row is its label.
+ */
+function settingsRow(iconName: string, title: string, control: HTMLElement | HTMLElement[], note?: string): HTMLElement {
+	const controls = Array.isArray(control) ? control : [control];
+	const toggle = controls.length === 1 && controls[0] instanceof HTMLInputElement && controls[0].type === 'checkbox' ? controls[0] : undefined;
+	if (toggle) { toggle.classList.add('security-switch'); toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-label', title); }
+	const text = el('span', { class: 'security-guard-text' }, el('strong', { text: title }), ...(note ? [el('span', { class: 'security-guard-note', text: note })] : []));
+	const icon_ = el('span', { class: 'security-guard-icon' }, icon(iconName));
+	return toggle
+		? el('label', { class: 'security-guard' }, icon_, text, toggle)
+		: el('div', { class: 'security-guard settings-row-static' }, icon_, text, el('div', { class: 'settings-row-control' }, ...controls));
+}
+
+function settingsCard(title: string | undefined, ...rows: HTMLElement[]): HTMLElement[] {
+	return [...(title ? [el('h3', { class: 'settings-card-title', text: title })] : []), el('div', { class: 'security-guards' }, ...rows)];
+}
+
+const composerTabIcons: Record<string, string> = { skills: 'sparkle', activity: 'pulse', history: 'history', bash: 'terminal', files: 'files', github: 'github' };
+
 function createAppearanceSettings(): HTMLElement {
- const content = el('div', { class: 'feature-settings-content' });
- const theme = el('select');
- theme.dataset.appearance = 'theme';
- theme.setAttribute('aria-label', 'Color theme');
- for (const [value, label] of [['system', window.aiBrowserChatHost ? 'Auto (device)' : 'Auto (VS Code)'], ['light', 'Light'], ['dark', 'Dark']]) {
-  const option = el('option', { text: label }); option.value = value; theme.append(option);
- }
- theme.value = getThemePreference();
- theme.addEventListener('change', () => setThemePreference(theme.value as ThemePreference));
- const icons = el('input'); icons.type = 'checkbox'; icons.checked = getChatFileIcons();
- icons.dataset.appearance = 'fileIcons';
- icons.addEventListener('change', () => setChatFileIcons(icons.checked));
- content.append(el('h3', { text: 'Appearance' }),
-  el('label', { class: 'appearance-setting' }, el('span', { text: 'Color theme' }), theme),
-  el('label', { class: 'appearance-setting' }, el('span', { text: 'Show file icons in chat' }), icons),
-  el('h3', { text: 'Composer tabs' }),
-  ...optionalComposerTabs.map(([tab, label]) => {
-   const box = el('input'); box.type = 'checkbox'; box.checked = composerTabShown(tab);
-   box.dataset.appearance = `composerTab.${tab}`;
-   box.addEventListener('change', () => setComposerTabShown(tab, box.checked));
-   return el('label', { class: 'appearance-setting' }, el('span', { text: `Show ${label}` }), box);
-  }),
-  el('p', { class: 'feature-settings-note', text: 'Changes apply immediately and are saved on this device.' }));
- return content;
+	const content = el('div', { class: 'feature-settings-content appearance-settings' });
+	const theme = el('select');
+	theme.dataset.appearance = 'theme';
+	theme.setAttribute('aria-label', 'Color theme');
+	for (const [value, label] of [['system', window.aiBrowserChatHost ? 'Auto (device)' : 'Auto (VS Code)'], ['light', 'Light'], ['dark', 'Dark']]) {
+		const option = el('option', { text: label }); option.value = value; theme.append(option);
+	}
+	theme.value = getThemePreference();
+	theme.addEventListener('change', () => setThemePreference(theme.value as ThemePreference));
+	const icons = el('input'); icons.type = 'checkbox'; icons.checked = getChatFileIcons();
+	icons.dataset.appearance = 'fileIcons';
+	icons.addEventListener('change', () => setChatFileIcons(icons.checked));
+	content.append(
+		...settingsCard('Appearance',
+			settingsRow('color-mode', 'Color theme', theme, 'Auto follows ' + (window.aiBrowserChatHost ? 'this device.' : 'the VS Code theme.')),
+			settingsRow('file-media', 'File icons in chat', icons, 'The Explorer’s icons beside file names in messages and attachments.')),
+		...settingsCard('Composer tabs', ...optionalComposerTabs.map(([tab, label]) => {
+			const box = el('input'); box.type = 'checkbox'; box.checked = composerTabShown(tab);
+			box.dataset.appearance = `composerTab.${tab}`;
+			box.addEventListener('change', () => setComposerTabShown(tab, box.checked));
+			return settingsRow(composerTabIcons[tab] ?? 'layout', `Show ${label}`, box);
+		})),
+		el('p', { class: 'feature-settings-note', text: 'Changes apply immediately and are saved on this device.' }));
+	return content;
 }
 
 
@@ -14423,6 +15190,169 @@ function createOpenRouterSettings(): HTMLElement {
 	return content;
 }
 
+type McpFeaturesMessage = Extract<HostToView, { type: 'mcpFeatures' }>;
+let mcpFeaturesData: McpFeaturesMessage | undefined;
+let mcpFeaturesRender: (() => void) | undefined;
+
+/** Chat Settings → MCP: the conveniences an agent may use through the MCP server, each one switchable. The browser, editor reads and terminals are not here: the rest of the extension is built on them. */
+const mcpFeatureRows: ReadonlyArray<{ feature: McpFeatureId; icon: string; title: string; note: string }> = [
+	{ feature: 'alerts', icon: 'bell-dot', title: 'Urgent alerts', note: 'chat_alert — calls you with a system notification, a warning card and a sound when an agent needs your answer.' },
+	{ feature: 'sounds', icon: 'unmute', title: 'Sounds', note: 'chat_play_sound — an agent plays one of the chat sounds.' },
+	{ feature: 'cards', icon: 'checklist', title: 'Cards in the chat', note: 'Notices, progress, plans, results, JSON and citations an agent puts in the conversation.' },
+	{ feature: 'keepAwake', icon: 'coffee', title: 'Keep the computer awake', note: 'chat_keep_awake — an agent holds off sleep for a time or until the agents finish.' },
+	{ feature: 'chatControl', icon: 'debug-pause', title: 'Control the chat', note: 'Pause and resume a tab\'s queue, stop one agent.' },
+	{ feature: 'recording', icon: 'record', title: 'Video recording', note: 'browser_recording_* — an agent records a browser tab.' },
+	{ feature: 'annotations', icon: 'comment', title: 'Page annotations', note: 'browser_annotations_* — read and add markers on pages.' },
+	{ feature: 'cookies', icon: 'symbol-key', title: 'Cookies', note: 'List a page\'s cookies (never their values) and set cookies, which asks you first.' },
+	{ feature: 'editor', icon: 'code', title: 'Code editor', note: 'editor_* — what you have open and selected, showing a place, definitions, references, symbols.' },
+];
+
+function createMcpFeatureSettings(): HTMLElement {
+	const content = el('div', { class: 'feature-settings-content mcp-settings' });
+	content.append(el('p', { class: 'feature-settings-note', text: 'What agents may use through AI Browser\'s MCP server. A feature turned off disappears from an agent\'s tool list at its next session start; a call already planned is refused at once. The browser, the terminals and the chat\'s reading tools stay on.' }));
+	const boxes = new Map<McpFeatureId, HTMLInputElement>();
+	const rows: HTMLElement[] = [];
+	for (const f of mcpFeatureRows) {
+		const box = el('input'); box.type = 'checkbox'; box.disabled = true;
+		box.addEventListener('change', () => { box.disabled = true; post({ type: 'mcpFeatures', action: 'set', feature: f.feature, enabled: box.checked }); });
+		boxes.set(f.feature, box);
+		rows.push(settingsRow(f.icon, f.title, box, f.note));
+	}
+	content.append(...settingsCard(undefined, ...rows));
+	const status = el('p', { class: 'feature-settings-note security-error' }); status.setAttribute('role', 'alert'); status.hidden = true;
+	content.append(status);
+	let attached = false;
+	const render = () => {
+		if (content.isConnected) { attached = true; } else if (attached) { if (mcpFeaturesRender === render) { mcpFeaturesRender = undefined; } return; }
+		const data = mcpFeaturesData;
+		if (!data) { return; }
+		for (const [feature, box] of boxes) { box.checked = !data.disabled.includes(feature); box.disabled = false; }
+		status.textContent = data.error ?? ''; status.hidden = !data.error;
+	};
+	mcpFeaturesRender = render;
+	post({ type: 'mcpFeatures', action: 'load' });
+	return content;
+}
+
+type SecuritySettingsMessage = Extract<HostToView, { type: 'securitySettings' }>;
+let securityData: SecuritySettingsMessage | undefined;
+/** Draws `securityData` into the Security section on screen, in place; unset while the panel is closed. */
+let securityRender: (() => void) | undefined;
+
+/** What each guard does, and what turning it off lets an agent do — in that order, since that is the decision. */
+const securityGuardRows: ReadonlyArray<{ guard: SecurityGuardId; icon: string; title: string; on: string; off: string }> = [
+	{ guard: 'confirmNewSites', icon: 'globe', title: 'Ask before an agent opens a new site',
+		on: 'You see the full address and choose: once, this site, or every site — for that conversation.',
+		off: 'Agents open any address without asking. A page could tell one to send what it read to another site.' },
+	{ guard: 'protectSecretFields', icon: 'key', title: 'Keep agents out of password and card fields',
+		on: 'Passwords, one-time codes and card numbers are typed by you; the agent waits.',
+		off: 'Agents can type into those fields — including when a page asks them to.' },
+	{ guard: 'hideOtherChromeTabs', icon: 'eye-closed', title: 'Hide my own Chrome tabs from agents',
+		on: 'In your own Chrome profile, agents see only tabs opened through AI Browser and tabs you share.',
+		off: 'Agents can list and read every tab in your Chrome: mail, banking, anything open.' },
+	{ guard: 'confirmCookies', icon: 'symbol-key', title: 'Ask before an agent sets cookies',
+		on: 'You see which cookies, for which site, before anything is set.',
+		off: 'Agents set cookies for the open site without asking. Other sites stay out of reach either way.' },
+	{ guard: 'markPageContent', icon: 'note', title: 'Tell agents that page text is not instructions',
+		on: 'What an agent reads from a page comes with a note: treat it as data.',
+		off: 'Page text reaches the agent as it is. A hint, not a wall — but it helps.' },
+];
+
+/** Chat Settings → Security: the five guards and the sites agents may open in this window. Each switch applies at once. */
+function createSecuritySettings(): HTMLElement {
+	const content = el('div', { class: 'feature-settings-content security-settings' });
+	const summaryIcon = el('span', { class: 'security-summary-icon' });
+	const summaryTitle = el('strong');
+	const summaryText = el('span');
+	const allOn = button(['Turn all on'], { class: 'soft-button security-all-on' });
+	allOn.hidden = true;
+	allOn.addEventListener('click', () => { allOn.disabled = true; post({ type: 'securitySettings', action: 'allOn' }); });
+	const summary = el('div', { class: 'security-summary' }, summaryIcon, el('div', { class: 'security-summary-text' }, summaryTitle, summaryText), allOn);
+	summary.hidden = true;
+	summary.setAttribute('role', 'status');
+	content.append(summary,
+		el('p', { class: 'feature-settings-note', text: 'Agents read web pages, and a page can carry instructions meant for them. These checks keep a page from steering an agent into leaking data or acting for you. Questions they ask come from AI Browser itself — no agent rule or Auto mode can answer them.' }));
+	const boxes = new Map<SecurityGuardId, HTMLInputElement>();
+	const rows = new Map<SecurityGuardId, { row: HTMLElement; note: HTMLElement }>();
+	const list = el('div', { class: 'security-guards' });
+	for (const g of securityGuardRows) {
+		const box = el('input', { class: 'security-switch' }); box.type = 'checkbox'; box.disabled = true;
+		box.setAttribute('role', 'switch');
+		box.addEventListener('change', () => {
+			box.disabled = true;
+			post({ type: 'securitySettings', action: 'set', guard: g.guard, value: box.checked });
+		});
+		const note = el('span', { class: 'security-guard-note' });
+		const label = el('label', { class: 'security-guard' },
+			el('span', { class: 'security-guard-icon' }, icon(g.icon)),
+			el('span', { class: 'security-guard-text' }, el('strong', { text: g.title }), note), box);
+		boxes.set(g.guard, box); rows.set(g.guard, { row: label, note });
+		list.append(label);
+	}
+	content.append(list);
+	const status = el('p', { class: 'feature-settings-note security-error' }); status.setAttribute('role', 'alert');
+	const sitesHead = el('div', { class: 'security-sites-head' }, el('strong', { text: 'Sites agents may open' }));
+	const forgetAll = button(['Forget all'], { class: 'soft-button' });
+	forgetAll.addEventListener('click', () => post({ type: 'securitySettings', action: 'forget' }));
+	sitesHead.append(forgetAll);
+	const sites = el('div', { class: 'security-sites' });
+	content.append(status, sitesHead, sites,
+		el('p', { class: 'feature-settings-note', text: 'Approvals last until the window reloads. Local addresses and the site a tab is already on are never asked about. The switches are stored in VS Code settings for your user (hoverdeck.security.*) and cannot be changed by a project or from Chrome or the website.' }));
+	let sitesShape = '';
+	// The first call runs before the panel puts this section in the page, so "not connected" means closed
+	// only once it has been connected; unsubscribing then left the host's answer with nobody to draw it,
+	// and every switch stayed disabled.
+	let attached = false;
+	const render = () => {
+		if (content.isConnected) { attached = true; } else if (attached) { if (securityRender === render) { securityRender = undefined; } return; }
+		const data = securityData;
+		if (!data) { return; }
+		const off = securityGuardRows.filter(g => !data.guards[g.guard]);
+		for (const g of securityGuardRows) {
+			const on = data.guards[g.guard];
+			const box = boxes.get(g.guard)!; box.checked = on; box.disabled = false;
+			const { row, note } = rows.get(g.guard)!;
+			row.classList.toggle('off', !on);
+			note.textContent = on ? g.on : g.off;
+		}
+		summary.hidden = false;
+		summary.classList.toggle('weakened', off.length > 0);
+		summaryIcon.replaceChildren(icon(off.length ? 'shield' : 'pass-filled'));
+		summaryTitle.textContent = off.length === 0 ? 'All protections are on' : off.length === 1 ? '1 protection is off' : `${off.length} protections are off`;
+		summaryText.textContent = off.length === 0 ? 'Recommended. Turn one off only if it gets in your way.' : `Off: ${off.map(g => g.title.toLowerCase()).join('; ')}.`;
+		allOn.hidden = off.length === 0; allOn.disabled = false;
+		status.textContent = data.error ?? '';
+		const shape = JSON.stringify(data.sites);
+		if (shape === sitesShape) { return; }
+		sitesShape = shape;
+		forgetAll.hidden = data.sites.length === 0;
+		if (data.sites.length === 0) {
+			sites.replaceChildren(el('p', { class: 'security-sites-empty', text: data.guards.confirmNewSites
+				? 'None yet. When an agent asks to open a new site, your answer shows up here.'
+				: 'Agents are not asked about sites while that protection is off.' }));
+			return;
+		}
+		sites.replaceChildren(...data.sites.map(a => {
+			const chips = el('div', { class: 'security-site-chips' });
+			const chip = (text: string, site: string, title: string) => {
+				const remove = button([icon('close')], { class: 'ghost', title });
+				remove.setAttribute('aria-label', title);
+				remove.addEventListener('click', () => post({ type: 'securitySettings', action: 'forget', key: a.key, site }));
+				return el('span', { class: `security-site-chip${site === '*' ? ' any' : ''}` }, el('span', { text }), remove);
+			};
+			if (a.all) { chips.append(chip('Any site', '*', 'Ask again before opening new sites')); }
+			for (const site of a.sites) { chips.append(chip(site, site, `Forget ${site}`)); }
+			const forget = button(['Forget'], { class: 'soft-button', title: `Forget everything allowed for ${a.label}` });
+			forget.addEventListener('click', () => post({ type: 'securitySettings', action: 'forget', key: a.key }));
+			return el('div', { class: 'security-site-group' }, el('div', { class: 'security-site-who' }, icon('hubot'), el('span', { text: a.label }), forget), chips);
+		}));
+	};
+	securityRender = render;
+	render();
+	post({ type: 'securitySettings', action: 'load' });
+	return content;
+}
+
 type RemoteTerminalSettingsMessage = Extract<HostToView, { type: 'remoteTerminalSettings' }>;
 let remoteTerminalData: RemoteTerminalSettingsMessage | undefined;
 /** Draws `remoteTerminalData` into the section that is on screen, in place; unset while the panel is closed. */
@@ -14430,31 +15360,30 @@ let remoteTerminalRender: (() => void) | undefined;
 
 /** The Remote terminals section: what Chrome and the website may open. Each box applies at once; there is no Save. */
 let connectionPermissionRender: (() => void) | undefined;
+const connectionPermissionIcons: Record<ConnectionPermission, string> = {
+	conversations: 'comment-discussion', messages: 'send', approvals: 'shield', attachments: 'clippy', skills: 'sparkle',
+	workdir: 'folder', files: 'files', git: 'git-branch', github: 'github', settings: 'settings-gear', power: 'coffee',
+};
+
 function createConnectionPermissionSettings(): HTMLElement {
-	const content = el('div');
+	const content = el('div', { class: 'connection-permissions' });
 	content.append(el('p', { text: 'Chrome on this computer is a trusted interface. Supported actions are enabled by default. Use these switches only to restrict a connection type. Exchange keeps its own settings. Stop always remains available.' }));
 	const boxes: { surface: 'chrome' | 'exchange'; group: ConnectionPermission; input: HTMLInputElement }[] = [];
 	const counts: { surface: 'chrome' | 'exchange'; node: HTMLElement }[] = [];
 	const groups = Object.entries(connectionPermissionGroups) as [ConnectionPermission, string][];
 	for (const surface of ['chrome', 'exchange'] as const) {
-		const section = el('fieldset', { class: 'connection-permissions-group' });
 		const count = el('span', { class: 'connection-permissions-count' });
 		counts.push({ surface, node: count });
-		section.append(el('legend', { class: 'connection-permissions-head' },
-			icon(surface === 'chrome' ? 'browser' : 'globe', 'connection-permissions-icon'),
-			el('span', { class: 'connection-permissions-title' },
-				el('strong', { text: surface === 'chrome' ? 'Chrome' : 'Exchange' }),
-				el('span', { text: surface === 'chrome' ? 'Side panel on this computer' : 'The website' })),
-			count));
-		const list = el('div', { class: 'connection-permissions-list' });
+		const head = settingsRow(surface === 'chrome' ? 'browser' : 'globe', surface === 'chrome' ? 'Chrome' : 'Exchange', count, surface === 'chrome' ? 'Side panel on this computer' : 'The website');
+		head.classList.add('settings-card-head');
+		const rows: HTMLElement[] = [head];
 		for (const [group, label] of groups) {
 			const box = el('input'); box.type = 'checkbox';
 			boxes.push({ surface, group, input: box });
 			box.addEventListener('change', () => { post({ type: 'setConnectionPermission', surface, group, allowed: box.checked }); showCounts(); });
-			list.append(el('label', { class: 'connection-permission' }, box, el('span', { text: label })));
+			rows.push(settingsRow(connectionPermissionIcons[group], label, box));
 		}
-		section.append(list);
-		content.append(section);
+		content.append(el('div', { class: 'security-guards connection-permissions-card' }, ...rows));
 	}
 	const showCounts = () => {
 		for (const { surface, node } of counts) {
@@ -14479,8 +15408,8 @@ function createRemoteTerminalSettings(): HTMLElement {
 	const content = el('div', { class: 'feature-settings-content remote-terminal-settings' });
 	content.append(createConnectionPermissionSettings());
 	const status = el('p', { class: 'feature-settings-note' }); status.setAttribute('role', 'status');
-	content.append(el('strong', { text: 'Project files' }), el('p', { class: 'feature-settings-note', text: 'Choose what the Files panel and project attachment picker may do on this computer. Applies to the working folder of each conversation. Agent commands use their own approvals and sandbox permissions.' }));
 	const fileSelects = { chrome: el('select'), exchange: el('select') };
+	const fileRows: HTMLElement[] = [];
 	for (const surface of ['chrome', 'exchange'] as const) {
 		const select = fileSelects[surface];
 		const label = surface === 'chrome' ? 'Chrome' : 'Website';
@@ -14490,9 +15419,10 @@ function createRemoteTerminalSettings(): HTMLElement {
 		}
 		select.disabled = true;
 		select.addEventListener('change', () => post({ type: 'remoteTerminalSettings', action: 'setFiles', surface, value: select.value as 'off' | 'read' | 'attach' | 'write' }));
-		content.append(el('div', { class: 'feature-settings-row' }, el('label', {}, el('span', { text: label }), select)));
+		fileRows.push(settingsRow(surface === 'chrome' ? 'browser' : 'globe', label, select));
 	}
-	content.append(el('p', { class: 'feature-settings-note', text: 'Editing allows uploads, new folders, copy, cut and paste inside the working folder. Opening files in the editor, revealing files, using the editor clipboard and deleting files remain available only in VS Code.' }), el('strong', { text: 'Terminals' }));
+	content.append(...settingsCard('Project files', ...fileRows),
+		el('p', { class: 'feature-settings-note', text: 'Applies to the working folder of each conversation. Editing allows uploads, new folders, copy, cut and paste inside it. Opening files in the editor, revealing files, using the editor clipboard and deleting files remain available only in VS Code. Agent commands use their own approvals and sandbox permissions.' }));
 	const boxes = {
 		remoteTerminal: el('input'), remoteTerminalShell: el('input'), remoteTerminalAgent: el('input'),
 		chromeTerminalAccess: el('input'), chromeTerminalShell: el('input'), chromeTerminalAgent: el('input'),
@@ -14506,8 +15436,9 @@ function createRemoteTerminalSettings(): HTMLElement {
 		['remoteTerminalAgent', 'Exchange: open an agent in a terminal', "An agent's own CLI (Claude Code, Codex, …) on this computer."],
 	];
 	for (const [key] of rows) { boxes[key].type = 'checkbox'; }
+	let attached = false; // see createSecuritySettings: the first call runs before the section is in the page
 	const render = () => {
-		if (!content.isConnected && remoteTerminalRender === render) { remoteTerminalRender = undefined; return; }
+		if (content.isConnected) { attached = true; } else if (attached) { if (remoteTerminalRender === render) { remoteTerminalRender = undefined; } return; }
 		const data = remoteTerminalData;
 		if (!data) { return; }
 		boxes.chromeTerminalAccess.checked = data.chrome?.allowed ?? true;
@@ -14527,11 +15458,16 @@ function createRemoteTerminalSettings(): HTMLElement {
 		status.textContent = data.error ?? '';
 	};
 	remoteTerminalRender = render;
-	for (const [key, label, note] of rows) {
+	const terminalIcons: Record<keyof typeof boxes, string> = {
+		chromeTerminalAccess: 'terminal', chromeTerminalShell: 'terminal-bash', chromeTerminalAgent: 'hubot',
+		remoteTerminal: 'terminal', remoteTerminalShell: 'terminal-bash', remoteTerminalAgent: 'hubot',
+	};
+	const terminalRow = ([key, label, note]: [keyof typeof boxes, string, string]): HTMLElement => {
 		const box = boxes[key];
 		box.addEventListener('change', () => post({ type: 'remoteTerminalSettings', action: 'set', key, value: box.checked }));
-		content.append(el('div', { class: 'feature-settings-row' }, el('label', { class: 'openrouter-check' }, box, el('span', { text: label })), el('p', { class: 'feature-settings-note', text: note })));
-	}
+		return settingsRow(terminalIcons[key], label.replace(/^(Chrome|Exchange): /, ''), box, note);
+	};
+	content.append(...settingsCard('Terminals · Chrome', ...rows.slice(0, 3).map(terminalRow)), ...settingsCard('Terminals · Exchange', ...rows.slice(3).map(terminalRow)));
 	content.append(status, el('p', { class: 'feature-settings-note', text: 'These are stored in VS Code settings for your user and are shared across projects. They cannot be changed from Chrome or the website.' }));
 	render();
 	post({ type: 'remoteTerminalSettings', action: 'load' });
@@ -14587,27 +15523,27 @@ function createSoundSettings(): HTMLElement {
 	runTest.addEventListener('click', playRun);
 	const runNotify = el('input'); runNotify.type = 'checkbox'; runNotify.checked = current.githubRunNotify !== false;
 	runNotify.addEventListener('change', () => { if (!remote) { post({ type: 'soundSettings', action: 'set', githubRunNotify: runNotify.checked }); } });
+	const awayRow = settingsRow('eye-closed', 'Only when the window is not focused', away);
+	const muteAway = () => awayRow.classList.toggle('muted', away.disabled);
+	muteAway(); notify.addEventListener('change', muteAway);
 	content.append(
-		el('div', { class: 'feature-settings-row' }, el('label', { class: 'openrouter-check' }, enabled, el('span', { text: 'Play a sound when agents finish' })),
-			el('p', { class: 'feature-settings-note', text: 'The default for the speaker button beside the usage meter. A press there switches it on this device until you change this.' })),
-		el('div', { class: 'feature-settings-row' }, el('label', { class: 'openrouter-check' }, activeChat, el('span', { text: 'Play a sound for the active chat' })),
-			el('p', { class: 'feature-settings-note', text: 'Off by default. A conversation that is selected and visible in the active window finishes silently; background chats and inactive windows still play a sound.' })),
-		el('div', { class: 'feature-settings-row' }, el('strong', { text: 'Sound' }), el('div', { class: 'sound-row' }, choice, test)),
-		el('div', { class: 'feature-settings-row' }, el('strong', { text: 'Volume' }), el('div', { class: 'sound-row' }, volume, volumeText)),
-		el('div', { class: 'feature-settings-row' }, el('strong', { text: 'Repeat' }), el('div', { class: 'sound-row' }, repeat)),
-		el('div', { class: 'feature-settings-row' }, el('strong', { text: 'Notifications' }),
-			el('label', { class: 'openrouter-check' }, notify, el('span', { text: 'Show a system notification when agents finish' })),
-			el('label', { class: 'openrouter-check' }, away, el('span', { text: 'Only when the window is not focused' })),
-			el('p', { class: 'feature-settings-note', text: 'VS Code shows it through the system (macOS Notification Center, Windows, notify-send on Linux). Chrome and the website show the browser\'s own, once you allow it.' })),
-		...(remote ? [] : [el('div', { class: 'feature-settings-row' }, el('strong', { text: 'GitHub Actions' }),
-			el('div', { class: 'sound-row' }, runChoice, runTest),
-			el('label', { class: 'openrouter-check' }, runNotify, el('span', { text: 'Show a system notification when the run ends' })),
-			el('p', { class: 'feature-settings-note', text: 'For runs you ring the bell for in the GitHub tab (hover a running run). Uses the volume above; the notification shows whether or not the window is focused.' }))]),
-		el('p', { class: 'feature-settings-note', text: remote ? 'Stored on this device for this browser only. What is not changed here follows the settings in VS Code.' : 'Stored in VS Code settings (aiBrowser.chat.sound.*, aiBrowser.chat.notifications.*) for your user. Chrome and the website follow them unless changed there.' }));
+		...settingsCard('Sound',
+			settingsRow('unmute', 'Play a sound when agents finish', enabled, 'The default for the speaker button beside the usage meter. A press there switches it on this device until you change this.'),
+			settingsRow('comment-discussion', 'Play a sound for the active chat', activeChat, 'A conversation selected and visible in the active window finishes silently unless this is on.'),
+			settingsRow('music', 'Sound', [choice, test]),
+			settingsRow('settings', 'Volume', [volume, volumeText]),
+			settingsRow('sync', 'Repeat', repeat)),
+		...settingsCard('Notifications',
+			settingsRow('bell', 'System notification when agents finish', notify, 'macOS Notification Center, Windows, notify-send on Linux; Chrome and the website show the browser’s own once allowed.'),
+			awayRow),
+		...(remote ? [] : settingsCard('GitHub Actions',
+			settingsRow('github-action', 'Sound when a watched run ends', [runChoice, runTest], 'For runs you ring the bell for in the GitHub tab. Uses the volume above.'),
+			settingsRow('bell-dot', 'System notification when the run ends', runNotify, 'Shown whether or not the window is focused.'))),
+		el('p', { class: 'feature-settings-note', text: remote ? 'Stored on this device for this browser only. What is not changed here follows the settings in VS Code.' : 'Stored in VS Code settings (hoverdeck.chat.sound.*, hoverdeck.chat.notifications.*) for your user. Chrome and the website follow them unless changed there.' }));
 	return content;
 }
 
-function openFeatureSettings(initial?: 'openrouter'): void {
+function openFeatureSettings(initial?: 'openrouter' | 'security'): void {
 	if (!state) { return; }
 	closePopups(featureSettingsPanel);
 	if (featureSettingsTimer) { clearTimeout(featureSettingsTimer); saveFeatureSettings(); }
@@ -14660,6 +15596,14 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 	const remoteContent = remoteTab.hidden ? el('div') : createRemoteTerminalSettings();
 	remoteContent.id = 'remote-terminal-content'; remoteContent.hidden = true;
 	remoteContent.setAttribute('role', 'tabpanel'); remoteContent.setAttribute('aria-labelledby', remoteTab.id);
+	const securityTab = button(['Security'], { class: 'feature-settings-tab' });
+	securityTab.id = 'security-tab'; securityTab.hidden = gate('securitySettings').s !== 'on';
+	securityTab.setAttribute('role', 'tab'); securityTab.setAttribute('aria-selected', 'false');
+	securityTab.setAttribute('aria-controls', 'security-content');
+	if (!securityTab.hidden) { tabs.append(securityTab); }
+	const securityContent = securityTab.hidden ? el('div') : createSecuritySettings();
+	securityContent.id = 'security-content'; securityContent.hidden = true;
+	securityContent.setAttribute('role', 'tabpanel'); securityContent.setAttribute('aria-labelledby', securityTab.id);
 	const soundTab = button(['Sound & notifications'], { class: 'feature-settings-tab' });
 	soundTab.id = 'sound-tab'; soundTab.hidden = ((!state.surface || state.surface === 'editor') && gate('soundSettings').s !== 'on') || !state.sound;
 	soundTab.setAttribute('role', 'tab'); soundTab.setAttribute('aria-selected', 'false');
@@ -14668,6 +15612,14 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 	const soundContent = soundTab.hidden ? el('div') : createSoundSettings();
 	soundContent.id = 'sound-content'; soundContent.hidden = true;
 	soundContent.setAttribute('role', 'tabpanel'); soundContent.setAttribute('aria-labelledby', soundTab.id);
+	const mcpTab = button(['MCP'], { class: 'feature-settings-tab' });
+	mcpTab.id = 'mcp-features-tab'; mcpTab.hidden = gate('mcpFeatures').s !== 'on';
+	mcpTab.setAttribute('role', 'tab'); mcpTab.setAttribute('aria-selected', 'false');
+	mcpTab.setAttribute('aria-controls', 'mcp-features-content');
+	if (!mcpTab.hidden) { tabs.append(mcpTab); }
+	const mcpContent = mcpTab.hidden ? el('div') : createMcpFeatureSettings();
+	mcpContent.id = 'mcp-features-content'; mcpContent.hidden = true;
+	mcpContent.setAttribute('role', 'tabpanel'); mcpContent.setAttribute('aria-labelledby', mcpTab.id);
 	const serverTab = button(['Server connection'], { class: 'feature-settings-tab' });
 	serverTab.id = 'server-connection-tab'; serverTab.hidden = !state.exchangeConnection;
 	serverTab.setAttribute('role', 'tab'); serverTab.setAttribute('aria-selected', 'false');
@@ -14756,6 +15708,18 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 			scheduleFeatureSave(0);
 		});
 		row.append(el('label', {}, el('span', { text: 'Agent' }), agent), el('label', {}, el('span', { text: 'Effort' }), effort));
+		if (feature !== 'chatTitle') {
+			// Off by default: the last turns of the chat (prompts and reply text, no tool calls) go with the request.
+			const include = el('input'); include.type = 'checkbox'; include.dataset.appearance = 'includeChat';
+			include.checked = featureSettingsDraft[feature].includeChat === true;
+			include.addEventListener('change', () => {
+				const { includeChat: _old, ...choice } = featureSettingsDraft[feature];
+				featureSettingsDraft = { ...featureSettingsDraft, [feature]: include.checked ? { ...choice, includeChat: true } : choice };
+				scheduleFeatureSave(0);
+			});
+			row.append(el('label', { class: 'feature-include-chat' }, include,
+				el('span', { text: `Include the last ${chatExcerptTurns} messages of the chat — your prompts and the agent's replies, text only` })));
+		}
 		if (feature === 'chatTitle') {
 			// When the title is written again; `data-appearance` keeps these out of the agent/effort sweeps.
 			const refresh = readTitleRefresh(featureSettingsDraft.chatTitle.refresh);
@@ -14808,7 +15772,9 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 		content.append(row);
 	}
 	content.append(el('p', { class: 'feature-settings-note', text: "Commit messages use the selected agent's remembered chat model or its default. Branch names and chat titles use an available lightweight model. Effort is mapped to the levels supported by that model. Custom prompts apply to future requests; output format and length checks still apply. Empty prompts use the defaults. Settings are shared across projects." }));
-	const selectTab = (selected: 'ai' | 'video' | 'temporary' | 'server' | 'appearance' | 'openrouter' | 'remote' | 'sound') => {
+	const selectTab = (selected: 'ai' | 'video' | 'temporary' | 'server' | 'appearance' | 'openrouter' | 'remote' | 'sound' | 'security' | 'mcp') => {
+		mcpContent.hidden = selected !== 'mcp'; mcpTab.setAttribute('aria-selected', String(selected === 'mcp'));
+		securityContent.hidden = selected !== 'security'; securityTab.setAttribute('aria-selected', String(selected === 'security'));
 		soundContent.hidden = selected !== 'sound'; soundTab.setAttribute('aria-selected', String(selected === 'sound'));
 		remoteContent.hidden = selected !== 'remote'; remoteTab.setAttribute('aria-selected', String(selected === 'remote'));
 		openrouterContent.hidden = selected !== 'openrouter'; openrouterTab.setAttribute('aria-selected', String(selected === 'openrouter'));
@@ -14817,7 +15783,7 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 		temporaryTab.setAttribute('aria-selected', String(selected === 'temporary'));
 		serverContent.hidden = selected !== 'server'; serverTab.setAttribute('aria-selected', String(selected === 'server'));
 		appearanceContent.hidden = selected !== 'appearance'; appearanceTab.setAttribute('aria-selected', String(selected === 'appearance'));
-		featureSettingsStatus.hidden = selected === 'server' || selected === 'appearance' || selected === 'openrouter' || selected === 'remote' || selected === 'sound';
+		featureSettingsStatus.hidden = selected === 'server' || selected === 'appearance' || selected === 'openrouter' || selected === 'remote' || selected === 'sound' || selected === 'security' || selected === 'mcp';
 	};
 	tab.addEventListener('click', () => selectTab('ai')); videoTab.addEventListener('click', () => selectTab('video'));
 	// Temporary files live on the editor's machine: the tab is gone where they cannot be managed.
@@ -14831,8 +15797,10 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 	appearanceTab.addEventListener('click', () => selectTab('appearance'));
 	openrouterTab.addEventListener('click', () => selectTab('openrouter'));
 	remoteTab.addEventListener('click', () => selectTab('remote'));
+	securityTab.addEventListener('click', () => selectTab('security'));
 	soundTab.addEventListener('click', () => selectTab('sound'));
-	const sections = [tab, videoTab, temporaryTab, appearanceTab, ...(openrouterTab.hidden ? [] : [openrouterTab]), ...(remoteTab.hidden ? [] : [remoteTab]), ...(soundTab.hidden ? [] : [soundTab]), ...(state.exchangeConnection ? [serverTab] : [])];
+	mcpTab.addEventListener('click', () => selectTab('mcp'));
+	const sections = [tab, videoTab, temporaryTab, appearanceTab, ...(openrouterTab.hidden ? [] : [openrouterTab]), ...(remoteTab.hidden ? [] : [remoteTab]), ...(securityTab.hidden ? [] : [securityTab]), ...(soundTab.hidden ? [] : [soundTab]), ...(mcpTab.hidden ? [] : [mcpTab]), ...(state.exchangeConnection ? [serverTab] : [])];
 	tabs.addEventListener('keydown', event => {
 		const index = sections.indexOf(document.activeElement as HTMLButtonElement);
 		if (index < 0 || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) { return; }
@@ -14843,11 +15811,12 @@ function openFeatureSettings(initial?: 'openrouter'): void {
 	});
 	featureSettingsPanel.replaceChildren(heading,
 		el('div', { class: 'feature-settings-layout' }, tabs,
-			el('div', { class: 'feature-settings-main' }, content, videoContent, temporaryContent, openrouterContent, remoteContent, soundContent, serverContent, appearanceContent,
+			el('div', { class: 'feature-settings-main' }, content, videoContent, temporaryContent, openrouterContent, remoteContent, securityContent, soundContent, mcpContent, serverContent, appearanceContent,
 				el('div', { class: 'feature-settings-actions' }, featureSettingsStatus))));
 	showScreenOverlay(featureSettingsPanel);
 	featureSettingsPanel.focus();
 	if (initial === 'openrouter' && !openrouterTab.hidden) { selectTab('openrouter'); }
+	if (initial === 'security' && !securityTab.hidden) { selectTab('security'); securityTab.focus(); }
 }
 /** Every choice in the AI features and Video recording tabs saves itself: selects at once, typed text after a pause. */
 let featureSettingsTimer: ReturnType<typeof setTimeout> | undefined;

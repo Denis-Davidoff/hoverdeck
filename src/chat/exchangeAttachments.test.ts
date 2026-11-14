@@ -68,7 +68,7 @@ test('opening a VS Code browser tab or Chrome needs no selected remote tab',asyn
  const h=harness();await h.command({type:'openBrowser',where:'vscode'},null);
  assert.deepEqual(h.calls[0],{url:'about:blank',where:'vscode',preserveFocus:true});assert.equal(h.events[0].message.type,'exchangeBrowser');
  await h.command({type:'openBrowser',where:'chrome'},null);
- assert.equal(h.calls[1],'aiBrowser.openInChrome');assert.equal(h.events[1].message.type,'exchangeBrowser');
+ assert.equal(h.calls[1],'hoverdeck.openInChrome');assert.equal(h.events[1].message.type,'exchangeBrowser');
 });
 test('remote folder paths are validated before changing the conversation',async()=>{
  const h=harness();

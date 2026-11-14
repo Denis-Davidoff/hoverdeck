@@ -31,11 +31,11 @@ function fixture() {
 		markCommands: (text: string) => [{ textContent: text }], linkNode: (_url: string, text: string) => ({ textContent: text }),
 		rememberAttachmentCaret() {}, Event: class { type: string; constructor(type: string) { this.type = type; } },
 		paletteMode: undefined, paletteTarget: input, paletteKey: () => false, walking: () => false, recall: () => false,
-		send: (mode?: string) => sent.push(mode),
+		send: (mode?: string) => sent.push(mode), state: undefined,
 	};
 	const linkEvents = source.slice(source.indexOf('let composerLinkPress:'), source.indexOf('/** The mirror behind the box, kept to its text and its scroll. */'));
 	const keys = source.slice(source.lastIndexOf("input.addEventListener('keydown', event => {"), source.indexOf("sendButton.addEventListener('click', () => {"));
-	const api = runInNewContext(transpileModule([lift('markComposerText'), lift('composerLinkHit'), lift('linkMenu'), linkEvents, keys, '({ markComposerText });'].join('\n'), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, context);
+	const api = runInNewContext(transpileModule([lift('markComposerText'), lift('composerLinkHit'), lift('productLabel'), lift('linkMenu'), linkEvents, keys, '({ markComposerText });'].join('\n'), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, context);
 	const event = (type: string, data: any = {}) => {
 		let prevented = false;
 		const event = { type, button: 0, metaKey: false, ctrlKey: false, shiftKey: false, preventDefault() { prevented = true; }, stopPropagation() {}, ...data };

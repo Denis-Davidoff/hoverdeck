@@ -246,7 +246,7 @@ export function opencodeCodeCalls(code: string): CodeCall[] | undefined {
 
 /** Our own server, as `mcpServers` names it (`ai-browser`) or a per-project name. */
 function isBrowserServer(name: string): boolean {
-	return name === 'ai-browser' || /^ai-browser-.+-[0-9a-f]{6}$/.test(name);
+	return name === 'ai-browser' || name === 'hoverdeck' || /^ai-browser-.+-[0-9a-f]{6}$/.test(name);
 }
 
 /* ---------------------------------------------------------------- tools */
@@ -578,10 +578,10 @@ export function opencodeErrorText(code: number | undefined, message: string, err
 export function opencodeExitText(reason: string, starting: boolean): string {
 	const said = oneLine(reason, 300) || 'no details';
 	if (/ENOENT|not found|no such file/i.test(reason)) {
-		return `OpenCode could not be started (${said}). Install it (https://opencode.ai) or set aiBrowser.chat.opencodePath, then refresh the agents.`;
+		return `OpenCode could not be started (${said}). Install it (https://opencode.ai) or set hoverdeck.chat.opencodePath, then refresh the agents.`;
 	}
 	if (/EACCES|permission denied/i.test(reason)) {
-		return `OpenCode could not be started (${said}): the file is not executable. Fix its permissions or set aiBrowser.chat.opencodePath.`;
+		return `OpenCode could not be started (${said}): the file is not executable. Fix its permissions or set hoverdeck.chat.opencodePath.`;
 	}
 	if (/auth|login|credential|api key/i.test(reason)) {
 		return `OpenCode is not signed in (${said}). To fix it, ${loginAdvice}.`;

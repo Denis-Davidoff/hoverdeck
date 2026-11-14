@@ -82,6 +82,10 @@ export class ChatStateSurfaces {
 	watching(): boolean {
 		return [...this._surfaces].some(surface => surface.active !== false && !!surface.event);
 	}
+	/** Whether the website shows this window's chats: it plays an agent's sounds and alerts (Chrome leaves them to VS Code). */
+	listening(): boolean {
+		return [...this._surfaces].some(surface => surface.active !== false && surface.kind === 'exchange');
+	}
 	/** Conversations some surface is showing — what the editor marks as mirrored. */
 	chatIds(fallback: string, kind?: 'chrome' | 'exchange'): Set<string> {
 		return new Set([...this._surfaces].filter(surface => surface.active !== false && (!kind || surface.kind === kind)).map(surface => surface.chatId ?? fallback));

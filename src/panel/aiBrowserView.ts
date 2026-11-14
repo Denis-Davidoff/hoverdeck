@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { Disposable } from '../core/dispose';
 import { generateUuid } from '../core/uuid';
+import { productName } from '../core/flavor';
 
 
 export interface ShowOptions {
@@ -28,8 +29,7 @@ function focusLockSetting(configuration: vscode.WorkspaceConfiguration): boolean
 
 export class AIBrowserView extends Disposable {
 
-	public static readonly viewType = 'aiBrowser.view';
-	private static readonly title = vscode.l10n.t("AI Browser");
+	public static readonly viewType = 'hoverdeck.view';
 
 	private static getWebviewLocalResourceRoots(extensionUri: vscode.Uri): readonly vscode.Uri[] {
 		return [
@@ -55,7 +55,7 @@ export class AIBrowserView extends Disposable {
 		url: string,
 		showOptions?: ShowOptions
 	): AIBrowserView {
-		const webview = vscode.window.createWebviewPanel(AIBrowserView.viewType, AIBrowserView.title, {
+		const webview = vscode.window.createWebviewPanel(AIBrowserView.viewType, productName(), {
 			viewColumn: showOptions?.viewColumn ?? vscode.ViewColumn.Active,
 			preserveFocus: showOptions?.preserveFocus
 		}, {
@@ -105,8 +105,8 @@ export class AIBrowserView extends Disposable {
 		}));
 
 		this._register(vscode.workspace.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('aiBrowser.focusLockIndicator.enabled')) {
-				const configuration = vscode.workspace.getConfiguration('aiBrowser');
+			if (e.affectsConfiguration('hoverdeck.focusLockIndicator.enabled')) {
+				const configuration = vscode.workspace.getConfiguration('hoverdeck');
 				this._webviewPanel.webview.postMessage({
 					type: 'didChangeFocusLockIndicatorEnabled',
 					focusLockEnabled: focusLockSetting(configuration)
@@ -133,7 +133,7 @@ export class AIBrowserView extends Disposable {
 	}
 
 	private getHtml(url: string) {
-		const configuration = vscode.workspace.getConfiguration('aiBrowser');
+		const configuration = vscode.workspace.getConfiguration('hoverdeck');
 
 		const nonce = generateUuid();
 

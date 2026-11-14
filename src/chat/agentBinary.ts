@@ -79,7 +79,7 @@ export interface AgentBinaryChoice {
 	readonly chosen?: AgentBinary;
 	/** Every copy found, newest first; empty when the setting decides. */
 	readonly copies: readonly AgentBinary[];
-	/** The `aiBrowser.chat.<agent>Path` setting decides, whatever the project chose. */
+	/** The `hoverdeck.chat.<agent>Path` setting decides, whatever the project chose. */
 	readonly setting: boolean;
 	/** The project chose a copy that is no longer among those found; the newest is used. */
 	readonly pinMissing: boolean;
@@ -100,7 +100,7 @@ export async function chooseAgentBinary(agent: AgentId, current?: string, pinned
 	// `current`: only a Refresh passes it. A choice the user just made asks for a
 	// replacement, and keeping the copy in use — say one whose version could not
 	// be read — left Auto showing beside a copy it did not pick.
-	const configured = vscode.workspace.getConfiguration('aiBrowser.chat').get<string>(`${agent}Path`, '').trim();
+	const configured = vscode.workspace.getConfiguration('hoverdeck.chat').get<string>(`${agent}Path`, '').trim();
 	if (configured) {
 		const resolved = configured.startsWith('~') ? path.join(os.homedir(), configured.slice(1)) : configured;
 		const chosen = await isExecutable(resolved) ? { path: resolved, source: 'setting' as const, version: await versionOf(resolved) } : undefined;
@@ -201,7 +201,7 @@ function versionOf(file: string): Promise<string | undefined> {
 /** Where a binary came from, in a few words. */
 export function binarySource(binary: AgentBinary): string {
 	return {
-		setting: 'from the aiBrowser.chat setting',
+		setting: 'from the hoverdeck.chat setting',
 		path: 'from PATH',
 		common: 'from a standard install location',
 		extension: "bundled with the assistant's VS Code extension",

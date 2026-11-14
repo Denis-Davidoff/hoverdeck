@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { VisualizationStore, visualizationByteLimit } from './visualizationStore.ts';
+import { OutsideDirectoryError, VisualizationStore, visualizationByteLimit } from './visualizationStore.ts';
 
 async function fixture(run: (store: VisualizationStore, base: string) => Promise<void>): Promise<void> {
 	const base = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-browser-visualization-test-'));
@@ -163,4 +163,29 @@ test('downloadable files are immutable, scoped, bounded, and archived without ex
 	await fs.writeFile(path.join(base, 'archive', scope, `${published.revision}.artifact`), '{}');
 	const restored = new VisualizationStore(path.join(base, 'project'), path.join(base, 'archive'), 'chat-one');
 	assert.equal(await restored.loadArtifact(published.revision), undefined);
+}));
+
+test('a file outside the directory is refused with its path, and shown only once allowed', async () => fixture(async (store, base) => {
+	await store.prepare();
+	const outside = path.join(base, 'shot.png');
+	await fs.writeFile(outside, png);
+	await assert.rejects(store.publishImage(outside), (error: unknown) => error instanceof OutsideDirectoryError && error.path === outside);
+	const published = await store.publishImage(outside, true);
+	assert.deepEqual(await store.loadImage(published.revision), { mimeType: 'image/png', base64: png.toString('base64') });
+	const page = path.join(base, 'page.html');
+	await fs.writeFile(page, '<p>hi</p>');
+	await assert.rejects(store.publish(page), OutsideDirectoryError);
+	assert.equal((await store.publish(page, true)).html, '<p>hi</p>');
+	const data = path.join(base, 'notes.txt');
+	await fs.writeFile(data, 'notes');
+	await assert.rejects(store.publishArtifact(data, 'file'), OutsideDirectoryError);
+	assert.ok((await store.publishArtifact(data, 'file', true)).revision);
+	// Allowing a path never lets a link or a second name stand in for it.
+	const link = path.join(base, 'link.png');
+	await fs.symlink(outside, link);
+	await assert.rejects(store.publishImage(link, true));
+	const hard = path.join(base, 'hard.png');
+	await fs.link(outside, hard);
+	await assert.rejects(store.publishImage(hard, true), /hard links/);
+	await assert.rejects(store.publishImage(path.join(base, 'missing.png'), true));
 }));

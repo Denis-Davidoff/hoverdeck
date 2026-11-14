@@ -20,7 +20,7 @@ function sandbox(value: string, caret: number) {
 		setSelectionRange(start: number) { this.selectionStart = start; },
 	};
 	const context: Record<string, unknown> = {
-		input, posted, draftChat: 'chat', fromHistory: false,
+		input, posted, draftChat: 'chat', fromHistory: false, recallShown: undefined, forgetPreviews() {}, sendWhenSettled() {},
 		attachmentCaret: { chat: 'chat', value, start: caret, end: caret },
 		tokenedChips: new Map(), pastedTokens: new Map(), removedByToken: new Set(),
 		pendingAttachmentPastes: new Map(),

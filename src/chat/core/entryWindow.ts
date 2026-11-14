@@ -38,7 +38,7 @@ export function windowEntries(entries: readonly ChatEntry[], prompts: number, ma
 }
 
 /**
- * `aiBrowser.chat.visibleTurns` as last read by the chat (`visibleTurns.ts`): the number of turns
+ * `hoverdeck.chat.visibleTurns` as last read by the chat (`visibleTurns.ts`): the number of turns
  * every view is sent at first and added per "Show earlier messages". Kept here so the Chrome bridge
  * and the website's connection, which do not load `vscode`, read the same value.
  */

@@ -8,7 +8,9 @@ import type { BrowserController, ShareView } from '../browser/browserController'
 import { inUseMarker, sharedMarker, stripMarker } from '../browser/shareIndicator';
 import { plainInLabel, plainInMarkdown } from '../core/notifyText';
 import { normalizeAddress } from '../core/webUrl';
+import { hasExternalAgents, ownExtensionId, productName } from '../core/flavor';
 import { supportsSecondarySidebar } from '../chat/chatView';
+import { securityGuardStates } from '../core/securitySettings';
 import { pageTitle } from '../translate/translateText';
 import {
 	browserApiState, integratedBrowserCommand, onDidChangeGrantState,
@@ -23,8 +25,8 @@ const priority = 1000;
 
 export function registerStatusBar(context: vscode.ExtensionContext, controller: BrowserController): void {
 	const item = vscode.window.createStatusBarItem(
-		'aiBrowser.status', vscode.StatusBarAlignment.Left, priority);
-	item.name = vscode.l10n.t("AI Browser");
+		'hoverdeck.status', vscode.StatusBarAlignment.Left, priority);
+	item.name = productName();
 	item.command = menuCommand;
 	item.show();
 	context.subscriptions.push(item);
@@ -37,9 +39,9 @@ export function registerStatusBar(context: vscode.ExtensionContext, controller: 
 	context.subscriptions.push(controller.onDidChangeShare(applyShare));
 
 	const enable = vscode.window.createStatusBarItem(
-		'aiBrowser.enableApi', vscode.StatusBarAlignment.Left, priority - 1);
-	enable.name = vscode.l10n.t("AI Browser: browser API");
-	enable.command = 'aiBrowser.enableBrowserApi';
+		'hoverdeck.enableApi', vscode.StatusBarAlignment.Left, priority - 1);
+	enable.name = vscode.l10n.t("{0}: browser API", productName());
+	enable.command = 'hoverdeck.enableBrowserApi';
 	context.subscriptions.push(enable);
 
 	const refresh = async () => {
@@ -85,7 +87,7 @@ function applyShareState(item: vscode.StatusBarItem, shares: ShareView): void {
 	const { assignments, paused } = shares;
 
 	if (paused.length > 0) {
-		item.text = `$(globe) AI Browser $(debug-pause)`;
+		item.text = `$(globe) ${productName()} $(debug-pause)`;
 		item.tooltip = new vscode.MarkdownString([
 			vscode.l10n.t("**Paused, because a shared tab was closed.**"),
 			'\n\n',
@@ -100,16 +102,16 @@ function applyShareState(item: vscode.StatusBarItem, shares: ShareView): void {
 	item.backgroundColor = undefined;
 
 	if (assignments.length === 0) {
-		item.text = '$(globe) AI Browser';
-		item.tooltip = vscode.l10n.t("AI Browser — open a page, give a tab to an assistant");
+		item.text = `$(globe) ${productName()}`;
+		item.tooltip = vscode.l10n.t("{0} — open a page, give a tab to an assistant", productName());
 		return;
 	}
 
 	const used = assignments.some(assignment => assignment.usedBy.length > 0);
 	const glyph = used ? inUseMarker : sharedMarker;
 	item.text = assignments.length === 1
-		? `$(globe) AI Browser ${glyph}`
-		: `$(globe) AI Browser ${glyph}${assignments.length}`;
+		? `$(globe) ${productName()} ${glyph}`
+		: `$(globe) ${productName()} ${glyph}${assignments.length}`;
 	item.tooltip = new vscode.MarkdownString([
 		vscode.l10n.t("**Shared tabs**"),
 		'\n\n',
@@ -172,7 +174,7 @@ export function pulse(item: vscode.StatusBarItem, landOn = true): vscode.Disposa
 	return new vscode.Disposable(() => clearInterval(timer));
 }
 
-const menuCommand = 'aiBrowser.statusMenu';
+const menuCommand = 'hoverdeck.statusMenu';
 
 interface MenuItem extends vscode.QuickPickItem {
 	readonly run?: () => Thenable<unknown>;
@@ -202,12 +204,12 @@ async function showMenu(controller: BrowserController): Promise<void> {
 
 	// Every agent the plugin supports; Pi and OpenRouter live in the chat only.
 	const agents = [
-		{ who: 'claude', name: 'Claude Code', connect: 'aiBrowser.connectClaudeCode' },
-		{ who: 'codex', name: 'Codex', connect: 'aiBrowser.connectCodex' },
-		{ who: 'gemini', name: 'Gemini CLI', connect: 'aiBrowser.connectGemini' },
-		{ who: 'opencode', name: 'OpenCode', connect: 'aiBrowser.connectOpenCode' },
-		{ who: 'pi', name: 'Pi', connect: 'aiBrowser.connectChatAgent' },
-		{ who: 'openrouter', name: 'OpenRouter', connect: 'aiBrowser.connectChatAgent' },
+		{ who: 'claude', name: 'Claude Code', connect: 'hoverdeck.connectClaudeCode' },
+		{ who: 'codex', name: 'Codex', connect: 'hoverdeck.connectCodex' },
+		{ who: 'gemini', name: 'Gemini CLI', connect: 'hoverdeck.connectGemini' },
+		{ who: 'opencode', name: 'OpenCode', connect: 'hoverdeck.connectOpenCode' },
+		{ who: 'pi', name: 'Pi', connect: 'hoverdeck.connectChatAgent' },
+		{ who: 'openrouter', name: 'OpenRouter', connect: 'hoverdeck.connectChatAgent' },
 	] as const;
 	const availableAgents = agents.filter(agent => supportsSecondarySidebar(vscode.version) || (agent.who !== 'pi' && agent.who !== 'openrouter'));
 
@@ -218,18 +220,26 @@ async function showMenu(controller: BrowserController): Promise<void> {
 		run: () => openUrl(),
 	});
 	// Right under Open URL, asked for: the other way to open a page, for an agent.
-	items.push({
+	// HoverDeck has no agents outside the chat to hand a prompt to: the row opens
+	// Chrome, and the chat's own agents find it with `browser_tabs`.
+	if (!hasExternalAgents()) {
+		items.push({
+			label: vscode.l10n.t("$(globe) Open Google Chrome"),
+			detail: vscode.l10n.t("A Chrome tab the chat's agents can work on"),
+			run: () => vscode.commands.executeCommand('hoverdeck.openInChrome'),
+		});
+	} else items.push({
 		label: vscode.l10n.t("$(globe) Open Google Chrome for your agent"),
 		description: availableAgents.map(agent => agent.name).join(', '),
 		detail: vscode.l10n.t("Opens a Chrome tab and copies a prompt that hands it to the agent"),
 		run: async () => {
 			const agent = (await vscode.window.showQuickPick(availableAgents.map(agent => ({
 				label: agent.name, agent,
-				description: agent.connect === 'aiBrowser.connectChatAgent' ? vscode.l10n.t("Opens an AI Browser Chat with it") : undefined,
+				description: agent.connect === 'hoverdeck.connectChatAgent' ? vscode.l10n.t("Opens a {0} chat with it", productName()) : undefined,
 			})), {
 				title: vscode.l10n.t("Open Google Chrome for which agent?"), ignoreFocusOut: true,
 			}))?.agent;
-			if (agent) { await vscode.commands.executeCommand('aiBrowser.openChromeForAssistant', agent.who); }
+			if (agent) { await vscode.commands.executeCommand('hoverdeck.openChromeForAssistant', agent.who); }
 		},
 	});
 	if (await shouldUseIntegratedBrowser()) {
@@ -247,21 +257,21 @@ async function showMenu(controller: BrowserController): Promise<void> {
 	// The same three places the chat's own New Chat offers. Below VS Code 1.106
 	// there is no chat view to reveal, so the section is left out there.
 	if (supportsSecondarySidebar(vscode.version)) {
-		items.push({ label: vscode.l10n.t("AI Browser Chat"), kind: vscode.QuickPickItemKind.Separator });
+		items.push({ label: vscode.l10n.t("{0} Chat", productName()), kind: vscode.QuickPickItemKind.Separator });
 		items.push({
 			label: vscode.l10n.t("$(comment-discussion) New chat"),
-			detail: vscode.l10n.t("A new tab in the AI Browser chat, shown in the side bar"),
-			run: () => vscode.commands.executeCommand('aiBrowser.chat.newChat', 'here'),
+			detail: vscode.l10n.t("A new tab in the {0} chat, shown in the side bar", productName()),
+			run: () => vscode.commands.executeCommand('hoverdeck.chat.newChat', 'here'),
 		});
 		items.push({
 			label: vscode.l10n.t("$(files) Chat in a new tab"),
 			detail: vscode.l10n.t("An editor tab of its own"),
-			run: () => vscode.commands.executeCommand('aiBrowser.chat.newChat', 'tab'),
+			run: () => vscode.commands.executeCommand('hoverdeck.chat.newChat', 'tab'),
 		});
 		items.push({
 			label: vscode.l10n.t("$(link-external) Chat in a new window"),
 			detail: vscode.l10n.t("A separate window holding only the chat"),
-			run: () => vscode.commands.executeCommand('aiBrowser.chat.newChat', 'window'),
+			run: () => vscode.commands.executeCommand('hoverdeck.chat.newChat', 'window'),
 		});
 	}
 
@@ -275,7 +285,7 @@ async function showMenu(controller: BrowserController): Promise<void> {
 			label: vscode.l10n.t("$(whole-word) Translate page…"),
 			description: tab ? plainInLabel(pageTitle(tab.title, tab.url) || tab.url) : undefined,
 			detail: vscode.l10n.t("Pick a language, then paste the copied prompt into your assistant"),
-			run: () => vscode.commands.executeCommand('aiBrowser.translatePage'),
+			run: () => vscode.commands.executeCommand('hoverdeck.translatePage'),
 		});
 	}
 
@@ -288,10 +298,11 @@ async function showMenu(controller: BrowserController): Promise<void> {
 					? vscode.l10n.t("$(debug-restart) Restart to finish enabling the API")
 					: vscode.l10n.t("$(circle-slash) Native browser availability"),
 			detail: vscode.l10n.t("This setup is for native editor tabs. Google Chrome and agents work without it"),
-			run: () => vscode.commands.executeCommand('aiBrowser.enableBrowserApi'),
+			run: () => vscode.commands.executeCommand('hoverdeck.enableBrowserApi'),
 		});
 	}
 
+	if (hasExternalAgents()) {
 	items.push({ label: vscode.l10n.t("Agents — browser tools and connection prompts"), kind: vscode.QuickPickItemKind.Separator });
 	// The label says "and share this tab" only when there *is* a tab to share:
 	// the command shares whatever is focused and shares nothing otherwise, so
@@ -300,8 +311,8 @@ async function showMenu(controller: BrowserController): Promise<void> {
 	// One row per action; choose the agent afterwards.
 	const pickAgent = async (title: string) => (await vscode.window.showQuickPick(
 		availableAgents
-			.map(agent => ({ label: agent.name, agent, description: agent.connect === 'aiBrowser.connectChatAgent'
-				? vscode.l10n.t("AI Browser Chat · tools connected automatically")
+			.map(agent => ({ label: agent.name, agent, description: agent.connect === 'hoverdeck.connectChatAgent'
+				? vscode.l10n.t("{0} Chat · tools connected automatically", productName())
 				: agent.who === 'opencode' ? vscode.l10n.t("Opens a terminal with browser tools") : undefined })), { title, ignoreFocusOut: true }))?.agent;
 	items.push({
 		label: focused
@@ -318,8 +329,9 @@ async function showMenu(controller: BrowserController): Promise<void> {
 	});
 	items.push({
 		label: vscode.l10n.t("$(pulse) Check Connection"),
-		run: () => vscode.commands.executeCommand('aiBrowser.checkMcpConnection'),
+		run: () => vscode.commands.executeCommand('hoverdeck.checkMcpConnection'),
 	});
+	}
 
 	// Saved logins sit between the assistants and the shared tabs. The
 	// assignments stay last in both menus — that order was asked for, see below.
@@ -328,13 +340,18 @@ async function showMenu(controller: BrowserController): Promise<void> {
 		items.push({
 			label: vscode.l10n.t("$(key) Fill a saved login"),
 			description: plainInLabel(stripMarker(focused.title) || focused.url),
-			run: () => vscode.commands.executeCommand('aiBrowser.logins.fill'),
+			run: () => vscode.commands.executeCommand('hoverdeck.logins.fill'),
+		});
+		items.push({
+			label: vscode.l10n.t("$(symbol-key) Paste cookies into this page…"),
+			detail: vscode.l10n.t("For a site that will not sign in here: copy its cookies from a browser where you are signed in"),
+			run: () => vscode.commands.executeCommand('hoverdeck.pasteCookies'),
 		});
 	}
 	items.push({
 		label: vscode.l10n.t("$(lock) Manage saved logins and passkeys…"),
 		detail: vscode.l10n.t("Kept in VS Code's secret storage — import, export, edit, delete"),
-		run: () => vscode.commands.executeCommand('aiBrowser.logins.manage'),
+		run: () => vscode.commands.executeCommand('hoverdeck.logins.manage'),
 	});
 
 	// The assignments come *after* the connect entries, in both menus, and the
@@ -372,7 +389,7 @@ async function showMenu(controller: BrowserController): Promise<void> {
 					"{0} Has this tab but has not called yet. It does not re-read its MCP config,"
 					+ " so if it reports no browser tools, restart its session — the config is"
 					+ " already correct.", sharedMarker),
-			run: () => vscode.commands.executeCommand('aiBrowser.stopSharingTab', assignment.target),
+			run: () => vscode.commands.executeCommand('hoverdeck.stopSharingTab', assignment.target),
 		});
 	}
 
@@ -380,7 +397,7 @@ async function showMenu(controller: BrowserController): Promise<void> {
 		items.push({
 			label: vscode.l10n.t("$(debug-pause) {0} is paused — its tab was closed", entry.label),
 			detail: vscode.l10n.t("Pick this to let it follow whichever tab is in front of you again"),
-			run: () => vscode.commands.executeCommand('aiBrowser.stopSharingTab', entry.target),
+			run: () => vscode.commands.executeCommand('hoverdeck.stopSharingTab', entry.target),
 		});
 	}
 
@@ -391,37 +408,41 @@ async function showMenu(controller: BrowserController): Promise<void> {
 		// Page-chosen: a description renders `$(icon)` syntax, see `plainInLabel`.
 		const page = plainInLabel(stripMarker(focused.title) || focused.url);
 		const alreadyShared = controller.isShared(focused);
+		// One agent at a time is for agents outside the chat; HoverDeck's own
+		// agents get a tab by opening it, or by the share with all of them below.
+		if (hasExternalAgents()) {
 		items.push({
 			label: vscode.l10n.t("$(link) Give this tab to Claude Code"),
 			description: page,
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithClaudeCode'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithClaudeCode'),
 		});
 		items.push({
 			label: vscode.l10n.t("$(link) Give this tab to Codex"),
 			description: page,
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithCodex'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithCodex'),
 		});
 		items.push({
 			label: vscode.l10n.t("$(link) Give this tab to Gemini CLI"),
 			description: page,
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithGemini'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithGemini'),
 		});
 		items.push({
 			label: vscode.l10n.t("$(link) Give this tab to OpenCode"),
 			description: page,
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithOpenCode'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithOpenCode'),
 		});
 		if (supportsSecondarySidebar(vscode.version)) {
 			items.push({
 				label: vscode.l10n.t("$(link) Give this tab to Pi"),
 				description: page,
-				run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithPi'),
+				run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithPi'),
 			});
 			items.push({
 				label: vscode.l10n.t("$(link) Give this tab to OpenRouter"),
 				description: page,
-				run: () => vscode.commands.executeCommand('aiBrowser.shareTabWithOpenRouter'),
+				run: () => vscode.commands.executeCommand('hoverdeck.shareTabWithOpenRouter'),
 			});
+		}
 		}
 		items.push({
 			label: alreadyShared
@@ -429,7 +450,7 @@ async function showMenu(controller: BrowserController): Promise<void> {
 				: vscode.l10n.t("$(link) Share this tab with assistants"),
 			description: page,
 			detail: vscode.l10n.t("Assistants with no tab of their own then work on this one"),
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTab'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTab'),
 		});
 	} else if (anyTab && shares.assignments.length === 0 && shares.paused.length === 0) {
 		// Offered while a browser tab exists but is not focused, because the
@@ -441,26 +462,35 @@ async function showMenu(controller: BrowserController): Promise<void> {
 		items.push({
 			label: vscode.l10n.t("$(link) Give a tab to an assistant"),
 			detail: vscode.l10n.t("Click the browser tab you mean, then run this from it — until then the browser tools follow whichever tab you are looking at"),
-			run: () => vscode.commands.executeCommand('aiBrowser.shareTab'),
+			run: () => vscode.commands.executeCommand('hoverdeck.shareTab'),
 		});
 	}
 
 	if (shares.assignments.length > 1) {
 		items.push({
 			label: vscode.l10n.t("$(circle-slash) Stop sharing everything"),
-			run: () => vscode.commands.executeCommand('aiBrowser.stopSharingTab'),
+			run: () => vscode.commands.executeCommand('hoverdeck.stopSharingTab'),
 		});
 	}
 
 	items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+	const guardsOff = Object.values(securityGuardStates()).filter(on => !on).length;
+	items.push({
+		label: guardsOff ? vscode.l10n.t("$(warning) Security") : vscode.l10n.t("$(shield) Security"),
+		description: guardsOff
+			? (guardsOff === 1 ? vscode.l10n.t("1 protection is off") : vscode.l10n.t("{0} protections are off", guardsOff))
+			: vscode.l10n.t("All protections on"),
+		detail: vscode.l10n.t("What agents may do on pages: new sites, password fields, your Chrome tabs, cookies"),
+		run: () => vscode.commands.executeCommand('hoverdeck.securitySettings'),
+	});
 	items.push({
 		label: vscode.l10n.t("$(gear) Settings"),
 		run: () => vscode.commands.executeCommand(
-			'workbench.action.openSettings', '@ext:DenysDavydov.tab-browser-ultimate'),
+			'workbench.action.openSettings', `@ext:${ownExtensionId()}`),
 	});
 
 	const picked = await vscode.window.showQuickPick(items, {
-		title: vscode.l10n.t("AI Browser"),
+		title: productName(),
 		placeHolder: vscode.l10n.t("Pick an action"),
 	});
 	await picked?.run?.();
@@ -469,14 +499,14 @@ async function showMenu(controller: BrowserController): Promise<void> {
 /**
  * Asks for an address, then opens it.
  *
- * The prompt is ours rather than `aiBrowser.show`'s own: that command only
+ * The prompt is ours rather than `hoverdeck.show`'s own: that command only
  * prompts on the panel path, and hands `undefined` straight to
  * `workbench.action.browser.open` on the integrated one. Asking here is what
  * makes the menu entry mean the same thing on every host.
  */
 async function openUrl(): Promise<void> {
 	const url = await vscode.window.showInputBox({
-		title: vscode.l10n.t("AI Browser"),
+		title: productName(),
 		placeHolder: vscode.l10n.t("https://example.com"),
 		prompt: vscode.l10n.t("Enter url to visit"),
 		// Without this the box closes the instant it loses focus and resolves
@@ -507,7 +537,7 @@ async function openUrl(): Promise<void> {
 	});
 	const address = url === undefined ? undefined : normalizeAddress(url);
 	if (address) {
-		await vscode.commands.executeCommand('aiBrowser.show', address);
+		await vscode.commands.executeCommand('hoverdeck.show', address);
 	}
 }
 
@@ -531,7 +561,7 @@ async function openFile(): Promise<void> {
 	}
 	const picked = await vscode.window.showOpenDialog({
 		canSelectMany: false,
-		openLabel: vscode.l10n.t("Open in AI Browser"),
+		openLabel: vscode.l10n.t("Open in {0}", productName()),
 		filters: { [vscode.l10n.t("Web pages")]: ['html', 'htm', 'svg', 'pdf'] },
 	});
 	const file = picked?.[0];

@@ -22,7 +22,7 @@ copyFileSync(join(repo, 'scripts/recording-smoke/extension.cjs'), join(extension
 writeFileSync(join(extension, 'package.json'), JSON.stringify({
 	name: 'recording-probe', publisher: 'local', version: '0.0.1', engines: { vscode: '^1.85.0' },
 	main: 'extension.cjs', enabledApiProposals: ['browser'], activationEvents: ['onStartupFinished'],
-	contributes: { views: { explorer: [{ id: 'aiBrowser.chat', name: 'Recording test chat', type: 'webview' }] } },
+	contributes: { views: { explorer: [{ id: 'hoverdeck.chat', name: 'Recording test chat', type: 'webview' }] } },
 }));
 const env = { ...process.env, AI_BROWSER_RECORDING_REPO: repo, AI_BROWSER_RECORDING_OUTPUT: root };
 delete env.ELECTRON_RUN_AS_NODE;

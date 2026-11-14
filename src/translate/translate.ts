@@ -7,6 +7,8 @@ import * as vscode from 'vscode';
 import type { BrowserController } from '../browser/browserController';
 import { isBrowserApiGranted, workspaceIsRemoteFromHost } from '../setup/proposedApi';
 import { refuse } from '../core/notify';
+import { handToChat } from '../chat/promptHandOff';
+import { mcpServerName, productName } from '../core/flavor';
 import { plainInLabel, plainInPrompt } from '../core/notifyText';
 import {
 	languageNameProblem, orderLanguages, pageTitle, readRecentLanguages, rememberLanguage, resolveLanguage,
@@ -26,9 +28,9 @@ import {
  * paste is the one step the user takes anyway when they talk to an assistant.
  */
 
-export const translatePageCommand = 'aiBrowser.translatePage';
+export const translatePageCommand = 'hoverdeck.translatePage';
 
-const recentKey = 'aiBrowser.translate.recentLanguages';
+const recentKey = 'hoverdeck.translate.recentLanguages';
 
 interface LanguageItem extends vscode.QuickPickItem {
 	readonly language?: Language;
@@ -45,12 +47,12 @@ export async function translatePage(context: vscode.ExtensionContext, browser: B
 	// produce "I have no ai-browser tools".
 	if (workspaceIsRemoteFromHost()) {
 		vscode.window.showWarningMessage(vscode.l10n.t(
-			"This window's folder is on a remote machine ({0}), while AI Browser and its MCP server run on this one — an assistant running next to that folder cannot reach this machine's loopback, so it could not translate the page.",
-			vscode.env.remoteName ?? 'remote'));
+			"This window's folder is on a remote machine ({0}), while {1} and its MCP server run on this one — an assistant running next to that folder cannot reach this machine's loopback, so it could not translate the page.",
+			vscode.env.remoteName ?? 'remote', productName()));
 		return;
 	}
 	if (!isBrowserApiGranted()) {
-		refuse(vscode.l10n.t("Translating a page needs the integrated browser API — see the AI Browser status bar item."));
+		refuse(vscode.l10n.t("Translating a page needs the integrated browser API — see the {0} status bar item.", productName()));
 		return;
 	}
 	const tab = browser.userTab ?? await pickTab();
@@ -83,7 +85,8 @@ export async function translatePage(context: vscode.ExtensionContext, browser: B
 		title: plainInPrompt(pageTitle(tab.title, tab.url)),
 		url: tab.url,
 		tabId: browser.tabIdOf(tab),
-	});
+	}, { server: mcpServerName(), product: productName() });
+	if (await handToChat(prompt, vscode.l10n.t("Translation prompt for \"{0}\" is in the chat — send it when ready", page))) { return; }
 	await vscode.env.clipboard.writeText(prompt);
 
 	// Modal, not a toast: a toast stays up over the page and pauses it until it
@@ -94,8 +97,8 @@ export async function translatePage(context: vscode.ExtensionContext, browser: B
 		{
 			modal: true,
 			detail: vscode.l10n.t(
-				"Paste it into Claude Code, Codex or another assistant connected to AI Browser. It translates \"{0}\" into {1} and writes the text into the page.",
-				page, language.name),
+				"Paste it into Claude Code, Codex or another assistant connected to {2}. It translates \"{0}\" into {1} and writes the text into the page.",
+				page, language.name, productName()),
 		});
 }
 

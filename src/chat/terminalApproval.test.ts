@@ -28,7 +28,7 @@ function fixture(modes: Record<string, ApprovalMode> = {}, pinned = true) {
 	const { ChatTab, newChat } = load<typeof import('./chatTab.ts')>('src/chat/chatTab.ts', {
 		vscode: { l10n: { t: (text: string) => text } },
 		'./agentProtocol': protocol, './agents': { agentNames: { claude: 'Claude Code' } },
-		'../core/uuid': { generateUuid: () => 'test-chat' }, '../core/notifyText': load('src/core/notifyText.ts'),
+		'../core/uuid': { generateUuid: () => 'test-chat' }, '../core/notifyText': load('src/core/notifyText.ts'), '../core/flavor': load('src/core/flavor.ts'),
 		'./terminalPins': load('src/chat/terminalPins.ts'), './toolbarText': {},
 		'./attachmentReferences': load('src/chat/attachmentReferences.ts'),
 		'./messageFiles': load('src/chat/messageFiles.ts'),

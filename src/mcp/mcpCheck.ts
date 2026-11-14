@@ -223,7 +223,7 @@ export async function checkConnection(server: McpServer, browser: BrowserControl
 			label: browser.focusedTab
 				? vscode.l10n.t("Connect Claude Code and share this tab")
 				: vscode.l10n.t("Connect Claude Code"),
-			run: () => vscode.commands.executeCommand('aiBrowser.connectClaudeCode'),
+			run: () => vscode.commands.executeCommand('hoverdeck.connectClaudeCode'),
 		});
 	}
 	if (codex !== 'thisServer') {
@@ -231,7 +231,7 @@ export async function checkConnection(server: McpServer, browser: BrowserControl
 			label: browser.focusedTab
 				? vscode.l10n.t("Connect Codex and share this tab")
 				: vscode.l10n.t("Connect Codex"),
-			run: () => vscode.commands.executeCommand('aiBrowser.connectCodex'),
+			run: () => vscode.commands.executeCommand('hoverdeck.connectCodex'),
 		});
 	}
 
@@ -243,7 +243,7 @@ export async function checkConnection(server: McpServer, browser: BrowserControl
 			label: browser.focusedTab
 				? vscode.l10n.t("Connect Gemini CLI and share this tab")
 				: vscode.l10n.t("Connect Gemini CLI"),
-			run: () => vscode.commands.executeCommand('aiBrowser.connectGemini'),
+			run: () => vscode.commands.executeCommand('hoverdeck.connectGemini'),
 		});
 	}
 

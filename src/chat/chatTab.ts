@@ -14,6 +14,7 @@ import { agentNames, type AgentBackend, type AgentSession, type TurnImage, type 
 import type { AgentId, RepoCopy, RepoReference, ApprovalEntry, ApprovalMode, AttachmentChip, PendingSend, ChatEntry, ChatStats, ChatTabStatus, ToolEntry, UsageWindow } from './chatProtocol';
 import type { OwnedChatState } from './ownedChats';
 import { generateUuid } from '../core/uuid';
+import { mcpServerName } from '../core/flavor';
 import { plainInPrompt } from '../core/notifyText';
 import { pinAnnouncement, pinSignature, type PinInfo } from './terminalPins';
 import type { TerminalApproval } from './agentProtocol';
@@ -21,8 +22,9 @@ import { stepGate, withNextDecision } from './toolbarText';
 import type { TurnWeight } from './usageAlert';
 import type { ResultBlock, ProgressEntry, JsonValue } from './richProtocol';
 import { presentationMarkers } from './visualizationProtocol';
-import type { VisualizationSnapshot, ArtifactKind, ArtifactSnapshot, PresentationKind } from './visualizationProtocol';
-import { VisualizationStore, presentationTotalLimit, visualizationTotalLimit } from './visualizationStore';
+import type { VisualizationReference, VisualizationSnapshot, ArtifactKind, ArtifactSnapshot, PresentationKind } from './visualizationProtocol';
+import { createHash } from 'node:crypto';
+import { OutsideDirectoryError, VisualizationStore, presentationTotalLimit, visualizationTotalLimit } from './visualizationStore';
 
 /**
  * One conversation of the chat: a tab. The view holds several (`tabLimit()`),
@@ -90,6 +92,11 @@ export interface StoredChat {
 	copy?: RepoCopy;
 	/** GitHub repositories cloned beside the project for the agent to read; see `AgentBackend.openSession`. */
 	references?: RepoReference[];
+	/**
+	 * Files outside the visualization directory the user allowed or refused showing, by absolute
+	 * path (`presentationAccess`). Decided only by a click in the chat, never by the model.
+	 */
+	fileAccess?: Record<string, 'allow' | 'deny'>;
 	createdAt: number;
 	updatedAt: number;
 	entries: ChatEntry[];
@@ -185,6 +192,16 @@ export interface QueuedRun {
 	readonly values: Readonly<Record<string, string>>;
 }
 
+/** A message held in the tab's queue; `at` is when it may go out (epoch ms), absent for "when the turn ends". */
+export interface QueuedMessage {
+	readonly id: string;
+	readonly text: string;
+	readonly attachments: Attachment[];
+	readonly step?: SkillStep;
+	readonly background?: QueuedRun;
+	readonly at?: number;
+}
+
 export interface SkillStep {
 	readonly chain: string;
 	readonly name: string;
@@ -271,6 +288,13 @@ export function transientTurnError(error: string): boolean {
 	return /\bat capacity\b|\boverloaded\b|\boverloaded_error\b|\bserver.{0,12}busy\b|\btemporar(?:y|ily) unavailable\b|\bservice unavailable\b|\b(?:429|500|502|503|504)\b|\brate[ _-]?limit(?:ed|_error)?\b|\btoo many requests\b|\binternal server error\b|\bconnection (?:reset|failed|closed)\b|\b(?:ECONNRESET|ETIMEDOUT)\b|\b(?:request|connection) timed? ?out\b/i.test(error);
 }
 
+/**
+ * Told with every message: text written for the user to paste elsewhere goes in a
+ * ```paste block, which the chat draws as rendered Markdown with a Copy button
+ * (`pasteBlock` in preview-src/chat.ts).
+ */
+const pasteBlockInstruction = 'When part of your reply is text the user will copy and paste somewhere else (a ticket or PR comment, an email, a message, a description), put exactly that text, and nothing else, in a fenced block whose language is `paste`, with an optional short title after it on the fence line: ```paste Comment for the ticket. Write its content as normal Markdown (tables, lists, bold); the chat renders it and shows a Copy button. If the content itself contains a fenced code block, open and close the paste block with four backticks. Use it only for text meant to be pasted, at most a few per reply.';
+
 export class ChatTab {
 	private _richWork: Promise<void> = Promise.resolve();
 	private readonly _discardedChats = new WeakSet<StoredChat>();
@@ -297,12 +321,12 @@ export class ChatTab {
 		const store = this._visualizations();
 		if (!store) { return undefined; }
 		try { await store.prepare(); } catch { return undefined; }
-		return `HTML visualizations are supported in this chat. When an inline interactive visual helps the user, write a self-contained HTML file directly in ${JSON.stringify(store.directory)} (at most 1 MB). Use inline CSS/JavaScript, SVG, canvas or MathML; external resources and network requests are blocked. The view has no access to files, host commands or APIs. Publish a completed file using chat_present_html({path, title?}) if available, or emit this exact reference on its own unquoted line: \uE200visualize\uE202{"path":"<absolute file path>","title":"<short title>"}\uE201. Do not put the reference inside a code fence. Reuse the filename to revise the same visual and publish again after each completed write. Do not publish to an external service for a local preview.
+		return `${pasteBlockInstruction}\n\nHTML visualizations are supported in this chat. When an inline interactive visual helps the user, write a self-contained HTML file directly in ${JSON.stringify(store.directory)} (at most 1 MB). Use inline CSS/JavaScript, SVG, canvas or MathML; external resources and network requests are blocked. The view has no access to files, host commands or APIs. Publish a completed file using chat_present_html({path, title?}) if available, or emit this exact reference on its own unquoted line: \uE200visualize\uE202{"path":"<absolute file path>","title":"<short title>"}\uE201. Do not put the reference inside a code fence. Reuse the filename to revise the same visual and publish again after each completed write. Do not publish to an external service for a local preview.
 
 Images are supported too. To display a generated or existing PNG, JPEG, GIF or WebP (at most 4 MB), copy it directly into the same conversation visualization directory, then call chat_present_image({path, title?}). If that tool is unavailable, emit this exact reference on its own unquoted line: \uE200image\uE202{"path":"<absolute image path>","title":"<short title>"}\uE201. Do not emit an extra reference after a successful tool call. Reusing the same path updates the image card.
 
-Additional output tools (same directory and publication rules): chat_present_file for downloadable files (up to 4 MB); chat_present_table for a JSON file containing {"columns":["Name","Value"],"rows":[["Example",42]]} (up to 1 MB, 100 columns, 10000 rows); chat_present_sources for a JSON array of {"title":"Source","url":"https://example.com","description":"Optional context"} (up to 1 MB, 100 sources); chat_present_audio for MP3, WAV, OGG, M4A or WebM; chat_present_video for MP4 or WebM (media up to 4 MB). Each tool takes {path, title?}. If a tool is unavailable, use a standalone marker with the corresponding kind: file, table, sources, audio or video, followed by JSON {"path":"<absolute path>","title":"<title>"}, e.g. file{"path":"<absolute path>"}. Markers must be outside code fences. In Claude Code the MCP names are mcp__ai-browser__chat_present_image, mcp__ai-browser__chat_present_file, mcp__ai-browser__chat_present_table, mcp__ai-browser__chat_present_sources, mcp__ai-browser__chat_present_audio and mcp__ai-browser__chat_present_video. Plain ASCII image{"path":"<absolute path>"} markers work in Claude Code too.
-Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,related?:{messageId?,toolId?},actions?:[{label,kind:"link",url}|{label,kind:"copy",text}|{label,kind:"reveal",target:{messageId?,toolId?}}]}); chat_progress({id,title,stage?,percent?:0..100|null,status?:"running"|"done"|"failed"|"cancelled",cancel?:{}|{agentId},related?}); chat_update_plan({id,title?,steps:[{id?,text,status:"pending"|"inProgress"|"done"|"cancelled"}]}); chat_present_result({id?,title?,blocks:[{type:"text",text}|{type:"json",value}|{type:"image",path}|{type:"file",path}|{type:"link",url,title?}]}); chat_present_json({id?,title?,value}); chat_cite({messageId?,text?,citations:[{quote OR start/end,label?,target:{type:"url",url}|{type:"file",path,line?}|{type:"message",messageId?,toolId?}}]}). For a new cited answer supply text and citations together; the tool displays the answer, so do not repeat it. Reuse ids to update a card. Prefer path-based image/file result blocks in the conversation visualization directory (up to 4 MB per file); inline base64 must fit the entire 1 MB MCP request. Progress cancellation stops the whole current turn, or the named agent; advertise it only when appropriate. Claude MCP names use the mcp__ai-browser__ prefix.`;
+Additional output tools (same directory and publication rules): chat_present_file for downloadable files (up to 4 MB); chat_present_table for a JSON file containing {"columns":["Name","Value"],"rows":[["Example",42]]} (up to 1 MB, 100 columns, 10000 rows); chat_present_sources for a JSON array of {"title":"Source","url":"https://example.com","description":"Optional context"} (up to 1 MB, 100 sources); chat_present_audio for MP3, WAV, OGG, M4A or WebM; chat_present_video for MP4 or WebM (media up to 4 MB). Each tool takes {path, title?}. If a tool is unavailable, use a standalone marker with the corresponding kind: file, table, sources, audio or video, followed by JSON {"path":"<absolute path>","title":"<title>"}, e.g. file{"path":"<absolute path>"}. Markers must be outside code fences. In Claude Code the MCP names are mcp__${mcpServerName()}__chat_present_image, mcp__${mcpServerName()}__chat_present_file, mcp__${mcpServerName()}__chat_present_table, mcp__${mcpServerName()}__chat_present_sources, mcp__${mcpServerName()}__chat_present_audio and mcp__${mcpServerName()}__chat_present_video. Plain ASCII image{"path":"<absolute path>"} markers work in Claude Code too.
+Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,related?:{messageId?,toolId?},actions?:[{label,kind:"link",url}|{label,kind:"copy",text}|{label,kind:"reveal",target:{messageId?,toolId?}}]}); chat_progress({id,title,stage?,percent?:0..100|null,status?:"running"|"done"|"failed"|"cancelled",cancel?:{}|{agentId},related?}); chat_update_plan({id,title?,steps:[{id?,text,status:"pending"|"inProgress"|"done"|"cancelled"}]}); chat_present_result({id?,title?,blocks:[{type:"text",text}|{type:"json",value}|{type:"image",path}|{type:"file",path}|{type:"link",url,title?}]}); chat_present_json({id?,title?,value}); chat_cite({messageId?,text?,citations:[{quote OR start/end,label?,target:{type:"url",url}|{type:"file",path,line?}|{type:"message",messageId?,toolId?}}]}). For a new cited answer supply text and citations together; the tool displays the answer, so do not repeat it. Reuse ids to update a card. Prefer path-based image/file result blocks in the conversation visualization directory (up to 4 MB per file); inline base64 must fit the entire 1 MB MCP request. Progress cancellation stops the whole current turn, or the named agent; advertise it only when appropriate. Claude MCP names use the mcp__${mcpServerName()}__ prefix.`;
 	}
 
 	/** Explicit publication is available to every provider through our conversation-scoped MCP tool. */
@@ -368,7 +392,7 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 					try {
 						if (!store || this._discardedChats.has(chat)) { return; }
 						const published = block.path !== undefined
-							? block.type === 'image' ? await store.publishImage(block.path) : await store.publishArtifact(block.path, 'file')
+							? block.type === 'image' ? await store.publishImage(block.path, this._allowed(chat, block.path)) : await store.publishArtifact(block.path, 'file', this._allowed(chat, block.path))
 							: await store.publishInline(block.base64!, block.type, block.type === 'file' ? block.name : 'Image');
 						const ref = { ...published, at, kind: block.type, title: block.type === 'file' ? block.name : 'Image' };
 						archived.push(block.type === 'image' ? { type: 'image', ref } : { type: 'file', name: block.name, ref });
@@ -398,23 +422,72 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 		return this._visualizations()?.loadArtifact(revision);
 	}
 
+	/**
+	 * A file outside the visualization directory is shown when the user allowed it on its card, or
+	 * when "Files outside the project" is on Auto in the approval menu — unless the user refused
+	 * this very file on its card, which outranks the menu.
+	 */
+	private _allowed(chat: StoredChat, file: string): boolean {
+		if (!path.isAbsolute(file)) { return false; }
+		const decided = chat.fileAccess?.[path.resolve(file)];
+		if (decided) { return decided === 'allow'; }
+		return this._host.approvalMode?.('outside') === 'auto';
+	}
+
+	/**
+	 * The user's answer on a card naming a file outside the visualization directory. Only a path
+	 * a card of this conversation is asking about can be decided, so the view cannot widen access
+	 * to anything else; the cards asking about it are published again under the answer.
+	 */
+	public async decideFileAccess(file: string, allow: boolean): Promise<boolean> {
+		const chat = this._chat;
+		const asking = (ref: VisualizationReference) => ref.blockedPath === file;
+		if (this._closed || this._discarded || !chat.entries.some(entry => entry.kind === 'assistant' && entry.visualizations?.some(asking))) { return false; }
+		const access = { ...chat.fileAccess, [file]: allow ? 'allow' as const : 'deny' as const };
+		// Bounded: the oldest decisions go first.
+		const keys = Object.keys(access);
+		for (const key of keys.slice(0, Math.max(0, keys.length - 200))) { delete access[key]; }
+		chat.fileAccess = access;
+		for (const entry of chat.entries) {
+			if (entry.kind === 'assistant' && entry.visualizations?.some(asking)) { entry.visualizations = entry.visualizations.filter(ref => !asking(ref)); }
+		}
+		await this._syncVisualizations();
+		this._post();
+		await this._save(chat);
+		return true;
+	}
+
 	public async presentVisualization(file: string, title?: string, kind?: PresentationKind): Promise<unknown> {
 		if (this._closed || this._discarded) { throw new Error('The conversation is no longer open.'); }
 		const store = this._visualizations();
 		if (!store) { throw new Error('Presentation storage is unavailable.'); }
 		const chat = this._chat;
-		const published = kind === 'image' ? await store.publishImage(file) : kind ? await store.publishArtifact(file, kind) : await store.publish(file);
+		const allowed = this._allowed(chat, file);
+		let published: { id: string; revision: string };
+		let blocked: OutsideDirectoryError | undefined;
+		try {
+			published = kind === 'image' ? await store.publishImage(file, allowed) : kind ? await store.publishArtifact(file, kind, allowed) : await store.publish(file, allowed);
+		} catch (error) {
+			// Outside the directory: the card asks the user, unless they already refused this file.
+			if (!(error instanceof OutsideDirectoryError) || chat.fileAccess?.[error.path] === 'deny') { throw error; }
+			blocked = error;
+			published = { id: `blocked-${createHash('sha256').update(error.path).digest('hex').slice(0, 24)}`, revision: '' };
+		}
 		if (chat !== this._chat || this._closed || this._discarded) { throw new Error('The conversation changed before publication.'); }
 		// The marker adapter owns both placement and immutable snapshot references.
 		const existing = [...chat.entries].reverse().find((entry): entry is Extract<ChatEntry, { kind: 'assistant' }> => entry.kind === 'assistant' && presentationMarkers(entry.text).some(marker => marker.path === file && marker.kind === kind));
 		const at = existing ? presentationMarkers(existing.text).find(marker => marker.path === file && marker.kind === kind)!.start : 0;
-		const reference = { at, kind, id: published.id, revision: published.revision, title: title || existing?.visualizations?.find(ref => ref.at === at)?.title || path.basename(file) };
+		const shownTitle = title || existing?.visualizations?.find(ref => ref.at === at)?.title || path.basename(file);
+		const reference = blocked
+			? { at, kind, id: published.id, title: shownTitle, error: blocked.message, blockedPath: blocked.path }
+			: { at, kind, id: published.id, revision: published.revision, title: shownTitle };
 		if (existing) { existing.visualizations = [...(existing.visualizations ?? []).filter(ref => ref.at !== at), reference]; }
 		else { this._push({ kind: 'assistant', text: `\uE200${kind ?? 'visualize'}\uE202${JSON.stringify({ path: file, title })}\uE201`, visualizations: [reference] }); }
 		this._textBreak = true;
 		await this._syncVisualizations();
 		this._post();
 		await this._save(chat);
+		if (blocked) { return { id: published.id, displayed: false, note: `The file is outside this conversation's visualization directory. The chat now asks the user whether to show ${blocked.path}; it appears once they allow it. Do not publish it again.` }; }
 		return { id: published.id, revision: published.revision, displayed: true, note: `Displayed inline. No additional reference is needed. To update, edit the file and call chat_present_${kind ?? 'html'} again.` };
 	}
 
@@ -441,12 +514,17 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 				if (old && (!update || latest.get(`${marker.kind ?? 'html'}:${marker.path}`) !== target)) { continue; }
 				let reference;
 				try {
-					const published = marker.kind === 'image' ? await store.publishImage(marker.path) : marker.kind ? await store.publishArtifact(marker.path, marker.kind) : await store.publish(marker.path);
+					const allowed = this._allowed(chat, marker.path);
+					const published = marker.kind === 'image' ? await store.publishImage(marker.path, allowed) : marker.kind ? await store.publishArtifact(marker.path, marker.kind, allowed) : await store.publish(marker.path, allowed);
 					reference = { at: marker.start, kind: marker.kind, id: published.id, revision: published.revision, title: old?.title || marker.title || path.basename(marker.path), wide: marker.wide };
 				} catch (error) {
 					// A failed revision keeps the last successful snapshot visible.
-					reference = { ...old, at: marker.start, kind: marker.kind, id: old?.id ?? `error-${marker.start}`, title: old?.title || marker.title || (marker.kind ? 'Artifact' : 'Visualization'), wide: marker.wide,
-						error: error instanceof Error ? error.message : 'The visualization could not be read.' };
+					const outside = error instanceof OutsideDirectoryError ? error : undefined;
+					const refused = outside && chat.fileAccess?.[outside.path] === 'deny';
+					const { blockedPath: _was, ...kept } = old ?? {} as Partial<VisualizationReference>;
+					reference = { ...kept, at: marker.start, kind: marker.kind, id: old?.id ?? `error-${marker.start}`, title: old?.title || marker.title || path.basename(marker.path) || (marker.kind ? 'Artifact' : 'Visualization'), wide: marker.wide,
+						error: refused ? `Not shown: you chose not to show ${outside!.path}.` : error instanceof Error ? error.message : 'The visualization could not be read.',
+						...(outside && !refused ? { blockedPath: outside.path } : {}) };
 				}
 				if (JSON.stringify(old) !== JSON.stringify(reference)) {
 					entry.visualizations = [...(entry.visualizations ?? []).filter(ref => ref.at !== marker.start), reference];
@@ -550,7 +628,9 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 	private _boundary = false;
 	private _flushTimer: ReturnType<typeof setTimeout> | undefined;
 	/** Held to be sent when the turn ends, oldest first (⌘/Ctrl+Enter). The provider sends them. */
-	private _queued: { readonly id: string; readonly text: string; readonly attachments: Attachment[]; readonly step?: SkillStep; readonly background?: QueuedRun }[] = [];
+	private _queued: QueuedMessage[] = [];
+	/** Wakes the provider's drain when the next scheduled message comes due; see `_armSchedule`. */
+	private _scheduleTimer: ReturnType<typeof setTimeout> | undefined;
 	/** When the last turn ended, to tell a message's own turn from an agent's. */
 	private _lastTurnEnd = 0;
 	/** Added to a cumulative token report; see the `tokens` case. Per session. */
@@ -665,7 +745,7 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 			...this._waiting.map(w => ({ id: w.id, text: w.entry.text, kind: 'steer' as const, attachments: w.entry.attachments, chips: w.entry.attachmentData?.map(d => d.chip),
 				...(this._canWithdraw() && w.pending.resend ? { withdrawable: true, ...(this._withdrawing.has(w.id) ? { withdrawing: true } : {}) } : {}) })),
 			...this._queued.map(q => ({
-				id: q.id, text: q.text, kind: 'queue' as const, attachments: q.attachments.map(a => `${attachmentReference(a.chip)} ${a.chip.label}`), chips: q.attachments.map(a => a.chip),
+				id: q.id, text: q.text, kind: 'queue' as const, ...(q.at !== undefined ? { at: q.at } : {}), attachments: q.attachments.map(a => `${attachmentReference(a.chip)} ${a.chip.label}`), chips: q.attachments.map(a => a.chip),
 				skill: q.step ? { name: q.step.name, step: q.step.step, steps: q.step.steps, check: q.step.check }
 					: q.background ? { name: q.background.name, step: 1, steps: 1, background: true } : undefined,
 			})),
@@ -686,10 +766,100 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 	}
 
 	/** Held for after the running turn; `send` it when the tab is idle again — the provider does. */
-	public enqueue(text: string, attachments: Attachment[], step?: SkillStep, background?: QueuedRun): void {
+	public enqueue(text: string, attachments: Attachment[], step?: SkillStep, background?: QueuedRun, at?: number, first = false): string {
 		new AttachmentReferenceScope().assign(attachments.map(a => a.chip));
-		this._queued.push({ id: generateUuid(), text, attachments, step, background });
+		const item: QueuedMessage = { id: generateUuid(), text, attachments, step, background, ...(at !== undefined ? { at } : {}) };
+		if (first) { this._queued.unshift(item); } else { this._queued.push(item); }
+		this._queueChanged();
+		return item.id;
+	}
+
+	/** Scheduled messages restored after a reload; their ids are kept. */
+	public restoreScheduled(items: readonly { readonly id: string; readonly text: string; readonly attachments: Attachment[]; readonly at: number }[]): void {
+		for (const item of items) {
+			if (this._queued.some(q => q.id === item.id)) { continue; }
+			new AttachmentReferenceScope().assign(item.attachments.map(a => a.chip));
+			this._queued.push({ id: item.id, text: item.text, attachments: item.attachments, at: item.at });
+		}
+		this._queueChanged();
+	}
+
+	/** Messages with a send time, for saving with the open tabs: they may wait past a reload. */
+	public get scheduled(): readonly QueuedMessage[] {
+		return this._queued.filter(q => q.at !== undefined && !q.step && !q.background);
+	}
+
+	/**
+	 * Moves a queued message before another (or to the end). A skill's prompts
+	 * are one chain and keep their place: they cannot be moved, and nothing is
+	 * put between two of them — a drop on one lands before the chain's first.
+	 */
+	public moveQueued(id: string, before?: string): boolean {
+		const from = this._queued.findIndex(q => q.id === id);
+		if (from < 0 || this._queued[from].step) { return false; }
+		const [item] = this._queued.splice(from, 1);
+		let to = before ? this._queued.findIndex(q => q.id === before) : this._queued.length;
+		if (to < 0) { to = this._queued.length; }
+		const chain = this._queued[to]?.step?.chain;
+		if (chain) { to = this._queued.findIndex(q => q.step?.chain === chain); }
+		this._queued.splice(to, 0, item);
+		this._queueChanged();
+		return true;
+	}
+
+	/**
+	 * Sets (or, undefined, clears) when a queued message goes out. A skill's prompts
+	 * have no time of their own, and a background run is never scheduled: it is not
+	 * saved with the open tabs, so its time would be lost on a reload.
+	 */
+	public scheduleQueued(id: string, at: number | undefined): boolean {
+		const index = this._queued.findIndex(q => q.id === id);
+		if (index < 0 || this._queued[index].step || (at !== undefined && this._queued[index].background)) { return false; }
+		const { at: _old, ...rest } = this._queued[index];
+		this._queued[index] = at === undefined ? rest : { ...rest, at };
+		this._queueChanged();
+		return true;
+	}
+
+	/** A queued message taken out to be sent now, whatever the turn is doing. Not a skill's prompt: its chain decides. */
+	public takeQueuedItem(id: string): QueuedMessage | undefined {
+		const index = this._queued.findIndex(q => q.id === id);
+		if (index < 0 || this._queued[index].step) { return undefined; }
+		const [item] = this._queued.splice(index, 1);
+		this._queueChanged();
+		return item;
+	}
+
+	/** A message is due: no send time, or one that has passed. */
+	private static _due(q: QueuedMessage, now = Date.now()): boolean {
+		return q.at === undefined || q.at <= now;
+	}
+
+	private _queueChanged(): void {
+		this._armSchedule();
 		this._post();
+	}
+
+	/**
+	 * A timer at the next send time. It only posts: the provider's drain then
+	 * sends the message once the tab is idle — a message due while the agent
+	 * works waits for the turn to end, as any queued one does.
+	 */
+	private _armSchedule(): void {
+		if (this._scheduleTimer) {
+			clearTimeout(this._scheduleTimer);
+			this._scheduleTimer = undefined;
+		}
+		if (this._closed || this._discarded) { return; }
+		const now = Date.now();
+		const next = Math.min(...this._queued.filter(q => q.at !== undefined && q.at > now).map(q => q.at!));
+		if (!Number.isFinite(next)) { return; }
+		// setTimeout takes at most 2^31-1 ms; a later time is armed again from the nearer wake.
+		this._scheduleTimer = setTimeout(() => {
+			this._scheduleTimer = undefined;
+			this._armSchedule();
+			this._post();
+		}, Math.min(next - now + 50, 6 * 60 * 60 * 1000));
 	}
 
 	/** A toolbar skill run still has prompts here to send. */
@@ -713,11 +883,11 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 	 * rather than given back: they are the skill's, not something the user
 	 * typed, and the skill stops with whatever made the tab let go.
 	 */
-	public takeQueued(): { readonly text: string; readonly attachments: Attachment[] }[] {
-		const all = this._queued;
-		this._queued = [];
+	public takeQueued(keepScheduled = false): { readonly text: string; readonly attachments: Attachment[] }[] {
+		const all = keepScheduled ? this._queued.filter(q => q.at === undefined) : this._queued;
+		this._queued = keepScheduled ? this._queued.filter(q => q.at !== undefined) : [];
 		if (all.length) {
-			this._post();
+			this._queueChanged();
 		}
 		return all.filter(q => !q.step && !q.background);
 	}
@@ -749,19 +919,25 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 			this._stepEnded = undefined;
 			this._gateNextStep(ended.done, ended.error);
 		}
-		let next = this._queued.shift();
+		// The first message that is due, in queue order: one scheduled for later
+		// keeps its place and lets the ones behind it go first.
+		const takeDue = (): QueuedMessage | undefined => {
+			const index = this._queued.findIndex(q => ChatTab._due(q));
+			return index < 0 ? undefined : this._queued.splice(index, 1)[0];
+		};
+		let next = takeDue();
 		// A checked skill prompt whose check nobody passed: the skill stops
 		// here, and the queue goes on with what is behind its prompts.
 		while (next?.step?.check && !this._cleared.has(next.id)) {
 			const step = next.step;
 			this._queued = this._queued.filter(q => q.step?.chain !== step.chain);
 			this._chat.entries.push({ kind: 'notice', text: vscode.l10n.t("/{0} stopped before prompt {1} of {2}: the check before it was not made.", step.name, step.step, step.steps) });
-			next = this._queued.shift();
+			next = takeDue();
 		}
 		if (next) {
 			this._cleared.delete(next.id);
 		}
-		this._post();
+		this._queueChanged();
 		return next;
 	}
 
@@ -776,7 +952,7 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 		const before = this._queued.length;
 		this._queued = this._queued.filter(q => q.id !== id);
 		if (this._queued.length !== before) {
-			this._post();
+			this._queueChanged();
 			return true;
 		}
 		if (this._waiting.some(w => w.id === id)) {
@@ -838,7 +1014,8 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 
 	/** Messages are queued, and the turn they wait for has ended: the provider may send the next. */
 	public get readyForQueued(): boolean {
-		return this._queued.length > 0 && !this._paused && !this.busy && !this._waiting.length && !this.waiting;
+		const now = Date.now();
+		return this._queued.some(q => ChatTab._due(q, now)) && !this._paused && !this.busy && !this._waiting.length && !this.waiting;
 	}
 
 	/**
@@ -1073,6 +1250,7 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 		this._host.released(this._chat.id);
 		if (reason === 'tab') {
 			this._closed = true;
+			this._armSchedule();
 		}
 		// Ended by the user closing it, or the view: nothing finished to read.
 		this._unseen = false;
@@ -1084,6 +1262,7 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 		this._discardedChats.add(this._chat);
 		this._cancelRetry();
 		this._discarded = true;
+		this._armSchedule();
 		this._pending = [];
 		this._dropSession();
 		this._host.released(this._chat.id);
@@ -1206,6 +1385,22 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 			// Saved now: left for the next save, a chat reopened before one came
 			// showed these as "No longer needed".
 			void this._save();
+		}
+		// Cards asking to show a file outside the visualization directory follow
+		// "Files outside the project" too: on Auto they are published at once.
+		if (this._host.approvalMode?.('outside') === 'auto' && !this._closed && !this._discarded) {
+			const asking = (ref: VisualizationReference) => !!ref.blockedPath && !this._chat.fileAccess?.[ref.blockedPath];
+			let blocked = false;
+			for (const entry of this._chat.entries) {
+				if (entry.kind === 'assistant' && entry.visualizations?.some(asking)) {
+					entry.visualizations = entry.visualizations.filter(ref => !asking(ref));
+					blocked = true;
+				}
+			}
+			if (blocked) {
+				const chat = this._chat;
+				void this._syncVisualizations().then(() => { this._post(); return this._save(chat); }).catch(() => {});
+			}
 		}
 	}
 
@@ -1475,7 +1670,8 @@ Rich chat tools: chat_notify({id?,text,level?:"info"|"warning"|"error",reason?,r
 	}
 
 	private _idleNow(): boolean {
-		return !this.busy && !this._waiting.length && !this.waiting && !this._queued.length && !this._restartTimer
+		// A message scheduled for later does not hold the CLI: the send resumes the session.
+		return !this.busy && !this._waiting.length && !this.waiting && !this._queued.some(q => q.at === undefined) && !this._restartTimer
 			&& !this._chat.entries.some(e => e.kind === 'tool' && e.status === 'running');
 	}
 

@@ -26,7 +26,7 @@ test('pinning the current browser grants the captured conversation access withou
 test('each sent message sees current pinned page titles and URLs and excludes other chats', () => {
 	let tabs = [{ id: 'mine', title: 'Old title', url: 'https://old.test', owner: 'this' }, { id: 'other', title: 'Private', url: 'https://private.test', owner: 'other' }];
 	const host = { _browser: { accessTabs: () => tabs } };
-	const context = method('_pinnedBrowserContext', { plainInPrompt: (text: string) => text });
+	const context = method('_pinnedBrowserContext', { plainInPrompt: (text: string) => text, mcpServerName: () => 'ai-browser' });
 	const chat = { chat: { id: 'chat' } };
 	assert.match(context.call(host, chat), /Old title/);
 	assert.doesNotMatch(context.call(host, chat), /private\.test/);

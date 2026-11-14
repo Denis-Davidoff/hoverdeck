@@ -12,6 +12,7 @@ import * as files from './messageFiles.ts';
 import * as pins from './terminalPins.ts';
 import * as toolbar from './toolbarText.ts';
 import * as notify from '../core/notifyText.ts';
+import * as flavor from '../core/flavor.ts';
 import * as visualizations from './visualizationProtocol.ts';
 import * as store from './visualizationStore.ts';
 import { ownedSelection } from './ownedChats.ts';
@@ -22,7 +23,7 @@ const nativeRequire = createRequire(resolve('package.json'));
 const exports: any = {};
 const dependencies: Record<string, unknown> = {
 	vscode: { l10n: { t: (text: string) => text } }, './agentProtocol': protocol, './agents': { agentNames: { codex: 'Codex', claude: 'Claude' } },
-	'./attachmentReferences': refs, './messageFiles': files, './terminalPins': pins, './toolbarText': toolbar, '../core/notifyText': notify,
+	'./attachmentReferences': refs, './messageFiles': files, './terminalPins': pins, './toolbarText': toolbar, '../core/notifyText': notify, '../core/flavor': flavor,
 	'../core/uuid': { generateUuid: randomUUID }, './visualizationProtocol': visualizations, './visualizationStore': store,
 };
 runInNewContext(transpileModule(readFileSync('src/chat/chatTab.ts', 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 } }).outputText,

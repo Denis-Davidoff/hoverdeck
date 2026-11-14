@@ -46,7 +46,7 @@ suite('portOrder', () => {
 	});
 
 	test('an offset of zero is the original straight walk', () => {
-		// What an explicitly configured aiBrowser.mcp.port must still get.
+		// What an explicitly configured hoverdeck.mcp.port must still get.
 		assert.deepStrictEqual(portOrder(43110, 0, 3), [43110, 43111, 43112]);
 	});
 

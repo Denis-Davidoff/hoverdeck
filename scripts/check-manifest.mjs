@@ -21,6 +21,9 @@ const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const contributes = manifest.contributes;
 
 const problems = [];
+for (const left of JSON.stringify(manifest).match(/\baiBrowser\.[\w.]+/g) ?? []) {
+	problems.push(`${left} still carries AI Browser's id, so it collides with that extension installed beside HoverDeck`);
+}
 const commands = new Map(contributes.commands.map(c => [c.command, c]));
 const submenus = new Map((contributes.submenus ?? []).map(s => [s.id, s]));
 
@@ -137,18 +140,20 @@ for (const file of readdirSync(join(root, 'media', 'icons'))) {
  * must share one icon across destinations, and no two kinds may share a dot.
  */
 const grid = {
-	element: ['aiBrowser.copyElement', 'aiBrowser.addElementToClaudeCode', 'aiBrowser.addElementToCodex', 'aiBrowser.chat.addElement'],
-	cssPath: ['aiBrowser.copyElementCssPath', 'aiBrowser.addCssPathToClaudeCode', 'aiBrowser.addCssPathToCodex', 'aiBrowser.chat.addCssPath'],
-	cssLocation: ['aiBrowser.copyElementCssLocation', 'aiBrowser.addCssLocationToClaudeCode', 'aiBrowser.addCssLocationToCodex', 'aiBrowser.chat.addCssLocation'],
-	xpath: ['aiBrowser.copyElementXPath', 'aiBrowser.addXPathToClaudeCode', 'aiBrowser.addXPathToCodex', 'aiBrowser.chat.addXPath'],
+	element: ['hoverdeck.copyElement', 'hoverdeck.addElementToClaudeCode', 'hoverdeck.addElementToCodex', 'hoverdeck.chat.addElement'],
+	cssPath: ['hoverdeck.copyElementCssPath', 'hoverdeck.addCssPathToClaudeCode', 'hoverdeck.addCssPathToCodex', 'hoverdeck.chat.addCssPath'],
+	cssLocation: ['hoverdeck.copyElementCssLocation', 'hoverdeck.addCssLocationToClaudeCode', 'hoverdeck.addCssLocationToCodex', 'hoverdeck.chat.addCssLocation'],
+	xpath: ['hoverdeck.copyElementXPath', 'hoverdeck.addXPathToClaudeCode', 'hoverdeck.addXPathToCodex', 'hoverdeck.chat.addXPath'],
 };
 const stem = id => {
 	const icon = commands.get(id)?.icon;
 	const match = /crosshair-(\w+?)(?:-(claude|codex|chat))?-dark\.svg$/.exec(icon?.dark ?? '');
 	return match ? { dot: match[1], dest: match[2] ?? 'copy' } : undefined;
 };
-for (const [kind, ids] of Object.entries(grid)) {
-	const stems = ids.map(stem);
+// The Claude Code and Codex columns stayed with AI Browser; only what is contributed is checked.
+const shipped = id => !/(ClaudeCode|Codex)$|\.(claude|codex)\./.test(id);
+for (const [kind, all] of Object.entries(grid)) {
+	const stems = all.filter(shipped).map(stem);
 	if (stems.some(s => !s)) {
 		problems.push(`${kind}: a command has no crosshair icon`);
 		continue;
@@ -206,7 +211,7 @@ const platformChords = k => ({
 });
 const chordOf = k => JSON.stringify(platformChords(k));
 const sharesChord = (k, chords) => Object.entries(platformChords(k)).some(([os, chord]) => chord && chords?.[os] === chord);
-const repeatBindings = keybindings.filter(k => k.command.startsWith('aiBrowser.repeat.'));
+const repeatBindings = keybindings.filter(k => k.command.startsWith('hoverdeck.repeat.'));
 let repeatChord;
 if (repeatBindings.length) {
 	const keys = new Set(repeatBindings.map(chordOf));
@@ -224,7 +229,7 @@ for (const binding of keybindings) {
 	if (!commands.has(binding.command)) {
 		problems.push(`keybinding for unknown command ${binding.command}`);
 	}
-	if (!binding.command.startsWith('aiBrowser.repeat.') && sharesChord(binding, repeatChord)) {
+	if (!binding.command.startsWith('hoverdeck.repeat.') && sharesChord(binding, repeatChord)) {
 		problems.push(`${binding.command} takes the repeat chord on some platform, which belongs to the toolbar's primary button`);
 	}
 }
@@ -236,8 +241,8 @@ for (const binding of keybindings) {
  * puts the chord on every row of the menu.
  *
  * Swept across *every* submenu we declare, not just the top-level one. It used
- * to read `menus['aiBrowser.elementMenu']` alone, and the moment the assistant
- * entries moved down into `aiBrowser.claudeMenu` / `codexMenu` that guard went
+ * to read `menus['hoverdeck.elementMenu']` alone, and the moment the assistant
+ * entries moved down into `hoverdeck.claudeMenu` / `codexMenu` that guard went
  * blind to eight of the twelve commands it exists for — silently, because a
  * check that inspects nothing still passes.
  *
@@ -259,26 +264,27 @@ for (const id of submenus.keys()) {
 const hiddenFromPalette = new Set(
 	(contributes.menus.commandPalette ?? []).filter(m => m.when === 'false').map(m => m.command));
 const twins = {
-	'aiBrowser.repeat.element': 'aiBrowser.copyElement',
-	'aiBrowser.repeat.cssPath': 'aiBrowser.copyElementCssPath',
-	'aiBrowser.repeat.cssLocation': 'aiBrowser.copyElementCssLocation',
-	'aiBrowser.repeat.xpath': 'aiBrowser.copyElementXPath',
-	'aiBrowser.repeat.claude.element': 'aiBrowser.addElementToClaudeCode',
-	'aiBrowser.repeat.claude.cssPath': 'aiBrowser.addCssPathToClaudeCode',
-	'aiBrowser.repeat.claude.cssLocation': 'aiBrowser.addCssLocationToClaudeCode',
-	'aiBrowser.repeat.claude.xpath': 'aiBrowser.addXPathToClaudeCode',
-	'aiBrowser.repeat.codex.element': 'aiBrowser.addElementToCodex',
-	'aiBrowser.repeat.codex.cssPath': 'aiBrowser.addCssPathToCodex',
-	'aiBrowser.repeat.codex.cssLocation': 'aiBrowser.addCssLocationToCodex',
-	'aiBrowser.repeat.codex.xpath': 'aiBrowser.addXPathToCodex',
-	'aiBrowser.repeat.chat.element': 'aiBrowser.chat.addElement',
-	'aiBrowser.repeat.chat.cssPath': 'aiBrowser.chat.addCssPath',
-	'aiBrowser.repeat.chat.cssLocation': 'aiBrowser.chat.addCssLocation',
-	'aiBrowser.repeat.chat.xpath': 'aiBrowser.chat.addXPath',
-	'aiBrowser.repeat.annotate': 'aiBrowser.annotatePage',
-	'aiBrowser.repeat.annotateAnywhere': 'aiBrowser.annotateAnywhere',
+	'hoverdeck.repeat.element': 'hoverdeck.copyElement',
+	'hoverdeck.repeat.cssPath': 'hoverdeck.copyElementCssPath',
+	'hoverdeck.repeat.cssLocation': 'hoverdeck.copyElementCssLocation',
+	'hoverdeck.repeat.xpath': 'hoverdeck.copyElementXPath',
+	'hoverdeck.repeat.claude.element': 'hoverdeck.addElementToClaudeCode',
+	'hoverdeck.repeat.claude.cssPath': 'hoverdeck.addCssPathToClaudeCode',
+	'hoverdeck.repeat.claude.cssLocation': 'hoverdeck.addCssLocationToClaudeCode',
+	'hoverdeck.repeat.claude.xpath': 'hoverdeck.addXPathToClaudeCode',
+	'hoverdeck.repeat.codex.element': 'hoverdeck.addElementToCodex',
+	'hoverdeck.repeat.codex.cssPath': 'hoverdeck.addCssPathToCodex',
+	'hoverdeck.repeat.codex.cssLocation': 'hoverdeck.addCssLocationToCodex',
+	'hoverdeck.repeat.codex.xpath': 'hoverdeck.addXPathToCodex',
+	'hoverdeck.repeat.chat.element': 'hoverdeck.chat.addElement',
+	'hoverdeck.repeat.chat.cssPath': 'hoverdeck.chat.addCssPath',
+	'hoverdeck.repeat.chat.cssLocation': 'hoverdeck.chat.addCssLocation',
+	'hoverdeck.repeat.chat.xpath': 'hoverdeck.chat.addXPath',
+	'hoverdeck.repeat.annotate': 'hoverdeck.annotatePage',
+	'hoverdeck.repeat.annotateAnywhere': 'hoverdeck.annotateAnywhere',
 };
 for (const [delegate, twin] of Object.entries(twins)) {
+	if (!shipped(delegate)) { continue; }
 	if (!commands.has(delegate)) {
 		problems.push(`missing repeat delegate ${delegate}`);
 		continue;

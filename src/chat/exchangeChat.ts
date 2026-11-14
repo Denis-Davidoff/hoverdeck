@@ -1,4 +1,5 @@
 import { currentVisibleTurns } from './core/entryWindow';
+import { productName } from '../core/flavor';
 import { createHash as deviceHash } from "node:crypto";
 import { surfaceControls } from './core/commands';
 import { remoteFileControls } from './core/remoteFiles';
@@ -19,7 +20,7 @@ import { exchangeServerUrl, exchangeWebsiteUrl, exchangeSnapshot, readExchangeCo
 
 type Socket = { readyState: number; bufferedAmount: number; send(data: string): void; close(): void; addEventListener(type: string, listener: (event: any) => void): void };
 const WebSocketCtor = (globalThis as any).WebSocket as (new (url: string) => Socket) | undefined;
-const secretKey = 'aiBrowser.exchange.key';
+const secretKey = 'hoverdeck.exchange.key';
 /** The relay's `maxPayload`. A command's text is limited in UTF-16 units, so its UTF-8 frame can reach several times that. */
 /** A whole snapshot at least this often while patches flow; see `ExchangeChat.sendSnapshot`. */
 const fullEveryMs = 2000;
@@ -38,7 +39,7 @@ function exchangePageSuggestion(page: { title: string; url: string } | undefined
 
 let auditChannel: vscode.OutputChannel | undefined;
 export function auditRemoteTerminal(line: string): void {
-	auditChannel ??= vscode.window.createOutputChannel('AI Browser: Remote Terminals');
+	auditChannel ??= vscode.window.createOutputChannel(`${productName()}: Remote Terminals`);
 	auditChannel.appendLine(`${new Date().toISOString()} ${line}`);
 }
 const terminalLifecycle = new Set(['newTerminal', 'closeTerminal', 'renameTerminal', 'restartTerminal']);
@@ -70,7 +71,7 @@ class ExchangeSurface implements ChatStateSurface {
 		if (this.terminalConsent !== 'unasked') { return false; }
 		this.terminalConsent = 'asking';
 		const allow = 'Allow';
-		const answer = await vscode.window.showWarningMessage('Let the AI Browser Server website use terminal tabs on this computer?',
+		const answer = await vscode.window.showWarningMessage(`Let the ${productName()} Server website use terminal tabs on this computer?`,
 			{ modal: true, detail: terminalConsentDetail }, allow);
 		this.terminalConsent = answer === allow && !this.stopped ? 'yes' : 'no';
 		auditRemoteTerminal(`consent ${this.terminalConsent} point=${this.config.pointId}`);
@@ -196,7 +197,7 @@ class ExchangeSurface implements ChatStateSurface {
 	}
 	private connect(): void {
 		if (this.stopped || !WebSocketCtor) { return; }
-		this.status.text = '$(sync~spin) AI Browser Server';
+		this.status.text = `$(sync~spin) ${productName()} Server`;
 		this.changed('connecting');
 		const socket = this.socket = encryptedExchangeSocket(this.config.url + '/ws/agent',this.cipher,true,()=>{ this.forceFull = true; this.sendSnapshot(); },WebSocketCtor as unknown as typeof WebSocket);
 		this.handshake = setTimeout(() => socket.close(), 10000);
@@ -215,7 +216,7 @@ class ExchangeSurface implements ChatStateSurface {
 				this.changed('error', 'Connection refused. Check the connection ID and key, or disconnect another client using this connection.');
 				return;
 			}
-			this.status.text = '$(debug-disconnect) AI Browser Server: reconnecting';
+			this.status.text = `$(debug-disconnect) ${productName()} Server: reconnecting`;
 			this.changed('reconnecting', `Cannot keep the connection to ${this.config.url}. Check that this address forwards WebSocket connections. Retrying automatically…`);
 			this.timer = setTimeout(() => this.connect(), this.retry);
 			this.retry = Math.min(this.retry * 2, 30000);
@@ -229,7 +230,7 @@ class ExchangeSurface implements ChatStateSurface {
 			clearTimeout(this.handshake); this.ready = true; this.retry = 1000;
 			this.patches = Array.isArray(value.features) && value.features.includes('patch');
 			this.epoch = globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 16); this.rev = 0; this.sent = undefined; this.forceFull = true;
-			this.status.text = '$(radio-tower) AI Browser Server: connected';
+			this.status.text = `$(radio-tower) ${productName()} Server: connected`;
 			this.changed('connected');
 			this.refresh?.(); this.sendSnapshot(); return;
 		}
@@ -306,12 +307,12 @@ async function verifyExchangeServer(socketOrigin: string): Promise<{ deviceIdent
 	const healthUrl = new URL('/api/health', address);
 	let response: Awaited<ReturnType<typeof fetch>>;
 	try { response = await fetch(healthUrl, { signal: AbortSignal.timeout(5000), redirect: 'error' }); }
-	catch { throw new Error(`Cannot reach AI Browser Server at ${address.origin}. Copy the server address from your website's connection details.`); }
-	if (!response.ok) { throw new Error(`AI Browser Server returned HTTP ${response.status}. Check the server address and port.`); }
+	catch { throw new Error(`Cannot reach ${productName()} Server at ${address.origin}. Copy the server address from your website's connection details.`); }
+	if (!response.ok) { throw new Error(`${productName()} Server returned HTTP ${response.status}. Check the server address and port.`); }
 	let health: { status?: string; protocolVersion?: number; features?: string[] };
 	try { health = await response.json() as typeof health; }
-	catch { throw new Error('This address does not provide the AI Browser Server API. Copy the server address from your connection details.'); }
-	if (health?.status !== 'ok' || health.protocolVersion !== 1) { throw new Error('This server does not support the AI Browser connection protocol.'); }
+	catch { throw new Error(`This address does not provide the ${productName()} Server API. Copy the server address from your connection details.`); }
+	if (health?.status !== 'ok' || health.protocolVersion !== 1) { throw new Error(`This server does not support the ${productName()} connection protocol.`); }
     return { deviceIdentity: Array.isArray(health.features) && health.features.includes('device-identity') };
 }
 
@@ -326,10 +327,10 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 	const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 40);
 	const viewersStatus = browser ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 39) : undefined;
 	if(viewersStatus)context.subscriptions.push(viewersStatus);
-	status.command = 'aiBrowser.chat.disconnectExchange';
-	status.tooltip = 'Disconnect this chat from AI Browser Server';
+	status.command = 'hoverdeck.chat.disconnectExchange';
+	status.tooltip = `Disconnect this chat from ${productName()} Server`;
 	const initialized = (async () => {
-		const saved = context.workspaceState.get<Config>('aiBrowser.exchange.connection');
+		const saved = context.workspaceState.get<Config>('hoverdeck.exchange.connection');
 		if (saved && typeof saved.url === 'string' && typeof saved.pointId === 'string') {
 			const hasKey = !!await context.secrets.get(secretKey + '.' + saved.pointId);
 			const hasPassword = !!await context.secrets.get(secretKey + '.password.' + saved.pointId);
@@ -349,7 +350,7 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 		connection?.dispose(); connection = undefined; status.hide();
 		if (savedConfig) {
 			savedConfig = { ...savedConfig, autoConnect: false };
-			void context.workspaceState.update('aiBrowser.exchange.connection', savedConfig).then(undefined, () => exchangeConnection.update({ error: 'Could not save the disconnected state.' }));
+			void context.workspaceState.update('hoverdeck.exchange.connection', savedConfig).then(undefined, () => exchangeConnection.update({ error: 'Could not save the disconnected state.' }));
 		}
 		exchangeConnection.update({ status: 'disconnected', error: undefined });
 	};
@@ -383,11 +384,11 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 			if (typeof input.url !== 'string' || typeof input.pointId !== 'string' || (input.key !== undefined && typeof input.key !== 'string')) { throw new Error('Invalid connection settings.'); }
 			const url = exchangeServerUrl(input.url.trim());
 			const pointId = input.pointId.trim();
-			if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pointId)) { throw new Error('Paste a valid connection ID from your AI Browser dashboard.'); }
-			const previous = context.workspaceState.get<Config>('aiBrowser.exchange.connection');
+			if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pointId)) { throw new Error(`Paste a valid connection ID from your ${productName()} dashboard.`); }
+			const previous = context.workspaceState.get<Config>('hoverdeck.exchange.connection');
 			const supplied = input.key?.trim();
 			const key = supplied || (previous && exchangeServerUrl(previous.url) === url && previous.pointId === pointId ? await context.secrets.get(secretKey + '.' + pointId) : undefined);
-			if (!key || !/^exch_[A-Za-z0-9_-]{43}$/.test(key)) { throw new Error('Paste the connection key from your AI Browser dashboard.'); }
+			if (!key || !/^exch_[A-Za-z0-9_-]{43}$/.test(key)) { throw new Error(`Paste the connection key from your ${productName()} dashboard.`); }
 			if (!ChatViewProvider.chromeSources().some(item => item.id === source)) { throw new Error('Open the chat you want to share and try again.'); }
 			if (current !== generation) { return; }
 			const capabilities = await verifyExchangeServer(url);
@@ -402,7 +403,7 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 			if (password) { await context.secrets.store(passwordId, password); } else { await context.secrets.delete(passwordId); }
 			if (current !== generation || disposed) { return; }
 			savedConfig = { url: exchangeWebsiteUrl(url), pointId, autoConnect: true, panelId: ChatViewProvider.chromeSources().find(item => item.id === source)?.panelId ?? 'sidebar' };
-			await context.workspaceState.update('aiBrowser.exchange.connection', savedConfig);
+			await context.workspaceState.update('hoverdeck.exchange.connection', savedConfig);
 			if (current !== generation) { return; }
 			connection?.dispose();
 			exchangeConnection.update({ url: savedConfig.url, pointId, hasKey: true, hasPassword: !!password, status: 'connecting', error: undefined });
@@ -412,7 +413,7 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 					if (phase === 'error' && savedConfig) {
 						savedConfig = { ...savedConfig, autoConnect: false };
 						clearTimeout(restoreTimer);
-						void context.workspaceState.update('aiBrowser.exchange.connection', savedConfig).then(undefined, () => {});
+						void context.workspaceState.update('hoverdeck.exchange.connection', savedConfig).then(undefined, () => {});
 					}
 				}
 			}, cipher);
@@ -436,14 +437,14 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 	}
 	context.subscriptions.push(status, { dispose: shutdown }, exchangeConnection.bind({ connect, disconnect }));
 	void initialized.then(() => scheduleRestore(0));
-	context.subscriptions.push(vscode.commands.registerCommand('aiBrowser.chat.connectExchange', async () => {
+	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.chat.connectExchange', async () => {
 		try {
 			await initialized;
 			await vscode.commands.executeCommand(`${chatViewId}.focus`);
 			const sources = ChatViewProvider.chromeSources();
-			const source = sources.length === 1 ? sources[0] : await vscode.window.showQuickPick(sources, { title: 'Choose the chat to share with AI Browser Server' });
+			const source = sources.length === 1 ? sources[0] : await vscode.window.showQuickPick(sources, { title: `Choose the chat to share with ${productName()} Server` });
 			if (!source) { return; }
-			const address = await vscode.window.showInputBox({ title: 'AI Browser server address', value: exchangeConnection.state.url, ignoreFocusOut: true });
+			const address = await vscode.window.showInputBox({ title: `${productName()} server address`, value: exchangeConnection.state.url, ignoreFocusOut: true });
 			if (address === undefined) { return; }
 			const pointId = await vscode.window.showInputBox({ title: 'Connection ID', value: exchangeConnection.state.pointId, ignoreFocusOut: true });
 			if (!pointId) { return; }
@@ -451,10 +452,10 @@ export function registerExchangeChat(context: vscode.ExtensionContext, browser?:
 			if (key === undefined) { return; }
 			await connect({ url: address, pointId, key }, source.id);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Could not connect to AI Browser Server.';
+			const message = error instanceof Error ? error.message : `Could not connect to ${productName()} Server.`;
 			exchangeConnection.update({ error: message });
 			void vscode.window.showErrorMessage(message);
 		}
 	}));
-	context.subscriptions.push(vscode.commands.registerCommand('aiBrowser.chat.disconnectExchange', disconnect));
+	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.chat.disconnectExchange', disconnect));
 }

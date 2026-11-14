@@ -15,7 +15,7 @@ import {
 } from './browserSearch';
 
 /**
- * The `aiBrowser.searchEngine` default from the manifest, which is what an
+ * The `hoverdeck.searchEngine` default from the manifest, which is what an
  * out-of-list value falls back to. Not `BROWSER_SEARCH_ENGINES[0]`: that is
  * Bing, the upstream list's first entry, so a hand-edited `"Google"` sent every
  * address bar search to a different provider than the one the setting names

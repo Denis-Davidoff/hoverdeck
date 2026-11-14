@@ -142,3 +142,27 @@ test('commit context names the branch, where a task ID usually is', () => {
 	assert.match(commitContext('M\ta.ts', 'diff', 'feat: x', 'feature/ABC-123-login\nignored'), /^Branch: feature\/ABC-123-login\n\n/);
 	assert.doesNotMatch(commitContext('M\ta.ts', 'diff', 'feat: x', ''), /Branch:/);
 });
+
+test('commitContext puts the conversation before the diff, only when given', () => {
+	const context = commitContext('M\ta.ts', 'x'.repeat(200_000), 'feat: x', 'main', 'User: fix login');
+	assert.match(context, /Recent conversation \(intent only; describe the diff\):\nUser: fix login\n\nRecent commit subjects/);
+	assert.doesNotMatch(commitContext('M\ta.ts', 'diff', 'feat: x', 'main', '  '), /Recent conversation/);
+	const long = commitContext('M\ta.ts', 'diff', 'feat: x', 'main', 'OLDEST ' + 'x'.repeat(13_000) + ' NEWEST');
+	assert.match(long, /NEWEST\n\nRecent commit subjects/);
+	assert.doesNotMatch(long, /OLDEST/);
+});
+
+test('a message written by hand is committed as written, tidied at its edges', async () => {
+	const { manualCommitMessage, manualCommitMessageLimit } = await import('./gitCommit.ts');
+	assert.equal(manualCommitMessage('\r\n\n  fix: subject  \r\n\r\nbody line \t\n\n'), '  fix: subject\n\nbody line');
+	assert.equal(manualCommitMessage('# kept: verbatim cleanup'), '# kept: verbatim cleanup');
+	assert.equal(manualCommitMessage('   \n\t\n'), undefined);
+	assert.equal(manualCommitMessage('a\0b'), undefined);
+	assert.equal(manualCommitMessage(42), undefined);
+	assert.equal(manualCommitMessage('x'.repeat(manualCommitMessageLimit)), 'x'.repeat(manualCommitMessageLimit));
+	assert.equal(manualCommitMessage('x'.repeat(manualCommitMessageLimit + 1)), undefined);
+	// A long run of blank lines is linear, not a backtracking pattern.
+	const started = Date.now();
+	assert.equal(manualCommitMessage(`a${'\n'.repeat(30_000)}b`), undefined);
+	assert.ok(Date.now() - started < 500);
+});

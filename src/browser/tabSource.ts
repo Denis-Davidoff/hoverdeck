@@ -82,6 +82,10 @@ export const tabs = {
 	isChrome(tab: vscode.BrowserTab | undefined): tab is ChromeTab {
 		return tab instanceof ChromeTab;
 	},
+	/** A tab of the user's own Chrome profile that was not opened through us. */
+	isUsersOwnChrome(tab: vscode.BrowserTab | undefined): boolean {
+		return tab instanceof ChromeTab && chrome.isUsersOwn(tab);
+	},
 	onDidOpen: merged<vscode.BrowserTab>(vscodeEvent(() => vscode.window.onDidOpenBrowserTab), chrome.onDidOpenTab),
 	onDidClose: merged<vscode.BrowserTab>(vscodeEvent(() => vscode.window.onDidCloseBrowserTab), chrome.onDidCloseTab),
 	onDidChangeActive: merged<vscode.BrowserTab | undefined>(vscodeEvent(() => vscode.window.onDidChangeActiveBrowserTab), chrome.onDidChangeActiveTab),

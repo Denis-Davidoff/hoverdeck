@@ -52,7 +52,7 @@ function harness(healthStatus = 200, memory?: {stored:Map<string,any>;secrets:Ma
 			surface.bind(refresh); refresh();
 			return { dispose: () => surface.close() };
 		},
-	}, chatViewId: 'aiBrowser.chat', remoteTerminalSetting: () => false, remoteTerminalOpenSetting: () => true };
+	}, chatViewId: 'hoverdeck.chat', remoteTerminalSetting: () => false, remoteTerminalOpenSetting: () => true };
 	const modules = new Map<string, any>();
 	function load(name: string): any {
 		if (modules.has(name)) { return modules.get(name); }
@@ -79,7 +79,7 @@ test('settings connect the originating panel, keep keys out of workspace state, 
 		assert.deepEqual(h.sources, ['panel-2']);
 		assert.equal(h.sockets[0].url, 'ws://127.0.0.1:3001/ws/agent');
 		assert.equal(h.port.state.status, 'connecting');
-		assert.equal(h.secrets.get('aiBrowser.exchange.key.' + pointId), key);
+		assert.equal(h.secrets.get('hoverdeck.exchange.key.' + pointId), key);
 		assert.equal(JSON.stringify([...h.stored.values()]).includes(key), false);
 		assert.equal(JSON.stringify(h.port.state).includes(key), false);
 		h.sockets[0].emit('open');
@@ -87,7 +87,7 @@ test('settings connect the originating panel, keep keys out of workspace state, 
 		h.sockets[0].emit('message', { data: JSON.stringify({ type: 'ready', version: 1 }) });
 		await flush();
 		assert.equal(h.port.state.status, 'connected');
-		h.commands.get('aiBrowser.chat.disconnectExchange')!();
+		h.commands.get('hoverdeck.chat.disconnectExchange')!();
 		assert.equal(h.port.state.status, 'disconnected');
 		assert.equal(h.port.state.hasKey, true);
 		assert.equal(h.sockets[0].readyState, 3);
@@ -187,12 +187,12 @@ test('reload restores the same saved key and point into the original stable chat
 });
 
 test('old stored ws addresses migrate to website addresses and accept a blank saved key',async()=>{
- const memory={stored:new Map<string,any>([['aiBrowser.exchange.connection',{url:'ws://127.0.0.1:3000',pointId,autoConnect:false}]]),secrets:new Map([['aiBrowser.exchange.key.'+pointId,key]])};
+ const memory={stored:new Map<string,any>([['hoverdeck.exchange.connection',{url:'ws://127.0.0.1:3000',pointId,autoConnect:false}]]),secrets:new Map([['hoverdeck.exchange.key.'+pointId,key]])};
  const h=harness(200,memory);
  try{
   await flush();assert.equal(h.port.state.url,'http://127.0.0.1:3000');assert.equal(h.port.state.hasKey,true);
   await h.port.connect({url:'http://127.0.0.1:3000',pointId},'panel-1');
-  assert.equal(h.sockets.length,1);assert.equal(h.stored.get('aiBrowser.exchange.connection').url,'http://127.0.0.1:3000');
+  assert.equal(h.sockets.length,1);assert.equal(h.stored.get('hoverdeck.exchange.connection').url,'http://127.0.0.1:3000');
  }finally{h.shutdown();}
 });
 
@@ -229,7 +229,7 @@ test('workspace passwords stay in SecretStorage, persist on blank reconnect, and
  const h=harness(),password='a sufficiently long password';
  try {
   await h.port.connect({url:'http://localhost:3000',pointId,key,password},'panel-1');
-  assert.equal(h.secrets.get('aiBrowser.exchange.key.password.'+pointId),password);
+  assert.equal(h.secrets.get('hoverdeck.exchange.key.password.'+pointId),password);
   assert.equal(h.port.state.hasPassword,true);
   assert.equal(JSON.stringify([...h.stored.values()]).includes(password),false);
   assert.equal(JSON.stringify(h.port.state).includes(password),false);
@@ -238,7 +238,7 @@ test('workspace passwords stay in SecretStorage, persist on blank reconnect, and
   await h.port.connect({url:'http://localhost:3000',pointId},'panel-1');assert.equal(h.port.state.hasPassword,true);
   h.dispose();
   await h.port.connect({url:'http://localhost:3000',pointId,password:''},'panel-1');
-  assert.equal(h.port.state.hasPassword,false);assert.equal(h.secrets.has('aiBrowser.exchange.key.password.'+pointId),false);
+  assert.equal(h.port.state.hasPassword,false);assert.equal(h.secrets.has('hoverdeck.exchange.key.password.'+pointId),false);
   h.sockets.at(-1)!.emit('open');assert.equal(JSON.parse(h.sockets.at(-1)!.sent[0]).encryption,null);
  } finally {h.shutdown();}
 });

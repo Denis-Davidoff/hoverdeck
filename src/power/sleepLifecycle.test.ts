@@ -40,6 +40,7 @@ const { CodexBackend } = load<typeof import('../chat/codexAgent.ts')>('src/chat/
 	'./commitMessage': { requestCommitMessage: async () => 'test commit' },
 	'../core/safeFiles': { privateTempDirectory: async () => '/unused-test-runtime' },
 	'../core/chatCapability': load('src/core/chatCapability.ts'),
+	'../core/flavor': load('src/core/flavor.ts'),
 });
 const { ChatTab, newChat } = load<typeof import('../chat/chatTab.ts')>('src/chat/chatTab.ts', {
 	vscode, './agentProtocol': protocol, './agents': { agentNames: { codex: 'Codex' } },
@@ -47,7 +48,7 @@ const { ChatTab, newChat } = load<typeof import('../chat/chatTab.ts')>('src/chat
 	'./attachmentReferences': load('src/chat/attachmentReferences.ts'),
 	'./messageFiles': load('src/chat/messageFiles.ts'),
 	'./visualizationProtocol': load('src/chat/visualizationProtocol.ts'), './visualizationStore': load('src/chat/visualizationStore.ts'),
-	'../core/notifyText': load('src/core/notifyText.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
+	'../core/notifyText': load('src/core/notifyText.ts'), '../core/flavor': load('src/core/flavor.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
 });
 const { SleepControl } = load<typeof import('./sleepControl.ts')>('src/power/sleepControl.ts', {
 	'./sleepProtocol': load('src/power/sleepProtocol.ts'),
@@ -106,7 +107,7 @@ test('remote workspace allows the local UI host but blocks an actual remote exte
 	const env = { remoteName: 'ssh-remote' as string | undefined, uiKind: 1 };
 	const host = load<{ setOwnExtensionKind(kind: number): void; hostIsRemote(): boolean }>('src/setup/proposedApi.ts', {
 		vscode: { ...vscode, env, UIKind: { Desktop: 1, Web: 2 }, ExtensionKind: { UI: 1, Workspace: 2 } },
-		'./argvJson': {}, '../core/safeFiles': {}, '../core/notify': {},
+		'./argvJson': {}, '../core/safeFiles': {}, '../core/notify': {}, '../core/flavor': { ownExtensionId: () => 'DenysDavydov.tab-browser-ultimate' },
 	});
 	for (const remote of ['ssh-remote', 'wsl', 'dev-container']) {
 		env.remoteName = remote;
@@ -214,7 +215,7 @@ test('a prompt Claude Code refuses as too long goes again after 5, 15 and 30 s, 
 		'./attachmentReferences': load('src/chat/attachmentReferences.ts'),
 		'./messageFiles': load('src/chat/messageFiles.ts'),
 		'./visualizationProtocol': load('src/chat/visualizationProtocol.ts'), './visualizationStore': load('src/chat/visualizationStore.ts'),
-		'../core/notifyText': load('src/core/notifyText.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
+		'../core/notifyText': load('src/core/notifyText.ts'), '../core/flavor': load('src/core/flavor.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
 	}, fake);
 	const sent: string[] = [];
 	let fire: (event: AgentEvent) => void = () => {};
@@ -266,7 +267,7 @@ function retryHarness() {
 		'./attachmentReferences': load('src/chat/attachmentReferences.ts'),
 		'./messageFiles': load('src/chat/messageFiles.ts'),
 		'./visualizationProtocol': load('src/chat/visualizationProtocol.ts'), './visualizationStore': load('src/chat/visualizationStore.ts'),
-		'../core/notifyText': load('src/core/notifyText.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
+		'../core/notifyText': load('src/core/notifyText.ts'), '../core/flavor': load('src/core/flavor.ts'), './terminalPins': load('src/chat/terminalPins.ts'),
 	}, fake);
 	const sent: string[] = [];
 	let fire: (event: AgentEvent) => void = () => {};

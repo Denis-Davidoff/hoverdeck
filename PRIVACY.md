@@ -88,6 +88,6 @@ Material changes to data practices must also be reflected in the store disclosur
 and relevant product notices.
 
 For privacy questions or deletion guidance, contact the maintainer through the
-[project issue tracker](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/issues).
+[project issue tracker](https://github.com/Denis-Davidoff/hoverdeck/issues).
 Issues are public: do not include private page content, chat transcripts,
 credentials or other sensitive information.

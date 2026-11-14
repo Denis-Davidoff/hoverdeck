@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { productName } from '../core/flavor';
 import { refuse } from '../core/notify';
 import { integratedBrowserCommand, isBrowserApiGranted } from './proposedApi';
 import { dueForCheck, isNewerVersion, readManifestVersion } from './updateVersion';
@@ -23,7 +24,7 @@ import { dueForCheck, isNewerVersion, readManifestVersion } from './updateVersio
 
 /** The manifest the running build is compared against. */
 const manifestUrl =
-	'https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/package.json';
+	'https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/package.json';
 
 /**
  * Where the `.vsix` actually is.
@@ -35,18 +36,18 @@ const manifestUrl =
  * the README documents as *the* download and the same one the promo build
  * opens, so all three agree.
  */
-const vsixUrl =
-	'https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/raw/main/tab-browser-ultimate.vsix';
+const vsixUrl = (): string =>
+	`https://github.com/Denis-Davidoff/hoverdeck/raw/main/hoverdeck.vsix`;
 
 /** The registry that can install it in place, on the hosts that have it. */
-const openVsxUrl = 'https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate';
+const openVsxUrl = (): string => `https://open-vsx.org/extension/DenysDavydov/hoverdeck`;
 
 /** The setting behind the notification's "Don't show again" button. */
-const settingSection = 'aiBrowser';
+const settingSection = 'hoverdeck';
 const settingKey = 'updateCheck.enabled';
 
 /** The release already announced, so this is once per version, not once per window. */
-const offeredVersionKey = 'aiBrowser.update.offeredVersion';
+const offeredVersionKey = 'hoverdeck.update.offeredVersion';
 
 /**
  * When the repository was last *reached*.
@@ -59,7 +60,7 @@ const offeredVersionKey = 'aiBrowser.update.offeredVersion';
  * Both are accepted — the alternative to the first is a laptop that opens
  * offline once and then says nothing for six hours.
  */
-const lastCheckKey = 'aiBrowser.update.lastCheck';
+const lastCheckKey = 'hoverdeck.update.lastCheck';
 
 const checkIntervalMs = 6 * 60 * 60 * 1000;
 
@@ -370,16 +371,16 @@ class UpdateWatch implements vscode.Disposable {
 
 		const choice = await vscode.window.showInformationMessage(
 			vscode.l10n.t(
-				"AI Browser {0} is available on GitHub — you have {1}. A hand-installed VSIX does not update itself.",
-				offer.version, offer.installed),
+				"{2} {0} is available on GitHub — you have {1}. A hand-installed VSIX does not update itself.",
+				offer.version, offer.installed, productName()),
 			openVsx, github, never);
 
 		switch (choice) {
 			case openVsx:
-				await this._open(openVsxUrl);
+				await this._open(openVsxUrl());
 				return;
 			case github:
-				await this._open(vsixUrl);
+				await this._open(vsixUrl());
 				return;
 			case never:
 				await this._optOut();
@@ -436,7 +437,7 @@ class UpdateWatch implements vscode.Disposable {
 				.update(settingKey, false, vscode.ConfigurationTarget.Global);
 		} catch (err) {
 			refuse(vscode.l10n.t(
-				"Could not turn update notices off ({0}). Set \"aiBrowser.updateCheck.enabled\" to false in Settings.",
+				"Could not turn update notices off ({0}). Set \"hoverdeck.updateCheck.enabled\" to false in Settings.",
 				err instanceof Error ? err.message : String(err)));
 		}
 	}

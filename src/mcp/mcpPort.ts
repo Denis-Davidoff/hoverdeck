@@ -52,7 +52,7 @@ export function portOffset(folderUri: string, span: number = portSpan): number {
  * is the last one does not get a walk of length one.
  *
  * `offset` of 0 reproduces the original behaviour exactly, which is what an
- * explicitly configured `aiBrowser.mcp.port` gets: someone who names a port
+ * explicitly configured `hoverdeck.mcp.port` gets: someone who names a port
  * means that port, and silently hashing them somewhere else would be a
  * surprise.
  */

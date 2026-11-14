@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
 import * as safeFiles from '../core/safeFiles.ts';
+import * as flavor from '../core/flavor.ts';
 
 test('activation expires reports across project, shared and legacy directories without following links', async () => {
  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'report-expiry-test-'));
@@ -40,6 +41,7 @@ test('activation expires reports across project, shared and legacy directories w
     case 'path': return path;
     case 'vscode': return { workspace: { workspaceFolders: [] } };
     case '../core/safeFiles': return safeFiles;
+    case '../core/flavor': return flavor;
     case '../core/temporaryFiles': return { trackTemporaryFile: async () => {}, temporaryProject: () => undefined };
     case '../setup/proposedApi': return { workspaceIsRemoteFromHost: () => false };
     default: throw new Error(`Unexpected dependency ${name}`);

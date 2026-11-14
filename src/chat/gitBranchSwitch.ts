@@ -137,7 +137,7 @@ export async function switchAndUpdate(git: SwitchGit, name: string, remote: bool
 			await git(['commit', '-m', message!]);
 		} else if (choice === 'stash') {
 			const previousStash = (await git(['rev-parse', '--verify', 'refs/stash']).catch(() => '')).trim();
-			await git(['stash', 'push', '--include-untracked', '-m', `AI Browser: ${original} before switching to ${local}`]);
+			await git(['stash', 'push', '--include-untracked', '-m', `Chat: ${original} before switching to ${local}`]);
 			stash = { hash: (await git(['rev-parse', 'refs/stash'])).trim(), branch: original };
 			if (stash.hash === previousStash) { throw new Error('No new stash was created. The files may have changed externally; review them before switching.'); }
 			await dialogs.stashed?.(stash);

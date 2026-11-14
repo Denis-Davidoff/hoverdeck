@@ -34,7 +34,7 @@ test('an old or newer incompatible editor shows which extension to update before
   for (const protocolVersion of [undefined, chromeChatProtocolVersion + 1]) {
     const f = fixture({ version: 1, protocolVersion, editorVersion: '0.8.7', view: {} });
     await f.context.poll(f.connection, 0);
-    assert.match(f.status.textContent, protocolVersion === undefined ? /Update the AI Browser extension for VS Code/ : /Update the AI Browser extension for Chrome/);
+    assert.match(f.status.textContent, protocolVersion === undefined ? /Update the VS Code extension/ : /Update the Chrome extension/);
     assert.equal(f.context.compatible, false); assert.equal(f.counts().sends, 0); assert.equal(f.counts().renders, 0);
     assert.equal(f.queued.length, 1, 'pending messages survive an update requirement');
     assert.equal(f.status.dataset.busy, 'false', 'an update requirement stops loading');

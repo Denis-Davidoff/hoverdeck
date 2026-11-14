@@ -591,6 +591,9 @@ suite('approvals', () => {
 		assert.strictEqual(claudeApproval('r3d', { tool_name: 'mcp__team__deploy__prod', input: {} }, '/w').what, 'other');
 		assert.strictEqual(claudeApproval('r3e', { tool_name: 'mcp__ai-browser___write_file', input: {} }, '/w').what, 'other');
 		assert.strictEqual(claudeApproval('r3f', { tool_name: 'mcp__ai-browser__browser_state', input: {} }, '/w').what, 'browser');
+		// HoverDeck registers the same server as `hoverdeck`.
+		assert.strictEqual(claudeApproval('r3h', { tool_name: 'mcp__hoverdeck__browser_state', input: {} }, '/w').what, 'browser');
+		assert.strictEqual(claudeApproval('r3x', { tool_name: 'mcp__hoverdeck-x__browser_state', input: {} }, '/w').what, 'mcp');
 		// Another server's tool is a category of its own, by server.
 		assert.deepStrictEqual(claudeApproval('r4', { tool_name: 'mcp__figma__get_screenshot', input: { node: '1:2' } }, '/w'), {
 			id: 'r4', what: 'mcp', server: 'figma', title: 'get_screenshot', detail: 'node: 1:2',
@@ -1373,7 +1376,7 @@ suite('Gemini CLI', () => {
 
 	test('Claude is launched with ask rules for the tools that type, and not for the ones that look', () => {
 		const source = fs.readFileSync('src/chat/claudeAgent.ts', 'utf8');
-		assert.ok(/ask: \[\.\.\.chatControlTools, \.\.\.terminalInputTools\]/.test(source));
+		assert.ok(/\[\.\.\.chatControlTools, \.\.\.terminalInputTools\]\.map\(tool => `mcp__\$\{server\}__\$\{tool\}`\)/.test(source));
 		assert.ok(!/terminalReadTools/.test(source));
 	});
 

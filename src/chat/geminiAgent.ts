@@ -5,6 +5,7 @@ import { agentProcesses } from './agentProcesses';
  *--------------------------------------------------------------------------------------------*/
 
 import { chatCapability } from '../core/chatCapability';
+import { ownExtensionId, mcpServerName, productName } from '../core/flavor';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { JsonLineProcess, withTimeout } from './agentProcess';
@@ -109,7 +110,7 @@ function mcpServers(server: BrowserServer | undefined): unknown[] {
 	if (server.chatId) {
 		headers.push({ name: 'X-AI-Browser-Chat', value: chatCapability(server.chatId) });
 	}
-	return [{ type: 'http', name: 'ai-browser', url: server.url, headers }];
+	return [{ type: 'http', name: mcpServerName(), url: server.url, headers }];
 }
 
 /** `session/new` refused for want of credentials: JSON-RPC -32000, measured with no key and no login. */
@@ -218,7 +219,7 @@ class AcpConnection implements vscode.Disposable {
 			// `fs/*` and `terminal/*` are only asked of a client that declared them,
 			// which this one does not; anything else is refused rather than left
 			// for the turn to wait on.
-			this._process.send({ jsonrpc: '2.0', id, error: { code: -32601, message: `${method} is not supported by AI Browser.` } });
+			this._process.send({ jsonrpc: '2.0', id, error: { code: -32601, message: `${method} is not supported by this client.` } });
 			return;
 		}
 		if (method === 'session/update') {
@@ -246,7 +247,7 @@ async function connect(
 		await connection.request('initialize', {
 			protocolVersion: 1,
 			clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-			clientInfo: { name: 'ai-browser', title: 'AI Browser', version: extensionVersion() },
+			clientInfo: { name: mcpServerName(), title: productName(), version: extensionVersion() },
 		});
 		return connection;
 	} catch (err) {
@@ -791,5 +792,5 @@ function currentModel(answer: unknown): string | undefined {
 }
 
 function extensionVersion(): string {
-	return vscode.extensions.getExtension('DenysDavydov.tab-browser-ultimate')?.packageJSON?.version ?? '0.0.0';
+	return vscode.extensions.getExtension(ownExtensionId())?.packageJSON?.version ?? '0.0.0';
 }

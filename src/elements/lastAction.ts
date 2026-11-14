@@ -27,8 +27,8 @@ const allActions: readonly string[] = [
 	'annotate', 'annotateAnywhere',
 ];
 
-const contextKey = 'aiBrowser.lastElementAction';
-const mementoKey = 'aiBrowser.lastElementAction';
+const contextKey = 'hoverdeck.lastElementAction';
+const mementoKey = 'hoverdeck.lastElementAction';
 const fallback: ElementActionId = 'element';
 
 function isElementActionId(value: unknown): value is ElementActionId {

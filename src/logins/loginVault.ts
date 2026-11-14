@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -58,13 +59,13 @@ const absentRecheckMs = 1_000;
  */
 export class LoginVault implements vscode.Disposable {
 
-	private static readonly key = 'aiBrowser.vault';
+	private static readonly key = 'hoverdeck.vault';
 	/**
 	 * How many entries the vault held after the last write. Not a secret —
 	 * only a count — and kept outside SecretStorage on purpose: it is how a
 	 * vault VS Code could not decrypt is told apart from one never written.
 	 */
-	private static readonly countKey = 'aiBrowser.vault.entries';
+	private static readonly countKey = 'hoverdeck.vault.entries';
 
 	private _cache: Vault | undefined;
 	/** Bumped by every change notice; a read that started before one is not cached. */
@@ -138,7 +139,7 @@ export class LoginVault implements vscode.Disposable {
 		const parsed = parseVault(text);
 		if (!parsed) {
 			throw new Error(vscode.l10n.t(
-				"The saved logins could not be read — they were written by a newer version of AI Browser, or are damaged. Nothing was changed."));
+				"The saved logins could not be read — they were written by a newer version of {0}, or are damaged. Nothing was changed.", productName()));
 		}
 		return parsed.vault;
 	}

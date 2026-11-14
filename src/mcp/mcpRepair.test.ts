@@ -9,7 +9,7 @@ import { codexEntries, codexRangeDeletable, codexUnterminated } from './codexTom
 import { codexEntryCarriesToken } from './mcpClientState.ts';
 import {
 	codexRetiredTables, codexOurTables, mergeAuthorization, parseClaudeConfig, parseInlineTable,
-	removeCodexTables, repairClaudeJson, repairCodexToml, repairGeminiJson, spliceCodexTables,
+	removeCodexTables, removeJsonServers, repairClaudeJson, repairCodexToml, repairGeminiJson, spliceCodexTables,
 } from './mcpRepair.ts';
 
 const token = 'ourtoken0000000000000000000000000000000000000000000000000000abcd';
@@ -1650,5 +1650,25 @@ suite('repairGeminiJson', () => {
 		const text = JSON.stringify({ mcpServers: { 'ai-browser': { url: `http://127.0.0.1:43110/mcp/${token}` } } });
 		const parsed = JSON.parse(repairGeminiJson(text, endpoint).text);
 		assert.deepStrictEqual(parsed.mcpServers['ai-browser'], { httpUrl: endpoint.url, headers: { Authorization: `Bearer ${token}` } });
+	});
+});
+
+suite('removeJsonServers', () => {
+	test('takes out only entries carrying our token, keeping indentation and newlines', () => {
+		const text = JSON.stringify({ mcpServers: {
+			'ai-browser': { type: 'http', url, headers: { Authorization: `Bearer ${token}` } },
+			old: { type: 'http', url: `http://127.0.0.1:43110/mcp/${token}` },
+			theirs: { type: 'http', url, headers: { Authorization: `Bearer ${foreign}` } },
+			fs: { command: 'npx' },
+		}, other: 1 }, null, 4).replace(/\n/g, '\r\n') + '\r\n';
+		const out = removeJsonServers(text, token);
+		assert.deepStrictEqual(out.removed, ['ai-browser', 'old']);
+		assert.ok(out.changed);
+		assert.deepStrictEqual(Object.keys(JSON.parse(out.text).mcpServers), ['theirs', 'fs']);
+		assert.match(out.text, /\r\n {4}"mcpServers"/);
+	});
+	test('leaves an unparsable file and one with nothing of ours alone', () => {
+		assert.strictEqual(removeJsonServers('{ // comment\n}', token).changed, false);
+		assert.strictEqual(removeJsonServers('{"mcpServers":{"x":{"command":"a"}}}', token).changed, false);
 	});
 });

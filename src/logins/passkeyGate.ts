@@ -25,7 +25,7 @@
 export const passkeyBinding = '__aiBrowserPasskey';
 
 /** Where the wrapper keeps its state, for the extension to settle a request through. */
-export const passkeyStateKey = 'aiBrowser.passkey';
+export const passkeyStateKey = 'hoverdeck.passkey';
 
 /** What the wrapper sends for a ceremony. Ids are base64url, as the page spells them. */
 export interface PasskeyRequestMessage {

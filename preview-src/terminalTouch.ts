@@ -151,9 +151,9 @@ export function visibleFrame(viewport: ViewportLike): VisibleFrame {
 
 export type KeyBarPref = 'auto' | 'on' | 'off';
 
-export const keyBarStorageKey = 'aiBrowser.terminal.keyBar';
-export const fontSizeStorageKey = 'aiBrowser.terminal.fontSize';
-export const keyboardStorageKey = 'aiBrowser.terminal.keyboard';
+export const keyBarStorageKey = 'hoverdeck.terminal.keyBar';
+export const fontSizeStorageKey = 'hoverdeck.terminal.fontSize';
+export const keyboardStorageKey = 'hoverdeck.terminal.keyboard';
 
 export function parseKeyBarPref(raw: string | null | undefined): KeyBarPref {
 	return raw === 'on' || raw === 'off' ? raw : 'auto';

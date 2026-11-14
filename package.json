@@ -1,7 +1,7 @@
 {
-	"name": "tab-browser-ultimate",
-	"displayName": "AI Browser🏆 Claude + Codex + Gemini + OpenCode + Pi + OpenRouter",
-	"description": "Chat with browser, MCP for Chrome and embedded browser tab with AI capabilities, Claude, Codex, Gemini, OpenCode, Pi and OpenRouter integration (Qwen, LM Studio, Ollama, etc.)",
+	"name": "hoverdeck",
+	"displayName": "HoverDeck🏆 for Claude, Codex and any AI agent",
+	"description": "One deck for all your AI agents: Claude Code, Codex, Gemini, OpenCode, Pi and OpenRouter in a chat with a browser, Git and terminals — in VS Code, in Chrome and from your phone.",
 	"version": "0.9.23",
 	"enabledApiProposals": [
 		"externalUriOpener",
@@ -12,12 +12,12 @@
 	"license": "MIT AND MPL-2.0",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate.git"
+		"url": "https://github.com/Denis-Davidoff/hoverdeck.git"
 	},
 	"bugs": {
-		"url": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/issues"
+		"url": "https://github.com/Denis-Davidoff/hoverdeck/issues"
 	},
-	"homepage": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate#readme",
+	"homepage": "https://github.com/Denis-Davidoff/hoverdeck#readme",
 	"engines": {
 		"vscode": "^1.85.0"
 	},
@@ -151,110 +151,81 @@
 		"workspace"
 	],
 	"activationEvents": [
-		"onCommand:aiBrowser.show",
-		"onCommand:aiBrowser.newTab",
-		"onCommand:aiBrowser.openInChrome",
-		"onCommand:aiBrowser.api.open",
-		"onCommand:aiBrowser.copyElementXPath",
+		"onCommand:hoverdeck.show",
+		"onCommand:hoverdeck.newTab",
+		"onCommand:hoverdeck.openInChrome",
+		"onCommand:hoverdeck.api.open",
+		"onCommand:hoverdeck.copyElementXPath",
 		"onOpenExternalUri:http",
 		"onOpenExternalUri:https",
-		"onWebviewPanel:aiBrowser.view",
-		"onWebviewPanel:aiBrowser.chat.window",
-		"onCommand:aiBrowser.copyElement",
-		"onCommand:aiBrowser.copyElementCssPath",
+		"onWebviewPanel:hoverdeck.view",
+		"onWebviewPanel:hoverdeck.chat.window",
+		"onCommand:hoverdeck.copyElement",
+		"onCommand:hoverdeck.copyElementCssPath",
 		"onStartupFinished",
-		"onCommand:aiBrowser.connectClaudeCode",
-		"onCommand:aiBrowser.connectCodex",
-		"onCommand:aiBrowser.connectGemini",
-		"onCommand:aiBrowser.connectOpenCode",
-		"onCommand:aiBrowser.openGeminiCli",
-		"onCommand:aiBrowser.checkMcpConnection",
-		"onCommand:aiBrowser.enableBrowserApi",
-		"onCommand:aiBrowser.statusMenu",
-		"onCommand:aiBrowser.addElementToClaudeCode",
-		"onCommand:aiBrowser.addCssPathToClaudeCode",
-		"onCommand:aiBrowser.addXPathToClaudeCode",
-		"onCommand:aiBrowser.addElementToCodex",
-		"onCommand:aiBrowser.addCssPathToCodex",
-		"onCommand:aiBrowser.addXPathToCodex",
-		"onCommand:aiBrowser.copyScreenshot",
-		"onCommand:aiBrowser.copyFullScreenshot",
-		"onCommand:aiBrowser.repeat.element",
-		"onCommand:aiBrowser.repeat.cssPath",
-		"onCommand:aiBrowser.repeat.xpath",
-		"onCommand:aiBrowser.repeat.annotate",
-		"onCommand:aiBrowser.repeat.claude.element",
-		"onCommand:aiBrowser.repeat.claude.cssPath",
-		"onCommand:aiBrowser.repeat.claude.xpath",
-		"onCommand:aiBrowser.repeat.codex.element",
-		"onCommand:aiBrowser.repeat.codex.cssPath",
-		"onCommand:aiBrowser.repeat.codex.xpath",
-		"onCommand:aiBrowser.shareTab",
-		"onCommand:aiBrowser.stopSharingTab",
-		"onCommand:aiBrowser.shareTabWithClaudeCode",
-		"onCommand:aiBrowser.shareTabWithCodex",
-		"onCommand:aiBrowser.shareTabWithGemini",
-		"onCommand:aiBrowser.shareTabWithOpenCode",
-		"onCommand:aiBrowser.shareTabWithPi",
-		"onCommand:aiBrowser.shareTabWithOpenRouter",
-		"onCommand:aiBrowser.copyElementCssLocation",
-		"onCommand:aiBrowser.addCssLocationToClaudeCode",
-		"onCommand:aiBrowser.addCssLocationToCodex",
-		"onCommand:aiBrowser.repeat.cssLocation",
-		"onCommand:aiBrowser.repeat.claude.cssLocation",
-		"onCommand:aiBrowser.repeat.codex.cssLocation",
-		"onCommand:aiBrowser.repeat.chat.element",
-		"onCommand:aiBrowser.repeat.chat.cssPath",
-		"onCommand:aiBrowser.repeat.chat.cssLocation",
-		"onCommand:aiBrowser.repeat.chat.xpath",
-		"onCommand:aiBrowser.logins.fill",
-		"onCommand:aiBrowser.logins.saveFromPage",
-		"onCommand:aiBrowser.logins.manage",
-		"onCommand:aiBrowser.logins.import",
-		"onCommand:aiBrowser.logins.export",
-		"onCommand:aiBrowser.translatePage",
-		"onCommand:aiBrowser.annotatePage",
-		"onCommand:aiBrowser.annotateAnywhere",
-		"onCommand:aiBrowser.repeat.annotateAnywhere",
-		"onCommand:aiBrowser.clearAnnotations",
-		"onCommand:aiBrowser.copyAnnotationPrompt",
-		"onView:aiBrowser.chat",
-		"onCommand:aiBrowser.chat.newChat",
-		"onCommand:aiBrowser.chat.newTerminal",
-		"onCommand:aiBrowser.chat.connectChrome",
-		"onCommand:aiBrowser.chat.connectExchange",
-		"onCommand:aiBrowser.chat.disconnectExchange",
-		"onCommand:aiBrowser.chat.disconnectChrome",
-		"onCommand:aiBrowser.chat.history",
-		"onCommand:aiBrowser.chat.refreshAgents",
-		"onCommand:aiBrowser.chat.allAgents",
-		"onCommand:aiBrowser.chat.closeTab",
-		"onCommand:aiBrowser.chat.keepAwake",
-		"onCommand:aiBrowser.chat.keepAwakeActive",
-		"onCommand:aiBrowser.chat.addElement",
-		"onCommand:aiBrowser.chat.addCssPath",
-		"onCommand:aiBrowser.chat.addCssLocation",
-		"onCommand:aiBrowser.chat.addXPath",
-		"onCommand:aiBrowser.chat.addScreenshot",
-		"onCommand:aiBrowser.chat.addPage",
-		"onCommand:aiBrowser.chat.attachExplorerResources",
-		"onCommand:aiBrowser.chat.attachEditorSelection",
-		"onCommand:aiBrowser.recording.start",
-		"onCommand:aiBrowser.recording.startChat",
-		"onCommand:aiBrowser.recording.startClaude",
-		"onCommand:aiBrowser.recording.startCodex",
-		"onCommand:aiBrowser.recording.pause",
-		"onCommand:aiBrowser.recording.resume",
-		"onCommand:aiBrowser.recording.stop",
-		"onCommand:aiBrowser.recording.stopEnding",
-		"onCommand:aiBrowser.chat.settings",
-		"onCommand:aiBrowser.recording.balanced",
-		"onCommand:aiBrowser.recording.balancedDefault",
-		"onCommand:aiBrowser.recording.high",
-		"onCommand:aiBrowser.recording.highDefault",
-		"onCommand:aiBrowser.recording.maximum",
-		"onCommand:aiBrowser.recording.maximumDefault",
-		"onCommand:aiBrowser.connectOtherAgent"
+		"onCommand:hoverdeck.removeAiBrowserEntries",
+		"onCommand:hoverdeck.enableBrowserApi",
+		"onCommand:hoverdeck.statusMenu",
+		"onCommand:hoverdeck.copyScreenshot",
+		"onCommand:hoverdeck.copyFullScreenshot",
+		"onCommand:hoverdeck.repeat.element",
+		"onCommand:hoverdeck.repeat.cssPath",
+		"onCommand:hoverdeck.repeat.xpath",
+		"onCommand:hoverdeck.repeat.annotate",
+		"onCommand:hoverdeck.shareTab",
+		"onCommand:hoverdeck.stopSharingTab",
+		"onCommand:hoverdeck.copyElementCssLocation",
+		"onCommand:hoverdeck.repeat.cssLocation",
+		"onCommand:hoverdeck.repeat.chat.element",
+		"onCommand:hoverdeck.repeat.chat.cssPath",
+		"onCommand:hoverdeck.repeat.chat.cssLocation",
+		"onCommand:hoverdeck.repeat.chat.xpath",
+		"onCommand:hoverdeck.logins.fill",
+		"onCommand:hoverdeck.logins.saveFromPage",
+		"onCommand:hoverdeck.pasteCookies",
+		"onCommand:hoverdeck.logins.manage",
+		"onCommand:hoverdeck.logins.import",
+		"onCommand:hoverdeck.logins.export",
+		"onCommand:hoverdeck.translatePage",
+		"onCommand:hoverdeck.annotatePage",
+		"onCommand:hoverdeck.annotateAnywhere",
+		"onCommand:hoverdeck.repeat.annotateAnywhere",
+		"onCommand:hoverdeck.clearAnnotations",
+		"onCommand:hoverdeck.copyAnnotationPrompt",
+		"onView:hoverdeck.chat",
+		"onCommand:hoverdeck.chat.newChat",
+		"onCommand:hoverdeck.chat.newTerminal",
+		"onCommand:hoverdeck.chat.connectChrome",
+		"onCommand:hoverdeck.chat.connectExchange",
+		"onCommand:hoverdeck.chat.disconnectExchange",
+		"onCommand:hoverdeck.chat.disconnectChrome",
+		"onCommand:hoverdeck.chat.history",
+		"onCommand:hoverdeck.chat.refreshAgents",
+		"onCommand:hoverdeck.chat.allAgents",
+		"onCommand:hoverdeck.chat.closeTab",
+		"onCommand:hoverdeck.chat.keepAwake",
+		"onCommand:hoverdeck.chat.keepAwakeActive",
+		"onCommand:hoverdeck.chat.addElement",
+		"onCommand:hoverdeck.chat.addCssPath",
+		"onCommand:hoverdeck.chat.addCssLocation",
+		"onCommand:hoverdeck.chat.addXPath",
+		"onCommand:hoverdeck.chat.addScreenshot",
+		"onCommand:hoverdeck.chat.addPage",
+		"onCommand:hoverdeck.chat.attachExplorerResources",
+		"onCommand:hoverdeck.chat.attachEditorSelection",
+		"onCommand:hoverdeck.recording.start",
+		"onCommand:hoverdeck.recording.startChat",
+		"onCommand:hoverdeck.recording.pause",
+		"onCommand:hoverdeck.recording.resume",
+		"onCommand:hoverdeck.recording.stop",
+		"onCommand:hoverdeck.recording.stopEnding",
+		"onCommand:hoverdeck.chat.settings",
+		"onCommand:hoverdeck.recording.balanced",
+		"onCommand:hoverdeck.recording.balancedDefault",
+		"onCommand:hoverdeck.recording.high",
+		"onCommand:hoverdeck.recording.highDefault",
+		"onCommand:hoverdeck.recording.maximum",
+		"onCommand:hoverdeck.recording.maximumDefault"
 	],
 	"capabilities": {
 		"virtualWorkspaces": true,
@@ -266,687 +237,471 @@
 	"contributes": {
 		"commands": [
 			{
-				"command": "aiBrowser.chat.connectExchange",
+				"command": "hoverdeck.chat.connectExchange",
 				"title": "Connect Chat to Exchange",
-				"category": "AI Browser"
+				"category": "HoverDeck"
 			},
 			{
-				"command": "aiBrowser.chat.disconnectExchange",
+				"command": "hoverdeck.chat.disconnectExchange",
 				"title": "Disconnect Chat from Exchange",
-				"category": "AI Browser"
+				"category": "HoverDeck"
 			},
 			{
-				"command": "aiBrowser.show",
+				"command": "hoverdeck.show",
 				"title": "Show",
-				"category": "AI Browser"
+				"category": "HoverDeck"
 			},
 			{
-				"command": "aiBrowser.newTab",
+				"command": "hoverdeck.newTab",
 				"title": "%command.newTab.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(add)"
 			},
 			{
-				"command": "aiBrowser.openInChrome",
+				"command": "hoverdeck.openInChrome",
 				"title": "%command.openInChrome.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(globe)"
 			},
 			{
-				"command": "aiBrowser.copyElementXPath",
+				"command": "hoverdeck.copyElementXPath",
 				"title": "%command.copyElementXPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-green-light.svg",
 					"dark": "media/icons/crosshair-green-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.copyElement",
+				"command": "hoverdeck.copyElement",
 				"title": "%command.copyElement.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-red-light.svg",
 					"dark": "media/icons/crosshair-red-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.copyElementCssPath",
+				"command": "hoverdeck.copyElementCssPath",
 				"title": "%command.copyElementCssPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-blue-light.svg",
 					"dark": "media/icons/crosshair-blue-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.copyElementCssLocation",
+				"command": "hoverdeck.copyElementCssLocation",
 				"title": "%command.copyElementCssLocation.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-grape-light.svg",
 					"dark": "media/icons/crosshair-grape-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.connectClaudeCode",
-				"title": "%command.connectClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": "$(plug)"
+				"command": "hoverdeck.removeAiBrowserEntries",
+				"title": "%command.removeAiBrowserEntries.title%",
+				"category": "%category%",
+				"icon": "$(trash)"
 			},
 			{
-				"command": "aiBrowser.connectCodex",
-				"title": "%command.connectCodex.title%",
-				"category": "%displayName%",
-				"icon": "$(plug)"
-			},
-			{
-				"command": "aiBrowser.connectGemini",
-				"title": "%command.connectGemini.title%",
-				"category": "%displayName%",
-				"icon": "$(plug)"
-			},
-			{
-				"command": "aiBrowser.connectOpenCode",
-				"title": "%command.connectOpenCode.title%",
-				"category": "%displayName%",
-				"icon": "$(plug)"
-			},
-			{
-				"command": "aiBrowser.openGeminiCli",
-				"title": "%command.openGeminiCli.title%",
-				"category": "%displayName%",
-				"icon": "$(terminal)"
-			},
-			{
-				"command": "aiBrowser.checkMcpConnection",
-				"title": "%command.checkMcpConnection.title%",
-				"category": "%displayName%",
-				"icon": "$(pulse)"
-			},
-			{
-				"command": "aiBrowser.enableBrowserApi",
+				"command": "hoverdeck.enableBrowserApi",
 				"title": "%command.enableBrowserApi.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(shield)"
 			},
 			{
-				"command": "aiBrowser.statusMenu",
+				"command": "hoverdeck.statusMenu",
 				"title": "%command.statusMenu.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(globe)"
 			},
 			{
-				"command": "aiBrowser.addElementToClaudeCode",
-				"title": "%command.addElementToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-red-light.svg",
-					"dark": "media/icons/crosshair-red-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addCssPathToClaudeCode",
-				"title": "%command.addCssPathToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-blue-light.svg",
-					"dark": "media/icons/crosshair-blue-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addCssLocationToClaudeCode",
-				"title": "%command.addCssLocationToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-grape-light.svg",
-					"dark": "media/icons/crosshair-grape-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addXPathToClaudeCode",
-				"title": "%command.addXPathToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-green-light.svg",
-					"dark": "media/icons/crosshair-green-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addElementToCodex",
-				"title": "%command.addElementToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-red-light.svg",
-					"dark": "media/icons/crosshair-red-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addCssPathToCodex",
-				"title": "%command.addCssPathToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-blue-light.svg",
-					"dark": "media/icons/crosshair-blue-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addCssLocationToCodex",
-				"title": "%command.addCssLocationToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-grape-light.svg",
-					"dark": "media/icons/crosshair-grape-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.addXPathToCodex",
-				"title": "%command.addXPathToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-green-light.svg",
-					"dark": "media/icons/crosshair-green-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.copyScreenshot",
+				"command": "hoverdeck.copyScreenshot",
 				"title": "%command.copyScreenshot.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(device-camera)"
 			},
 			{
-				"command": "aiBrowser.copyFullScreenshot",
+				"command": "hoverdeck.copyFullScreenshot",
 				"title": "%command.copyFullScreenshot.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(device-camera)"
 			},
 			{
-				"command": "aiBrowser.translatePage",
+				"command": "hoverdeck.translatePage",
 				"title": "%command.translatePage.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(whole-word)"
 			},
 			{
-				"command": "aiBrowser.annotatePage",
+				"command": "hoverdeck.annotatePage",
 				"title": "%command.annotatePage.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/marker-light.svg",
 					"dark": "media/icons/marker-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.annotateAnywhere",
+				"command": "hoverdeck.annotateAnywhere",
 				"title": "%command.annotateAnywhere.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/marker-light.svg",
 					"dark": "media/icons/marker-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.clearAnnotations",
+				"command": "hoverdeck.clearAnnotations",
 				"title": "%command.clearAnnotations.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(clear-all)"
 			},
 			{
-				"command": "aiBrowser.copyAnnotationPrompt",
+				"command": "hoverdeck.copyAnnotationPrompt",
 				"title": "%command.copyAnnotationPrompt.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(copy)"
 			},
 			{
-				"command": "aiBrowser.repeat.element",
+				"command": "hoverdeck.repeat.element",
 				"title": "%command.copyElement.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-red-light.svg",
 					"dark": "media/icons/crosshair-red-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.cssPath",
+				"command": "hoverdeck.repeat.cssPath",
 				"title": "%command.copyElementCssPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-blue-light.svg",
 					"dark": "media/icons/crosshair-blue-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.cssLocation",
+				"command": "hoverdeck.repeat.cssLocation",
 				"title": "%command.copyElementCssLocation.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-grape-light.svg",
 					"dark": "media/icons/crosshair-grape-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.annotate",
+				"command": "hoverdeck.repeat.annotate",
 				"title": "%command.annotatePage.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/marker-light.svg",
 					"dark": "media/icons/marker-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.annotateAnywhere",
+				"command": "hoverdeck.repeat.annotateAnywhere",
 				"title": "%command.annotateAnywhere.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/marker-light.svg",
 					"dark": "media/icons/marker-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.xpath",
+				"command": "hoverdeck.repeat.xpath",
 				"title": "%command.copyElementXPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-green-light.svg",
 					"dark": "media/icons/crosshair-green-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.claude.element",
-				"title": "%command.addElementToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-red-light.svg",
-					"dark": "media/icons/crosshair-red-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.claude.cssPath",
-				"title": "%command.addCssPathToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-blue-light.svg",
-					"dark": "media/icons/crosshair-blue-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.claude.cssLocation",
-				"title": "%command.addCssLocationToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-grape-light.svg",
-					"dark": "media/icons/crosshair-grape-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.claude.xpath",
-				"title": "%command.addXPathToClaudeCode.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-green-light.svg",
-					"dark": "media/icons/crosshair-green-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.codex.element",
-				"title": "%command.addElementToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-red-light.svg",
-					"dark": "media/icons/crosshair-red-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.codex.cssPath",
-				"title": "%command.addCssPathToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-blue-light.svg",
-					"dark": "media/icons/crosshair-blue-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.codex.cssLocation",
-				"title": "%command.addCssLocationToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-grape-light.svg",
-					"dark": "media/icons/crosshair-grape-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.codex.xpath",
-				"title": "%command.addXPathToCodex.title%",
-				"category": "%displayName%",
-				"icon": {
-					"light": "media/icons/crosshair-green-light.svg",
-					"dark": "media/icons/crosshair-green-dark.svg"
-				}
-			},
-			{
-				"command": "aiBrowser.repeat.chat.element",
+				"command": "hoverdeck.repeat.chat.element",
 				"title": "%command.chat.addElement.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-red-light.svg",
 					"dark": "media/icons/crosshair-red-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.chat.cssPath",
+				"command": "hoverdeck.repeat.chat.cssPath",
 				"title": "%command.chat.addCssPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-blue-light.svg",
 					"dark": "media/icons/crosshair-blue-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.chat.cssLocation",
+				"command": "hoverdeck.repeat.chat.cssLocation",
 				"title": "%command.chat.addCssLocation.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-grape-light.svg",
 					"dark": "media/icons/crosshair-grape-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.repeat.chat.xpath",
+				"command": "hoverdeck.repeat.chat.xpath",
 				"title": "%command.chat.addXPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-green-light.svg",
 					"dark": "media/icons/crosshair-green-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.shareTab",
+				"command": "hoverdeck.shareTab",
 				"title": "%command.shareTab.title%",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.stopSharingTab",
+				"command": "hoverdeck.stopSharingTab",
 				"title": "%command.stopSharingTab.title%",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.shareTabWithClaudeCode",
-				"title": "%command.shareTabWithClaudeCode.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.shareTabWithCodex",
-				"title": "%command.shareTabWithCodex.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.shareTabWithGemini",
-				"title": "%command.shareTabWithGemini.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.shareTabWithOpenCode",
-				"title": "%command.shareTabWithOpenCode.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.shareTabWithPi",
-				"title": "%command.shareTabWithPi.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.shareTabWithOpenRouter",
-				"title": "%command.shareTabWithOpenRouter.title%",
-				"category": "%displayName%"
-			},
-			{
-				"command": "aiBrowser.logins.fill",
+				"command": "hoverdeck.logins.fill",
 				"title": "%command.logins.fill.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(key)"
 			},
 			{
-				"command": "aiBrowser.logins.saveFromPage",
+				"command": "hoverdeck.logins.saveFromPage",
 				"title": "%command.logins.saveFromPage.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(save)"
 			},
 			{
-				"command": "aiBrowser.logins.manage",
+				"command": "hoverdeck.pasteCookies",
+				"title": "%command.pasteCookies.title%",
+				"category": "%category%",
+				"icon": "$(symbol-key)"
+			},
+			{
+				"command": "hoverdeck.logins.manage",
 				"title": "%command.logins.manage.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(lock)"
 			},
 			{
-				"command": "aiBrowser.logins.import",
+				"command": "hoverdeck.logins.import",
 				"title": "%command.logins.import.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(cloud-download)"
 			},
 			{
-				"command": "aiBrowser.logins.export",
+				"command": "hoverdeck.logins.export",
 				"title": "%command.logins.export.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(cloud-upload)"
 			},
 			{
-				"command": "aiBrowser.chat.addElement",
+				"command": "hoverdeck.chat.addElement",
 				"title": "%command.chat.addElement.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-red-light.svg",
 					"dark": "media/icons/crosshair-red-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.chat.addCssPath",
+				"command": "hoverdeck.chat.addCssPath",
 				"title": "%command.chat.addCssPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-blue-light.svg",
 					"dark": "media/icons/crosshair-blue-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.chat.addCssLocation",
+				"command": "hoverdeck.chat.addCssLocation",
 				"title": "%command.chat.addCssLocation.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-grape-light.svg",
 					"dark": "media/icons/crosshair-grape-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.chat.addXPath",
+				"command": "hoverdeck.chat.addXPath",
 				"title": "%command.chat.addXPath.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/crosshair-green-light.svg",
 					"dark": "media/icons/crosshair-green-dark.svg"
 				}
 			},
 			{
-				"command": "aiBrowser.chat.addScreenshot",
+				"command": "hoverdeck.chat.addScreenshot",
 				"title": "%command.chat.addScreenshot.title%",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.chat.addPage",
+				"command": "hoverdeck.chat.addPage",
 				"title": "%command.chat.addPage.title%",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.chat.attachExplorerResources",
+				"command": "hoverdeck.chat.attachExplorerResources",
 				"title": "%command.chat.attachExplorerResources.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(attach)"
 			},
 			{
-				"command": "aiBrowser.chat.attachEditorSelection",
+				"command": "hoverdeck.chat.attachEditorSelection",
 				"title": "%command.chat.attachEditorSelection.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(code)"
 			},
 			{
-				"command": "aiBrowser.chat.newChat",
+				"command": "hoverdeck.chat.newChat",
 				"title": "%command.chat.newChat.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(add)"
 			},
 			{
-				"command": "aiBrowser.chat.newTerminal",
+				"command": "hoverdeck.chat.newTerminal",
 				"title": "%command.chat.newTerminal.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(terminal)"
 			},
 			{
-				"command": "aiBrowser.chat.connectChrome",
+				"command": "hoverdeck.chat.connectChrome",
 				"title": "Connect Chrome Chat (Preview)",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.chat.disconnectChrome",
+				"command": "hoverdeck.chat.disconnectChrome",
 				"title": "Disconnect Chrome Chat",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.chat.history",
+				"command": "hoverdeck.chat.history",
 				"title": "%command.chat.history.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(history)"
 			},
 			{
-				"command": "aiBrowser.chat.refreshAgents",
+				"command": "hoverdeck.chat.refreshAgents",
 				"title": "%command.chat.refreshAgents.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(refresh)"
 			},
 			{
-				"command": "aiBrowser.chat.settings",
+				"command": "hoverdeck.chat.settings",
 				"title": "%command.chat.settings.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(gear)"
 			},
 			{
-				"command": "aiBrowser.chat.closeTab",
+				"command": "hoverdeck.chat.closeTab",
 				"title": "%command.chat.closeTab.title%",
-				"category": "%displayName%"
+				"category": "%category%"
 			},
 			{
-				"command": "aiBrowser.chat.allAgents",
+				"command": "hoverdeck.chat.allAgents",
 				"title": "%command.chat.allAgents.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(hubot)"
 			},
 			{
-				"command": "aiBrowser.chat.keepAwake",
+				"command": "hoverdeck.chat.keepAwake",
 				"title": "%command.chat.keepAwake.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(ai-browser-cup)"
 			},
 			{
-				"command": "aiBrowser.chat.keepAwakeActive",
+				"command": "hoverdeck.chat.keepAwakeActive",
 				"title": "%command.chat.keepAwakeActive.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(ai-browser-cup-full)"
 			},
 			{
-				"command": "aiBrowser.recording.start",
+				"command": "hoverdeck.recording.start",
 				"title": "%command.recording.start.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(device-camera-video)",
-				"enablement": "!aiBrowser.recordingActive"
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.startChat",
+				"command": "hoverdeck.recording.startChat",
 				"title": "%command.recording.startChat.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(device-camera-video)",
-				"enablement": "!aiBrowser.recordingActive"
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.startClaude",
-				"title": "%command.recording.startClaude.title%",
-				"category": "%displayName%",
-				"icon": "$(copy)"
-			},
-			{
-				"command": "aiBrowser.recording.startCodex",
-				"title": "%command.recording.startCodex.title%",
-				"category": "%displayName%",
-				"icon": "$(copy)"
-			},
-			{
-				"command": "aiBrowser.recording.pause",
+				"command": "hoverdeck.recording.pause",
 				"title": "%command.recording.pause.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(debug-pause)",
-				"enablement": "aiBrowser.recordingState == recording"
+				"enablement": "hoverdeck.recordingState == recording"
 			},
 			{
-				"command": "aiBrowser.recording.resume",
+				"command": "hoverdeck.recording.resume",
 				"title": "%command.recording.resume.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(debug-continue)",
-				"enablement": "aiBrowser.recordingState == paused"
+				"enablement": "hoverdeck.recordingState == paused"
 			},
 			{
-				"command": "aiBrowser.recording.stop",
+				"command": "hoverdeck.recording.stop",
 				"title": "%command.recording.stop.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": "$(debug-stop)",
-				"enablement": "aiBrowser.recordingState == recording || aiBrowser.recordingState == paused"
+				"enablement": "hoverdeck.recordingState == recording || hoverdeck.recordingState == paused"
 			},
 			{
-				"command": "aiBrowser.recording.stopEnding",
+				"command": "hoverdeck.recording.stopEnding",
 				"title": "%command.recording.stopEnding.title%",
-				"category": "%displayName%",
+				"category": "%category%",
 				"icon": {
 					"light": "media/icons/stop-ending-light.svg",
 					"dark": "media/icons/stop-ending-dark.svg"
 				},
-				"enablement": "aiBrowser.recordingState == recording || aiBrowser.recordingState == paused"
+				"enablement": "hoverdeck.recordingState == recording || hoverdeck.recordingState == paused"
 			},
 			{
-				"command": "aiBrowser.recording.balanced",
+				"command": "hoverdeck.recording.balanced",
 				"title": "%command.recording.balanced.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.balancedDefault",
+				"command": "hoverdeck.recording.balancedDefault",
 				"title": "%command.recording.balancedDefault.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.high",
+				"command": "hoverdeck.recording.high",
 				"title": "%command.recording.high.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.highDefault",
+				"command": "hoverdeck.recording.highDefault",
 				"title": "%command.recording.highDefault.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.maximum",
+				"command": "hoverdeck.recording.maximum",
 				"title": "%command.recording.maximum.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			},
 			{
-				"command": "aiBrowser.recording.maximumDefault",
+				"command": "hoverdeck.recording.maximumDefault",
 				"title": "%command.recording.maximumDefault.title%",
-				"category": "%displayName%",
-				"enablement": "!aiBrowser.recordingActive"
-			},
-			{
-				"command": "aiBrowser.connectOtherAgent",
-				"title": "%command.connectOtherAgent.title%",
-				"category": "%displayName%",
-				"icon": "$(plug)"
+				"category": "%category%",
+				"enablement": "!hoverdeck.recordingActive"
 			}
 		],
 		"icons": {
@@ -968,39 +723,39 @@
 		"viewsContainers": {
 			"secondarySidebar": [
 				{
-					"id": "aiBrowserChat",
+					"id": "hoverdeckChat",
 					"title": "%viewsContainer.chat.title%",
 					"icon": "media/chat-activity.svg"
 				}
 			]
 		},
 		"views": {
-			"aiBrowserChat": [
+			"hoverdeckChat": [
 				{
 					"type": "webview",
-					"id": "aiBrowser.chat",
+					"id": "hoverdeck.chat",
 					"name": "%view.chat.name%",
-					"when": "!aiBrowser.chatUnsupported"
+					"when": "!hoverdeck.chatUnsupported"
 				}
 			]
 		},
 		"configuration": [
 			{
-				"title": "AI Browser",
+				"title": "HoverDeck",
 				"properties": {
-					"aiBrowser.useIntegratedBrowser": {
+					"hoverdeck.useIntegratedBrowser": {
 						"type": "boolean",
 						"default": true,
 						"title": "Use Integrated Browser",
 						"description": "%configuration.useIntegratedBrowser.description%"
 					},
-					"aiBrowser.focusLockIndicator.enabled": {
+					"hoverdeck.focusLockIndicator.enabled": {
 						"type": "boolean",
 						"default": true,
 						"title": "Focus Lock Indicator Enabled",
 						"description": "%configuration.focusLockIndicator.enabled.description%"
 					},
-					"aiBrowser.searchEngine": {
+					"hoverdeck.searchEngine": {
 						"type": "string",
 						"enum": [
 							"none",
@@ -1013,19 +768,19 @@
 						"title": "Search Engine",
 						"description": "%configuration.searchEngine.description%"
 					},
-					"aiBrowser.mcp.enabled": {
+					"hoverdeck.mcp.enabled": {
 						"type": "boolean",
 						"default": true,
 						"title": "MCP Server Enabled",
 						"markdownDescription": "%configuration.mcp.enabled.description%"
 					},
-					"aiBrowser.updateCheck.enabled": {
+					"hoverdeck.updateCheck.enabled": {
 						"type": "boolean",
 						"default": true,
 						"title": "Check For Updates",
 						"markdownDescription": "%configuration.updateCheck.enabled.description%"
 					},
-					"aiBrowser.mcp.port": {
+					"hoverdeck.mcp.port": {
 						"type": "integer",
 						"default": 43110,
 						"minimum": 1024,
@@ -1033,54 +788,121 @@
 						"title": "MCP Server Port",
 						"markdownDescription": "%configuration.mcp.port.description%"
 					},
-					"aiBrowser.logins.enabled": {
+					"hoverdeck.mcp.disabledFeatures": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"sounds",
+								"alerts",
+								"cards",
+								"keepAwake",
+								"chatControl",
+								"recording",
+								"annotations",
+								"cookies",
+								"editor"
+							]
+						},
+						"uniqueItems": true,
+						"default": [],
+						"scope": "application",
+						"title": "MCP: Switched-off Features",
+						"markdownDescription": "%configuration.mcp.disabledFeatures.description%"
+					},
+					"hoverdeck.logins.enabled": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Saved Logins",
 						"markdownDescription": "%configuration.logins.enabled.description%"
 					},
-					"aiBrowser.logins.offerToSave": {
+					"hoverdeck.logins.offerToSave": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Offer to Save Logins",
 						"markdownDescription": "%configuration.logins.offerToSave.description%"
 					},
-					"aiBrowser.logins.showSuggestions": {
+					"hoverdeck.logins.showSuggestions": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Suggest Saved Logins",
 						"markdownDescription": "%configuration.logins.showSuggestions.description%"
 					},
-					"aiBrowser.logins.autofillOnPageLoad": {
+					"hoverdeck.logins.autofillOnPageLoad": {
 						"type": "boolean",
 						"default": false,
 						"scope": "application",
 						"title": "Fill Logins on Page Load",
 						"markdownDescription": "%configuration.logins.autofillOnPageLoad.description%"
 					},
-					"aiBrowser.passkeys.enabled": {
+					"hoverdeck.passkeys.enabled": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Passkeys",
 						"markdownDescription": "%configuration.passkeys.enabled.description%"
 					},
-					"aiBrowser.chat.connectionPermissions": {
+					"hoverdeck.security.confirmNewSites": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Confirm New Sites",
+						"markdownDescription": "%configuration.security.confirmNewSites.description%"
+					},
+					"hoverdeck.security.hideOtherChromeTabs": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Hide My Own Chrome Tabs",
+						"markdownDescription": "%configuration.security.hideOtherChromeTabs.description%"
+					},
+					"hoverdeck.security.protectSecretFields": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Protect Password and Card Fields",
+						"markdownDescription": "%configuration.security.protectSecretFields.description%"
+					},
+					"hoverdeck.security.markPageContent": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Mark Page Content as Untrusted",
+						"markdownDescription": "%configuration.security.markPageContent.description%"
+					},
+					"hoverdeck.security.confirmCookies": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Confirm Cookies an Agent Sets",
+						"markdownDescription": "%configuration.security.confirmCookies.description%"
+					},
+					"hoverdeck.chat.connectionPermissions": {
 						"type": "object",
 						"default": {},
 						"scope": "application",
 						"title": "Connection Permissions",
-						"description": "Optional restrictions for Chrome and Exchange. Manage these in AI Browser Chat Settings → Connections & permissions. Supported actions are enabled unless explicitly disabled.",
+						"description": "Optional restrictions for Chrome and Exchange. Manage these in HoverDeck Chat Settings → Connections & permissions. Supported actions are enabled unless explicitly disabled.",
 						"additionalProperties": false,
 						"properties": {
-							"chrome": { "type": "object", "additionalProperties": { "type": "boolean" } },
-							"exchange": { "type": "object", "additionalProperties": { "type": "boolean" } }
+							"chrome": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "boolean"
+								}
+							},
+							"exchange": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "boolean"
+								}
+							}
 						}
 					},
-					"aiBrowser.chat.tabLimit": {
+					"hoverdeck.chat.tabLimit": {
 						"type": "integer",
 						"default": 10,
 						"minimum": 1,
@@ -1088,7 +910,7 @@
 						"title": "Chat Tabs",
 						"markdownDescription": "%configuration.chat.tabLimit.description%"
 					},
-					"aiBrowser.chat.terminalLimit": {
+					"hoverdeck.chat.terminalLimit": {
 						"type": "integer",
 						"default": 8,
 						"minimum": 1,
@@ -1097,170 +919,293 @@
 						"title": "Terminal Tabs",
 						"markdownDescription": "%configuration.chat.terminalLimit.description%"
 					},
-					"aiBrowser.chat.sound.enabled": {
+					"hoverdeck.chat.sound.enabled": {
 						"type": "boolean",
 						"default": true,
 						"title": "Sound When Agents Finish",
 						"markdownDescription": "%configuration.chat.sound.enabled.description%"
 					},
-					"aiBrowser.chat.sound.activeChat": {
+					"hoverdeck.chat.sound.activeChat": {
 						"type": "boolean",
 						"default": false,
 						"title": "Sound for the Active Chat",
 						"markdownDescription": "%configuration.chat.sound.activeChat.description%"
 					},
-					"aiBrowser.chat.sound.name": {
+					"hoverdeck.chat.sound.name": {
 						"type": "string",
-						"enum": ["chime", "bell", "pop", "dingdong", "marimba", "harp", "kalimba", "glass", "bubble", "coin", "levelup", "sparkle", "sonar", "arcade", "droplet", "woodblock", "fanfare", "zen", "whistle", "synth", "lullaby", "triad", "ascend", "descend", "doorbell", "tick", "blip", "laser", "ufo", "boing", "piano", "celesta", "organ", "flute", "pluck", "gong", "twinkle", "heartbeat", "success", "notice", "trill", "jingle", "swoosh", "robot", "chirp", "harmony", "steel", "cosmic", "ping", "victory"],
+						"enum": [
+							"chime",
+							"bell",
+							"pop",
+							"dingdong",
+							"marimba",
+							"harp",
+							"kalimba",
+							"glass",
+							"bubble",
+							"coin",
+							"levelup",
+							"sparkle",
+							"sonar",
+							"arcade",
+							"droplet",
+							"woodblock",
+							"fanfare",
+							"zen",
+							"whistle",
+							"synth",
+							"lullaby",
+							"triad",
+							"ascend",
+							"descend",
+							"doorbell",
+							"tick",
+							"blip",
+							"laser",
+							"ufo",
+							"boing",
+							"piano",
+							"celesta",
+							"organ",
+							"flute",
+							"pluck",
+							"gong",
+							"twinkle",
+							"heartbeat",
+							"success",
+							"notice",
+							"trill",
+							"jingle",
+							"swoosh",
+							"robot",
+							"chirp",
+							"harmony",
+							"steel",
+							"cosmic",
+							"ping",
+							"victory"
+						],
 						"default": "chime",
 						"markdownDescription": "%configuration.chat.sound.name.description%"
 					},
-					"aiBrowser.chat.sound.githubRun": {
+					"hoverdeck.chat.sound.githubRun": {
 						"type": "string",
-						"enum": ["none", "chime", "bell", "pop", "dingdong", "marimba", "harp", "kalimba", "glass", "bubble", "coin", "levelup", "sparkle", "sonar", "arcade", "droplet", "woodblock", "fanfare", "zen", "whistle", "synth", "lullaby", "triad", "ascend", "descend", "doorbell", "tick", "blip", "laser", "ufo", "boing", "piano", "celesta", "organ", "flute", "pluck", "gong", "twinkle", "heartbeat", "success", "notice", "trill", "jingle", "swoosh", "robot", "chirp", "harmony", "steel", "cosmic", "ping", "victory"],
+						"enum": [
+							"none",
+							"chime",
+							"bell",
+							"pop",
+							"dingdong",
+							"marimba",
+							"harp",
+							"kalimba",
+							"glass",
+							"bubble",
+							"coin",
+							"levelup",
+							"sparkle",
+							"sonar",
+							"arcade",
+							"droplet",
+							"woodblock",
+							"fanfare",
+							"zen",
+							"whistle",
+							"synth",
+							"lullaby",
+							"triad",
+							"ascend",
+							"descend",
+							"doorbell",
+							"tick",
+							"blip",
+							"laser",
+							"ufo",
+							"boing",
+							"piano",
+							"celesta",
+							"organ",
+							"flute",
+							"pluck",
+							"gong",
+							"twinkle",
+							"heartbeat",
+							"success",
+							"notice",
+							"trill",
+							"jingle",
+							"swoosh",
+							"robot",
+							"chirp",
+							"harmony",
+							"steel",
+							"cosmic",
+							"ping",
+							"victory"
+						],
 						"default": "success",
 						"title": "Sound When a Watched Actions Run Ends",
 						"markdownDescription": "%configuration.chat.sound.githubRun.description%"
 					},
-					"aiBrowser.chat.sound.volume": {
+					"hoverdeck.chat.sound.volume": {
 						"type": "integer",
 						"minimum": 0,
 						"maximum": 200,
 						"default": 60,
 						"markdownDescription": "%configuration.chat.sound.volume.description%"
 					},
-					"aiBrowser.chat.sound.repeat": {
+					"hoverdeck.chat.sound.repeat": {
 						"type": "integer",
 						"minimum": 1,
 						"maximum": 5,
 						"default": 1,
 						"markdownDescription": "%configuration.chat.sound.repeat.description%"
 					},
-					"aiBrowser.chat.visibleTurns": {
-          "type": "integer",
-          "default": 20,
-          "minimum": 5,
-          "maximum": 200,
-          "markdownDescription": "%config.chat.visibleTurns.description%"
-        },
-        "aiBrowser.chat.notifications.enabled": {
+					"hoverdeck.chat.visibleTurns": {
+						"type": "integer",
+						"default": 20,
+						"minimum": 5,
+						"maximum": 200,
+						"markdownDescription": "%config.chat.visibleTurns.description%"
+					},
+					"hoverdeck.chat.notifications.enabled": {
 						"type": "boolean",
 						"default": true,
 						"title": "Notify When Agents Finish",
 						"markdownDescription": "%configuration.chat.notifications.enabled.description%"
 					},
-					"aiBrowser.chat.notifications.githubRun": {
+					"hoverdeck.chat.notifications.githubRun": {
 						"type": "boolean",
 						"default": true,
 						"title": "Notify When a Watched Actions Run Ends",
 						"markdownDescription": "%configuration.chat.notifications.githubRun.description%"
 					},
-					"aiBrowser.chat.notifications.onlyWhenAway": {
+					"hoverdeck.chat.notifications.onlyWhenAway": {
 						"type": "boolean",
 						"default": true,
 						"markdownDescription": "%configuration.chat.notifications.onlyWhenAway.description%"
 					},
-					"aiBrowser.chat.remoteFilesChrome": {
+					"hoverdeck.chat.remoteFilesChrome": {
 						"type": "string",
-						"enum": ["off", "read", "attach", "write"],
-						"enumDescriptions": ["No access", "Browse only", "Browse and attach", "Browse, attach and edit"],
+						"enum": [
+							"off",
+							"read",
+							"attach",
+							"write"
+						],
+						"enumDescriptions": [
+							"No access",
+							"Browse only",
+							"Browse and attach",
+							"Browse, attach and edit"
+						],
 						"default": "write",
 						"scope": "application",
 						"markdownDescription": "Project file access from Chrome. Controls Files and project attachments inside the conversation's working folder. Agent tool approvals and sandbox permissions are separate. Change this in VS Code only."
 					},
-					"aiBrowser.chat.remoteFilesWebsite": {
+					"hoverdeck.chat.remoteFilesWebsite": {
 						"type": "string",
-						"enum": ["off", "read", "attach", "write"],
-						"enumDescriptions": ["No access", "Browse only", "Browse and attach", "Browse, attach and edit"],
+						"enum": [
+							"off",
+							"read",
+							"attach",
+							"write"
+						],
+						"enumDescriptions": [
+							"No access",
+							"Browse only",
+							"Browse and attach",
+							"Browse, attach and edit"
+						],
 						"default": "write",
 						"scope": "application",
 						"markdownDescription": "Project file access from the connected website. Controls Files and project attachments inside the conversation's working folder. Agent tool approvals and sandbox permissions are separate. Change this in VS Code only."
 					},
-					"aiBrowser.chat.chromeTerminalAccess": {
+					"hoverdeck.chat.chromeTerminalAccess": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Chrome Terminal Access",
 						"description": "Allow the paired Chrome extension on this computer to use this terminal capability. Exchange has separate permissions."
 					},
-					"aiBrowser.chat.chromeTerminalShell": {
+					"hoverdeck.chat.chromeTerminalShell": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Open Shell Terminals from Chrome",
 						"description": "Allow the paired Chrome extension on this computer to use this terminal capability. Exchange has separate permissions."
 					},
-					"aiBrowser.chat.chromeTerminalAgent": {
+					"hoverdeck.chat.chromeTerminalAgent": {
 						"type": "boolean",
 						"default": true,
 						"scope": "application",
 						"title": "Open Agent Terminals from Chrome",
 						"description": "Allow the paired Chrome extension on this computer to use this terminal capability. Exchange has separate permissions."
 					},
-					"aiBrowser.chat.remoteTerminal": {
+					"hoverdeck.chat.remoteTerminal": {
 						"type": "boolean",
 						"default": false,
 						"scope": "application",
 						"title": "Terminal Tabs on the Website",
 						"markdownDescription": "%configuration.chat.remoteTerminal.description%"
 					},
-					"aiBrowser.chat.remoteTerminalShell": {
+					"hoverdeck.chat.remoteTerminalShell": {
 						"type": "boolean",
 						"default": false,
 						"scope": "application",
 						"title": "Open Plain Terminals from Chrome and the Website",
 						"markdownDescription": "%configuration.chat.remoteTerminalShell.description%"
 					},
-					"aiBrowser.chat.remoteTerminalAgent": {
+					"hoverdeck.chat.remoteTerminalAgent": {
 						"type": "boolean",
 						"default": false,
 						"scope": "application",
 						"title": "Open Agent Terminals from Chrome and the Website",
 						"markdownDescription": "%configuration.chat.remoteTerminalAgent.description%"
 					},
-					"aiBrowser.chat.claudePath": {
+					"hoverdeck.chat.claudePath": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "Claude Code Executable",
 						"markdownDescription": "%configuration.chat.claudePath.description%"
 					},
-					"aiBrowser.chat.codexPath": {
+					"hoverdeck.chat.codexPath": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "Codex Executable",
 						"markdownDescription": "%configuration.chat.codexPath.description%"
 					},
-					"aiBrowser.chat.geminiPath": {
+					"hoverdeck.chat.geminiPath": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "Gemini CLI Executable",
 						"markdownDescription": "%configuration.chat.geminiPath.description%"
 					},
-					"aiBrowser.chat.opencodePath": {
+					"hoverdeck.chat.opencodePath": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "OpenCode Executable",
 						"markdownDescription": "%configuration.chat.opencodePath.description%"
 					},
-					"aiBrowser.chat.piPath": {
+					"hoverdeck.chat.piPath": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "Pi Executable",
 						"markdownDescription": "%configuration.chat.piPath.description%"
 					},
-					"aiBrowser.chat.openrouterEndpoint": {
+					"hoverdeck.chat.openrouterEndpoint": {
 						"type": "string",
 						"default": "",
 						"scope": "application",
 						"title": "OpenRouter Endpoint",
 						"markdownDescription": "%configuration.chat.openrouterEndpoint.description%"
 					},
-					"aiBrowser.chat.exchangeKeepAwakeMinutes": {
+					"hoverdeck.chat.exchangeKeepAwakeMinutes": {
 						"type": "number",
 						"enum": [
 							0,
@@ -1297,7 +1242,31 @@
 						"title": "Keep Awake After Exchange Connection",
 						"markdownDescription": "Prevent automatic system sleep when a website viewer connects to this chat through Exchange. Each new viewer renews the timer. 0 disables this trigger; -1 keeps the computer awake until you turn it off or close the VS Code window. The display may still sleep."
 					},
-					"aiBrowser.chat.viewMode": {
+					"hoverdeck.chat.defaultAgent": {
+						"type": "string",
+						"enum": [
+							"",
+							"claude",
+							"codex",
+							"gemini",
+							"opencode",
+							"pi",
+							"openrouter"
+						],
+						"enumItemLabels": [
+							"No preference",
+							"Claude Code",
+							"Codex",
+							"Gemini CLI",
+							"OpenCode",
+							"Pi",
+							"OpenRouter, Ollama, LM Studio"
+						],
+						"default": "",
+						"title": "Default Agent",
+						"markdownDescription": "%configuration.chat.defaultAgent.description%"
+					},
+					"hoverdeck.chat.viewMode": {
 						"type": "string",
 						"enum": [
 							"minimal",
@@ -1313,14 +1282,14 @@
 						"title": "View Mode",
 						"markdownDescription": "%configuration.chat.viewMode.description%"
 					},
-					"aiBrowser.chat.collapseToolCalls": {
+					"hoverdeck.chat.collapseToolCalls": {
 						"type": "boolean",
 						"default": true,
 						"title": "Fold Tool Calls",
 						"markdownDeprecationMessage": "%configuration.chat.collapseToolCalls.deprecated%",
 						"markdownDescription": "%configuration.chat.collapseToolCalls.description%"
 					},
-					"aiBrowser.chat.voiceLanguage": {
+					"hoverdeck.chat.voiceLanguage": {
 						"type": "string",
 						"default": "",
 						"title": "Voice Message Language",
@@ -1334,678 +1303,471 @@
 		"menus": {
 			"explorer/context": [
 				{
-					"command": "aiBrowser.chat.attachExplorerResources",
+					"command": "hoverdeck.chat.attachExplorerResources",
 					"group": "8_aiBrowser@1",
-					"when": "resourceScheme == file && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
+					"when": "resourceScheme == file && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				}
 			],
 			"editor/context": [
 				{
-					"command": "aiBrowser.chat.attachEditorSelection",
+					"command": "hoverdeck.chat.attachEditorSelection",
 					"group": "1_modification@50",
-					"when": "editorHasSelection && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
+					"when": "editorHasSelection && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				}
 			],
 			"editor/title/context": [
 				{
-					"command": "aiBrowser.chat.attachExplorerResources",
+					"command": "hoverdeck.chat.attachExplorerResources",
 					"group": "1_modification@50",
-					"when": "resourceScheme == file && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
+					"when": "resourceScheme == file && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				}
 			],
 			"editor/title": [
 				{
-					"submenu": "aiBrowser.elementMenu",
+					"submenu": "hoverdeck.elementMenu",
 					"group": "navigation@1",
 					"when": "activeEditor == 'workbench.editor.browser'"
 				},
 				{
-					"command": "aiBrowser.repeat.element",
+					"command": "hoverdeck.repeat.element",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'element'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'element'"
 				},
 				{
-					"command": "aiBrowser.repeat.cssPath",
+					"command": "hoverdeck.repeat.cssPath",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'cssPath'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssPath'"
 				},
 				{
-					"command": "aiBrowser.repeat.cssLocation",
+					"command": "hoverdeck.repeat.cssLocation",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'cssLocation'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssLocation'"
 				},
 				{
-					"command": "aiBrowser.repeat.xpath",
+					"command": "hoverdeck.repeat.xpath",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'xpath'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'xpath'"
 				},
 				{
-					"command": "aiBrowser.repeat.annotate",
+					"command": "hoverdeck.repeat.annotate",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'annotate'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotate'"
 				},
 				{
-					"command": "aiBrowser.repeat.annotateAnywhere",
+					"command": "hoverdeck.repeat.annotateAnywhere",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'annotateAnywhere'"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotateAnywhere'"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.element",
+					"command": "hoverdeck.repeat.chat.element",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:element' && aiBrowser.claudeInstalled"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:element' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.cssPath",
+					"command": "hoverdeck.repeat.chat.cssPath",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:cssPath' && aiBrowser.claudeInstalled"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssPath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.cssLocation",
+					"command": "hoverdeck.repeat.chat.cssLocation",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:cssLocation' && aiBrowser.claudeInstalled"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssLocation' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.xpath",
+					"command": "hoverdeck.repeat.chat.xpath",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:xpath' && aiBrowser.claudeInstalled"
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:xpath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				},
 				{
-					"command": "aiBrowser.repeat.codex.element",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:element' && aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.repeat.codex.cssPath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:cssPath' && aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.repeat.codex.cssLocation",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:cssLocation' && aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.repeat.codex.xpath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:xpath' && aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.repeat.chat.element",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:element' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.repeat.chat.cssPath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:cssPath' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.repeat.chat.cssLocation",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:cssLocation' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.repeat.chat.xpath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:xpath' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.recording.pause",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.recordingState == recording",
+					"command": "hoverdeck.recording.pause",
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.recordingState == recording",
 					"group": "navigation@0"
 				},
 				{
-					"command": "aiBrowser.recording.resume",
-					"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.recordingState == paused",
+					"command": "hoverdeck.recording.resume",
+					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.recordingState == paused",
 					"group": "navigation@0"
 				},
 				{
-					"command": "aiBrowser.recording.stop",
-					"when": "activeEditor == 'workbench.editor.browser' && (aiBrowser.recordingState == recording || aiBrowser.recordingState == paused) && !aiBrowser.recordingEnding",
+					"command": "hoverdeck.recording.stop",
+					"when": "activeEditor == 'workbench.editor.browser' && (hoverdeck.recordingState == recording || hoverdeck.recordingState == paused) && !hoverdeck.recordingEnding",
 					"group": "navigation@0.1"
 				},
 				{
-					"command": "aiBrowser.recording.stopEnding",
-					"when": "activeEditor == 'workbench.editor.browser' && (aiBrowser.recordingState == recording || aiBrowser.recordingState == paused) && aiBrowser.recordingEnding",
+					"command": "hoverdeck.recording.stopEnding",
+					"when": "activeEditor == 'workbench.editor.browser' && (hoverdeck.recordingState == recording || hoverdeck.recordingState == paused) && hoverdeck.recordingEnding",
 					"group": "navigation@0.1"
 				}
 			],
-			"aiBrowser.elementMenu": [
+			"hoverdeck.elementMenu": [
 				{
-					"command": "aiBrowser.newTab",
+					"command": "hoverdeck.newTab",
 					"group": "0_start@1"
 				},
 				{
-					"command": "aiBrowser.connectClaudeCode",
-					"group": "0_start@2"
-				},
-				{
-					"command": "aiBrowser.connectCodex",
-					"group": "0_start@3"
-				},
-				{
-					"command": "aiBrowser.copyElement",
+					"command": "hoverdeck.copyElement",
 					"group": "1_copy@1"
 				},
 				{
-					"command": "aiBrowser.copyElementCssPath",
+					"command": "hoverdeck.copyElementCssPath",
 					"group": "1_copy@2"
 				},
 				{
-					"command": "aiBrowser.copyElementCssLocation",
+					"command": "hoverdeck.copyElementCssLocation",
 					"group": "1_copy@3"
 				},
 				{
-					"command": "aiBrowser.copyElementXPath",
+					"command": "hoverdeck.copyElementXPath",
 					"group": "1_copy@4"
 				},
 				{
-					"command": "aiBrowser.copyScreenshot",
+					"command": "hoverdeck.copyScreenshot",
 					"group": "2_shot@1"
 				},
 				{
-					"command": "aiBrowser.copyFullScreenshot",
+					"command": "hoverdeck.copyFullScreenshot",
 					"group": "2_shot@2"
 				},
 				{
-					"command": "aiBrowser.translatePage",
+					"command": "hoverdeck.translatePage",
 					"group": "2_translate@1"
 				},
 				{
-					"command": "aiBrowser.annotatePage",
+					"command": "hoverdeck.annotatePage",
 					"group": "2_annotations@1"
 				},
 				{
-					"command": "aiBrowser.annotateAnywhere",
+					"command": "hoverdeck.annotateAnywhere",
 					"group": "2_annotations@1.5"
 				},
 				{
-					"command": "aiBrowser.clearAnnotations",
+					"command": "hoverdeck.clearAnnotations",
 					"group": "2_annotations@2",
-					"when": "aiBrowser.pageHasAnnotations"
+					"when": "hoverdeck.pageHasAnnotations"
 				},
 				{
-					"command": "aiBrowser.copyAnnotationPrompt",
+					"command": "hoverdeck.copyAnnotationPrompt",
 					"group": "2_annotations@3",
-					"when": "aiBrowser.pageHasAnnotations"
+					"when": "hoverdeck.pageHasAnnotations"
 				},
 				{
 					"group": "2_recording@1",
-					"when": "!aiBrowser.recordingActive",
-					"submenu": "aiBrowser.recordingMenu"
+					"when": "!hoverdeck.recordingActive",
+					"submenu": "hoverdeck.recordingMenu"
 				},
 				{
-					"submenu": "aiBrowser.claudeMenu",
-					"group": "3_assistant@1"
-				},
-				{
-					"submenu": "aiBrowser.codexMenu",
-					"group": "3_assistant@2"
-				},
-				{
-					"submenu": "aiBrowser.geminiMenu",
-					"group": "3_assistant@2.5"
-				},
-				{
-					"submenu": "aiBrowser.otherAgentsMenu",
-					"group": "3_assistant@2.75"
-				},
-				{
-					"submenu": "aiBrowser.chatMenu",
+					"submenu": "hoverdeck.chatMenu",
 					"group": "3_assistant@3",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 				},
 				{
-					"command": "aiBrowser.checkMcpConnection",
-					"group": "3_assistant@4"
-				},
-				{
-					"command": "aiBrowser.shareTab",
+					"command": "hoverdeck.shareTab",
 					"group": "4_share@1"
 				},
 				{
-					"command": "aiBrowser.stopSharingTab",
+					"command": "hoverdeck.stopSharingTab",
 					"group": "4_share@2",
-					"when": "aiBrowser.tabShared"
+					"when": "hoverdeck.tabShared"
 				},
 				{
-					"submenu": "aiBrowser.loginsMenu",
+					"submenu": "hoverdeck.loginsMenu",
 					"group": "3_logins@1"
+				},
+				{
+					"command": "hoverdeck.pasteCookies",
+					"group": "3_logins@2"
 				}
 			],
 			"commandPalette": [
 				{
-					"command": "aiBrowser.shareTabWithPi",
-					"when": "!aiBrowser.chatUnsupported"
+					"command": "hoverdeck.removeAiBrowserEntries"
 				},
 				{
-					"command": "aiBrowser.shareTabWithOpenRouter",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.recording.stopEnding",
+					"command": "hoverdeck.recording.stopEnding",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.newTab",
+					"command": "hoverdeck.newTab",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.element",
+					"command": "hoverdeck.repeat.element",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.cssPath",
+					"command": "hoverdeck.repeat.cssPath",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.cssLocation",
+					"command": "hoverdeck.repeat.cssLocation",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.xpath",
+					"command": "hoverdeck.repeat.xpath",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.annotate",
+					"command": "hoverdeck.repeat.annotate",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.annotateAnywhere",
+					"command": "hoverdeck.repeat.annotateAnywhere",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.clearAnnotations",
-					"when": "aiBrowser.pageHasAnnotations"
+					"command": "hoverdeck.clearAnnotations",
+					"when": "hoverdeck.pageHasAnnotations"
 				},
 				{
-					"command": "aiBrowser.copyAnnotationPrompt",
-					"when": "aiBrowser.pageHasAnnotations"
+					"command": "hoverdeck.copyAnnotationPrompt",
+					"when": "hoverdeck.pageHasAnnotations"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.element",
+					"command": "hoverdeck.repeat.chat.element",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.cssPath",
+					"command": "hoverdeck.repeat.chat.cssPath",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.cssLocation",
+					"command": "hoverdeck.repeat.chat.cssLocation",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.claude.xpath",
+					"command": "hoverdeck.repeat.chat.xpath",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.codex.element",
+					"command": "hoverdeck.chat.addElement",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.addCssPath",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.addCssLocation",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.addXPath",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.addScreenshot",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.addPage",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.newChat",
+					"when": "!hoverdeck.chatUnsupported"
+				},
+				{
+					"command": "hoverdeck.chat.newTerminal",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+				},
+				{
+					"command": "hoverdeck.chat.history",
+					"when": "!hoverdeck.chatUnsupported"
+				},
+				{
+					"command": "hoverdeck.chat.refreshAgents",
+					"when": "!hoverdeck.chatUnsupported"
+				},
+				{
+					"command": "hoverdeck.chat.allAgents",
+					"when": "!hoverdeck.chatUnsupported"
+				},
+				{
+					"command": "hoverdeck.chat.closeTab",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.codex.cssPath",
+					"command": "hoverdeck.chat.keepAwake",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.keepAwakeActive"
+				},
+				{
+					"command": "hoverdeck.chat.keepAwakeActive",
+					"when": "!hoverdeck.chatUnsupported && hoverdeck.keepAwakeActive"
+				},
+				{
+					"command": "hoverdeck.chat.settings",
+					"when": "!hoverdeck.chatUnsupported"
+				},
+				{
+					"command": "hoverdeck.recording.startChat",
+					"when": "!hoverdeck.chatUnsupported && !hoverdeck.chatBlocked && !hoverdeck.recordingActive"
+				},
+				{
+					"command": "hoverdeck.recording.start",
+					"when": "!hoverdeck.recordingActive"
+				},
+				{
+					"command": "hoverdeck.recording.pause",
+					"when": "hoverdeck.recordingState == recording"
+				},
+				{
+					"command": "hoverdeck.recording.resume",
+					"when": "hoverdeck.recordingState == paused"
+				},
+				{
+					"command": "hoverdeck.recording.stop",
+					"when": "hoverdeck.recordingState == recording || hoverdeck.recordingState == paused"
+				},
+				{
+					"command": "hoverdeck.recording.balanced",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.codex.cssLocation",
+					"command": "hoverdeck.recording.balancedDefault",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.codex.xpath",
+					"command": "hoverdeck.recording.high",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.chat.element",
+					"command": "hoverdeck.recording.highDefault",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.chat.cssPath",
+					"command": "hoverdeck.recording.maximum",
 					"when": "false"
 				},
 				{
-					"command": "aiBrowser.repeat.chat.cssLocation",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.repeat.chat.xpath",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.chat.addElement",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.addCssPath",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.addCssLocation",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.addXPath",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.addScreenshot",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.addPage",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.newChat",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.chat.newTerminal",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-				},
-				{
-					"command": "aiBrowser.chat.history",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.chat.refreshAgents",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.chat.allAgents",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.chat.closeTab",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.chat.keepAwake",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.keepAwakeActive"
-				},
-				{
-					"command": "aiBrowser.chat.keepAwakeActive",
-					"when": "!aiBrowser.chatUnsupported && aiBrowser.keepAwakeActive"
-				},
-				{
-					"command": "aiBrowser.chat.settings",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.recording.startChat",
-					"when": "!aiBrowser.chatUnsupported && !aiBrowser.chatBlocked && !aiBrowser.recordingActive"
-				},
-				{
-					"command": "aiBrowser.recording.start",
-					"when": "!aiBrowser.recordingActive"
-				},
-				{
-					"command": "aiBrowser.recording.pause",
-					"when": "aiBrowser.recordingState == recording"
-				},
-				{
-					"command": "aiBrowser.recording.resume",
-					"when": "aiBrowser.recordingState == paused"
-				},
-				{
-					"command": "aiBrowser.recording.stop",
-					"when": "aiBrowser.recordingState == recording || aiBrowser.recordingState == paused"
-				},
-				{
-					"command": "aiBrowser.recording.balanced",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.recording.balancedDefault",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.recording.high",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.recording.highDefault",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.recording.maximum",
-					"when": "false"
-				},
-				{
-					"command": "aiBrowser.recording.maximumDefault",
+					"command": "hoverdeck.recording.maximumDefault",
 					"when": "false"
 				}
 			],
-			"aiBrowser.claudeMenu": [
+			"hoverdeck.chatMenu": [
 				{
-					"command": "aiBrowser.addElementToClaudeCode",
-					"group": "1_add@1",
-					"when": "aiBrowser.claudeInstalled"
-				},
-				{
-					"command": "aiBrowser.addCssPathToClaudeCode",
-					"group": "1_add@2",
-					"when": "aiBrowser.claudeInstalled"
-				},
-				{
-					"command": "aiBrowser.addCssLocationToClaudeCode",
-					"group": "1_add@3",
-					"when": "aiBrowser.claudeInstalled"
-				},
-				{
-					"command": "aiBrowser.addXPathToClaudeCode",
-					"group": "1_add@4",
-					"when": "aiBrowser.claudeInstalled"
-				},
-				{
-					"command": "aiBrowser.connectClaudeCode",
-					"group": "2_mcp@1"
-				},
-				{
-					"command": "aiBrowser.shareTabWithClaudeCode",
-					"group": "2_mcp@2"
-				},
-				{
-					"command": "aiBrowser.recording.startClaude",
-					"group": "2_recording"
-				}
-			],
-			"aiBrowser.chatMenu": [
-				{
-					"command": "aiBrowser.chat.addElement",
+					"command": "hoverdeck.chat.addElement",
 					"group": "1_add@1"
 				},
 				{
-					"command": "aiBrowser.chat.addCssPath",
+					"command": "hoverdeck.chat.addCssPath",
 					"group": "1_add@2"
 				},
 				{
-					"command": "aiBrowser.chat.addCssLocation",
+					"command": "hoverdeck.chat.addCssLocation",
 					"group": "1_add@3"
 				},
 				{
-					"command": "aiBrowser.chat.addXPath",
+					"command": "hoverdeck.chat.addXPath",
 					"group": "1_add@4"
 				},
 				{
-					"command": "aiBrowser.chat.addScreenshot",
+					"command": "hoverdeck.chat.addScreenshot",
 					"group": "2_page@1"
 				},
 				{
-					"command": "aiBrowser.chat.addPage",
+					"command": "hoverdeck.chat.addPage",
 					"group": "2_page@2"
 				},
 				{
-					"command": "aiBrowser.recording.startChat",
+					"command": "hoverdeck.recording.startChat",
 					"group": "2_recording",
-					"when": "!aiBrowser.recordingActive"
+					"when": "!hoverdeck.recordingActive"
 				}
 			],
-			"aiBrowser.codexMenu": [
+			"hoverdeck.loginsMenu": [
 				{
-					"command": "aiBrowser.addElementToCodex",
-					"group": "1_add@1",
-					"when": "aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.addCssPathToCodex",
-					"group": "1_add@2",
-					"when": "aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.addCssLocationToCodex",
-					"group": "1_add@3",
-					"when": "aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.addXPathToCodex",
-					"group": "1_add@4",
-					"when": "aiBrowser.codexInstalled"
-				},
-				{
-					"command": "aiBrowser.connectCodex",
-					"group": "2_mcp@1"
-				},
-				{
-					"command": "aiBrowser.shareTabWithCodex",
-					"group": "2_mcp@2"
-				},
-				{
-					"command": "aiBrowser.recording.startCodex",
-					"group": "2_recording"
-				}
-			],
-			"aiBrowser.geminiMenu": [
-				{
-					"command": "aiBrowser.connectGemini",
-					"group": "2_mcp@1"
-				},
-				{
-					"command": "aiBrowser.shareTabWithGemini",
-					"group": "2_mcp@2"
-				},
-				{
-					"command": "aiBrowser.openGeminiCli",
-					"group": "3_terminal@1"
-				}
-			],
-			"aiBrowser.loginsMenu": [
-				{
-					"command": "aiBrowser.logins.fill",
+					"command": "hoverdeck.logins.fill",
 					"group": "1_page@1"
 				},
 				{
-					"command": "aiBrowser.logins.saveFromPage",
+					"command": "hoverdeck.logins.saveFromPage",
 					"group": "1_page@2"
 				},
 				{
-					"command": "aiBrowser.logins.manage",
+					"command": "hoverdeck.pasteCookies",
+					"group": "1_page@3"
+				},
+				{
+					"command": "hoverdeck.logins.manage",
 					"group": "2_vault@1"
 				},
 				{
-					"command": "aiBrowser.logins.import",
+					"command": "hoverdeck.logins.import",
 					"group": "2_vault@2"
 				},
 				{
-					"command": "aiBrowser.logins.export",
+					"command": "hoverdeck.logins.export",
 					"group": "2_vault@3"
 				}
 			],
 			"view/title": [
 				{
-					"command": "aiBrowser.chat.settings",
-					"when": "view == aiBrowser.chat",
+					"command": "hoverdeck.chat.settings",
+					"when": "view == hoverdeck.chat",
 					"group": "navigation@5"
 				},
 				{
-					"command": "aiBrowser.chat.newChat",
-					"when": "view == aiBrowser.chat",
+					"command": "hoverdeck.chat.newChat",
+					"when": "view == hoverdeck.chat",
 					"group": "navigation@1"
 				},
 				{
-					"command": "aiBrowser.chat.history",
-					"when": "view == aiBrowser.chat",
+					"command": "hoverdeck.chat.history",
+					"when": "view == hoverdeck.chat",
 					"group": "navigation@2"
 				},
 				{
-					"command": "aiBrowser.chat.allAgents",
-					"when": "view == aiBrowser.chat",
+					"command": "hoverdeck.chat.allAgents",
+					"when": "view == hoverdeck.chat",
 					"group": "navigation@3.5"
 				},
 				{
-					"command": "aiBrowser.chat.keepAwake",
-					"when": "view == aiBrowser.chat && !aiBrowser.keepAwakeActive",
+					"command": "hoverdeck.chat.keepAwake",
+					"when": "view == hoverdeck.chat && !hoverdeck.keepAwakeActive",
 					"group": "navigation@4"
 				},
 				{
-					"command": "aiBrowser.chat.keepAwakeActive",
-					"when": "view == aiBrowser.chat && aiBrowser.keepAwakeActive",
+					"command": "hoverdeck.chat.keepAwakeActive",
+					"when": "view == hoverdeck.chat && hoverdeck.keepAwakeActive",
 					"group": "navigation@4"
 				}
 			],
-			"aiBrowser.recordingMenu": [
+			"hoverdeck.recordingMenu": [
 				{
-					"command": "aiBrowser.recording.balanced",
+					"command": "hoverdeck.recording.balanced",
 					"group": "1_quality@1",
-					"when": "aiBrowser.recordingQuality != balanced"
+					"when": "hoverdeck.recordingQuality != balanced"
 				},
 				{
-					"command": "aiBrowser.recording.balancedDefault",
+					"command": "hoverdeck.recording.balancedDefault",
 					"group": "1_quality@1",
-					"when": "aiBrowser.recordingQuality == balanced"
+					"when": "hoverdeck.recordingQuality == balanced"
 				},
 				{
-					"command": "aiBrowser.recording.high",
+					"command": "hoverdeck.recording.high",
 					"group": "1_quality@2",
-					"when": "aiBrowser.recordingQuality != high"
+					"when": "hoverdeck.recordingQuality != high"
 				},
 				{
-					"command": "aiBrowser.recording.highDefault",
+					"command": "hoverdeck.recording.highDefault",
 					"group": "1_quality@2",
-					"when": "aiBrowser.recordingQuality == high"
+					"when": "hoverdeck.recordingQuality == high"
 				},
 				{
-					"command": "aiBrowser.recording.maximum",
+					"command": "hoverdeck.recording.maximum",
 					"group": "1_quality@3",
-					"when": "aiBrowser.recordingQuality != maximum"
+					"when": "hoverdeck.recordingQuality != maximum"
 				},
 				{
-					"command": "aiBrowser.recording.maximumDefault",
+					"command": "hoverdeck.recording.maximumDefault",
 					"group": "1_quality@3",
-					"when": "aiBrowser.recordingQuality == maximum"
-				}
-			],
-			"aiBrowser.otherAgentsMenu": [
-				{
-					"command": "aiBrowser.connectOpenCode",
-					"group": "1_opencode@1"
-				},
-				{
-					"command": "aiBrowser.shareTabWithOpenCode",
-					"group": "1_opencode@2"
-				},
-				{
-					"command": "aiBrowser.shareTabWithPi",
-					"group": "1_chat@1",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.shareTabWithOpenRouter",
-					"group": "1_chat@2",
-					"when": "!aiBrowser.chatUnsupported"
-				},
-				{
-					"command": "aiBrowser.connectOtherAgent",
-					"group": "2_mcp@1"
-				},
-				{
-					"command": "aiBrowser.shareTab",
-					"group": "2_mcp@2"
+					"when": "hoverdeck.recordingQuality == maximum"
 				}
 			]
 		},
 		"submenus": [
 			{
-				"id": "aiBrowser.elementMenu",
+				"id": "hoverdeck.elementMenu",
 				"label": "%submenu.elementMenu.label%",
 				"icon": {
 					"light": "media/icons/globe-light.svg",
@@ -2013,157 +1775,93 @@
 				}
 			},
 			{
-				"id": "aiBrowser.claudeMenu",
-				"label": "%submenu.claudeMenu.label%"
-			},
-			{
-				"id": "aiBrowser.codexMenu",
-				"label": "%submenu.codexMenu.label%"
-			},
-			{
-				"id": "aiBrowser.geminiMenu",
-				"label": "%submenu.geminiMenu.label%"
-			},
-			{
-				"id": "aiBrowser.chatMenu",
+				"id": "hoverdeck.chatMenu",
 				"label": "%submenu.chatMenu.label%"
 			},
 			{
-				"id": "aiBrowser.loginsMenu",
+				"id": "hoverdeck.loginsMenu",
 				"label": "%submenu.loginsMenu.label%"
 			},
 			{
-				"id": "aiBrowser.recordingMenu",
+				"id": "hoverdeck.recordingMenu",
 				"label": "%command.recording.start.title%"
-			},
-			{
-				"id": "aiBrowser.otherAgentsMenu",
-				"label": "%submenu.otherAgentsMenu.label%"
 			}
 		],
 		"mcpServerDefinitionProviders": [
 			{
-				"id": "aiBrowserMcp",
-				"label": "AI Browser"
+				"id": "hoverdeckMcp",
+				"label": "HoverDeck"
 			}
 		],
 		"keybindings": [
 			{
-				"command": "aiBrowser.repeat.element",
+				"command": "hoverdeck.repeat.element",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'element'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'element'"
 			},
 			{
-				"command": "aiBrowser.repeat.cssPath",
+				"command": "hoverdeck.repeat.cssPath",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'cssPath'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssPath'"
 			},
 			{
-				"command": "aiBrowser.repeat.cssLocation",
+				"command": "hoverdeck.repeat.cssLocation",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'cssLocation'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssLocation'"
 			},
 			{
-				"command": "aiBrowser.repeat.xpath",
+				"command": "hoverdeck.repeat.xpath",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'xpath'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'xpath'"
 			},
 			{
-				"command": "aiBrowser.repeat.annotate",
+				"command": "hoverdeck.repeat.annotate",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'annotate'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotate'"
 			},
 			{
-				"command": "aiBrowser.repeat.annotateAnywhere",
+				"command": "hoverdeck.repeat.annotateAnywhere",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'annotateAnywhere'"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotateAnywhere'"
 			},
 			{
-				"command": "aiBrowser.repeat.claude.element",
+				"command": "hoverdeck.repeat.chat.element",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:element' && aiBrowser.claudeInstalled"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:element' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 			},
 			{
-				"command": "aiBrowser.repeat.claude.cssPath",
+				"command": "hoverdeck.repeat.chat.cssPath",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:cssPath' && aiBrowser.claudeInstalled"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssPath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 			},
 			{
-				"command": "aiBrowser.repeat.claude.cssLocation",
+				"command": "hoverdeck.repeat.chat.cssLocation",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:cssLocation' && aiBrowser.claudeInstalled"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssLocation' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 			},
 			{
-				"command": "aiBrowser.repeat.claude.xpath",
+				"command": "hoverdeck.repeat.chat.xpath",
 				"key": "ctrl+alt+c",
 				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'claude:xpath' && aiBrowser.claudeInstalled"
+				"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:xpath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
 			},
 			{
-				"command": "aiBrowser.repeat.codex.element",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:element' && aiBrowser.codexInstalled"
-			},
-			{
-				"command": "aiBrowser.repeat.codex.cssPath",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:cssPath' && aiBrowser.codexInstalled"
-			},
-			{
-				"command": "aiBrowser.repeat.codex.cssLocation",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:cssLocation' && aiBrowser.codexInstalled"
-			},
-			{
-				"command": "aiBrowser.repeat.codex.xpath",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'codex:xpath' && aiBrowser.codexInstalled"
-			},
-			{
-				"command": "aiBrowser.repeat.chat.element",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:element' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-			},
-			{
-				"command": "aiBrowser.repeat.chat.cssPath",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:cssPath' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-			},
-			{
-				"command": "aiBrowser.repeat.chat.cssLocation",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:cssLocation' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-			},
-			{
-				"command": "aiBrowser.repeat.chat.xpath",
-				"key": "ctrl+alt+c",
-				"mac": "cmd+alt+c",
-				"when": "activeEditor == 'workbench.editor.browser' && aiBrowser.lastElementAction == 'chat:xpath' && !aiBrowser.chatUnsupported && !aiBrowser.chatBlocked"
-			},
-			{
-				"command": "aiBrowser.chat.closeTab",
+				"command": "hoverdeck.chat.closeTab",
 				"key": "ctrl+w",
 				"mac": "cmd+w",
-				"when": "aiBrowser.chatFocused && !aiBrowser.chatUnsupported"
+				"when": "hoverdeck.chatFocused && !hoverdeck.chatUnsupported"
 			},
 			{
-				"command": "aiBrowser.logins.fill",
+				"command": "hoverdeck.logins.fill",
 				"key": "ctrl+shift+l",
 				"mac": "cmd+shift+l",
 				"when": "activeEditor == 'workbench.editor.browser'"
@@ -2187,8 +1885,10 @@
 		"test": "node --test \"preview-src/**/*.test.ts\" \"src/**/*.test.ts\"",
 		"test:chat-ui": "npm run build-webview && npm run build-chrome && node exchange-server/scripts/build-chat.mjs && node scripts/test-visualizations-browser.mjs",
 		"check-manifest": "node ./scripts/check-manifest.mjs",
-		"package": "vsce package --no-dependencies --out tab-browser-ultimate.vsix",
-		"publish:ovsx": "npm run package && ovsx publish tab-browser-ultimate.vsix",
+		"package": "vsce package --no-dependencies --out hoverdeck.vsix",
+		"package:listings": "node scripts/package-listings.mjs",
+		"publish:ovsx:listings": "node scripts/package-listings.mjs --publish",
+		"publish:ovsx": "npm run package && ovsx publish hoverdeck.vsix",
 		"verify-pat": "ovsx verify-pat DenysDavydov",
 		"download-api": "dts dev",
 		"vscode:prepublish": "npm run compile",

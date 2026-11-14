@@ -22,9 +22,9 @@ import type { ChatEntry, ChatModel } from './chatProtocol';
 
 export const openrouterDefaultEndpoint = 'https://openrouter.ai/api/v1';
 /** SecretStorage key of the API key. Never a setting, an argument, a log line or a state post. */
-export const openrouterKeySecret = 'aiBrowser.openrouter.apiKey';
+export const openrouterKeySecret = 'hoverdeck.openrouter.apiKey';
 /** `globalState` key of the models the user configured. */
-export const openrouterModelsKey = 'aiBrowser.openrouter.models';
+export const openrouterModelsKey = 'hoverdeck.openrouter.models';
 export const openrouterMaxModels = 100;
 /** Model calls in one turn: a model that keeps calling tools is stopped here, with a notice. */
 export const openrouterMaxRounds = 25;
@@ -158,15 +158,15 @@ export function openrouterEndpoint(value: string | undefined): { readonly url: s
 	try {
 		parsed = new URL(text);
 	} catch {
-		return { error: 'aiBrowser.chat.openrouterEndpoint is not a web address.' };
+		return { error: 'hoverdeck.chat.openrouterEndpoint is not a web address.' };
 	}
 	const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
 	const loopback = host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
 	if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) {
-		return { error: 'aiBrowser.chat.openrouterEndpoint must be an https address, or http on this computer (localhost).' };
+		return { error: 'hoverdeck.chat.openrouterEndpoint must be an https address, or http on this computer (localhost).' };
 	}
 	if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-		return { error: 'aiBrowser.chat.openrouterEndpoint must not carry credentials, a query or a fragment.' };
+		return { error: 'hoverdeck.chat.openrouterEndpoint must not carry credentials, a query or a fragment.' };
 	}
 	return { url: `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}` };
 }

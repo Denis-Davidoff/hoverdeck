@@ -43,6 +43,28 @@ export function isSecretField(attributes: Readonly<Record<string, string | undef
 }
 
 /**
+ * Whether an agent may not type into a field with these attributes
+ * (`hoverdeck.security.protectSecretFields`): a secret by `isSecretField`, or a
+ * payment card's number, security code or expiry — by autocomplete token or by
+ * name as a word. A page that talks an agent into typing a password or a card
+ * into its own form has the value; the user types those themselves.
+ */
+export function isProtectedField(attributes: Readonly<Record<string, string | undefined>>): boolean {
+	if (isSecretField(attributes)) {
+		return true;
+	}
+	const autocomplete = (attributes.autocomplete ?? '').toLowerCase();
+	if (/(^|\s)cc-(number|csc|exp|exp-month|exp-year)(\s|$)/.test(autocomplete)) {
+		return true;
+	}
+	return [attributes.name, attributes.id].some(name => {
+		// Hyphens read as underscores (`card-number`, `cc-number`), camelCase split first.
+		const words = (name ?? '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase().replace(/-/g, '_');
+		return /(^|[^a-z])(cvv2?|cvc2?|csc|card_?(number|num|no)|cc_?(number|num|no|csc|cvv|cvc)|credit_?card(?!_?(holder|name|type|brand))(_?(number|num|no))?|security_?code)([^a-z]|$)/.test(words);
+	});
+}
+
+/**
  * A selector reduced to what a selector engine sees, for the questions below:
  * comments gone, escapes decoded and strings kept apart.
  *

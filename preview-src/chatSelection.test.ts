@@ -87,3 +87,32 @@ test('selected sent badges use their portable serialization for keyboard and men
   assert.deepEqual(f.copied, ['Text [att:id|file.ts]']);
   assert.deepEqual(copied.data, ['text/plain', 'Text [att:id|file.ts]']);
 });
+
+test('copyRich fills both formats through execCommand and leaves the host alone', async () => {
+  const { copyRich } = await import('./chatSelection.ts');
+  const listeners: ((event: any) => void)[] = [];
+  const data: string[] = [];
+  let stopped = false;
+  const document = {
+    addEventListener: (_: string, h: (event: any) => void) => listeners.push(h),
+    removeEventListener: (_: string, h: (event: any) => void) => listeners.splice(listeners.indexOf(h), 1),
+    execCommand: () => {
+      listeners.forEach(h => h({ clipboardData: { setData: (f: string, t: string) => data.push(f, t) }, preventDefault() {}, stopImmediatePropagation: () => { stopped = true; } }));
+      return true;
+    },
+  };
+  const host: string[] = [];
+  assert.equal(copyRich(document as unknown as Document, { text: '**Hi**', html: '<strong>Hi</strong>' }, t => host.push(t)), true);
+  assert.deepEqual(data, ['text/plain', '**Hi**', 'text/html', '<strong>Hi</strong>']);
+  assert.equal(stopped, true);
+  assert.deepEqual(host, []);
+  assert.equal(listeners.length, 0);
+});
+
+test('copyRich falls back to the host when no copy event arrives', async () => {
+  const { copyRich } = await import('./chatSelection.ts');
+  const document = { addEventListener() {}, removeEventListener() {}, execCommand: () => false };
+  const host: string[] = [];
+  assert.equal(copyRich(document as unknown as Document, { text: 'plain' }, t => host.push(t)), false);
+  assert.deepEqual(host, ['plain']);
+});

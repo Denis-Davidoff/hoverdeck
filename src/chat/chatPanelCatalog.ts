@@ -5,7 +5,7 @@ interface Storage {
 	get<T>(key: string): T | undefined;
 	update(key: string, value: unknown): PromiseLike<void>;
 }
-const key = 'aiBrowser.chat.panelCatalog';
+const key = 'hoverdeck.chat.panelCatalog';
 
 /** Reserve hidden editors before VS Code lazily invokes their serializers. */
 export class ChatPanelCatalog {

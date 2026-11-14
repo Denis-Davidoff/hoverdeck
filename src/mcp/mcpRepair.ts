@@ -176,6 +176,31 @@ function repairJsonServers(text: string, endpoint: Endpoint, shape: 'claude' | '
 }
 
 /**
+ * Takes our entries out of a `.mcp.json` or `.gemini/settings.json`, by token
+ * (never by name — items 14 and 92). HoverDeck's "remove AI Browser's entries":
+ * the rest of the file keeps its meaning, its indentation and its newlines, and
+ * an unparsable file is left alone, as every writer here leaves it.
+ */
+export function removeJsonServers(text: string, token: string): { text: string; changed: boolean; removed: string[] } {
+	const unchanged = { text, changed: false, removed: [] as string[] };
+	const parsed = parseClaudeConfig(text);
+	const servers = parsed?.mcpServers;
+	if (!isPlainObject(servers)) {
+		return unchanged;
+	}
+	const removed = Object.keys(servers).filter(name => claudeEntryIsOurs(servers[name], token));
+	if (removed.length === 0) {
+		return unchanged;
+	}
+	for (const name of removed) {
+		delete servers[name];
+	}
+	const newline = /\r\n/.test(text) ? '\r\n' : '\n';
+	const indent = /^[ \t]+(?=")/m.exec(text)?.[0] ?? 2;
+	return { text: `${JSON.stringify(parsed, null, indent).replace(/\n/g, newline)}${newline}`, changed: true, removed };
+}
+
+/**
  * `.mcp.json` as an object both writers may rebuild the file from, or
  * `undefined` for anything else — unparsable, or parsed into a shape that is
  * not a config. An empty file is `{}`.

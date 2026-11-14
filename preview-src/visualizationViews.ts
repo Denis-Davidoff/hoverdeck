@@ -1,5 +1,5 @@
 import type { VisualizationReference, VisualizationSnapshot } from '../src/chat/visualizationProtocol';
-import { updateArtifactViews, type ArtifactActions } from './artifactViews';
+import { syncFileAccess, updateArtifactViews, type ArtifactActions } from './artifactViews';
 import { updateImageViews } from './imageViews';
 import { nonceVisualizationDocument } from './visualizationDocument';
 
@@ -29,7 +29,7 @@ let themeObserver: MutationObserver | undefined;
 /** Frames keep their browsing contexts while surrounding assistant text streams. */
 export function updateVisualizationViews(container: HTMLElement, references: readonly VisualizationReference[], snapshots: Readonly<Record<string, VisualizationSnapshot>>, actions: ArtifactActions = {}): void {
 	const artifacts = updateArtifactViews(container, references, snapshots, actions);
-	const images = updateImageViews(container, references, snapshots);
+	const images = updateImageViews(container, references, snapshots, actions);
 	let views = groups.get(container);
 	if (!views) { views = new Map(); groups.set(container, views); }
 	for (const [at, view] of views) {
@@ -49,6 +49,7 @@ export function updateVisualizationViews(container: HTMLElement, references: rea
 		view.element.classList.toggle('visualization-wide', !!ref.wide);
 		view.html = ref.revision ? snapshots[ref.revision]?.html : undefined;
 		view.status.textContent = view.stopped ? view.pauseReason || 'Visualization stopped.' : ref.error || view.runtimeError || (view.html === undefined ? 'This saved visualization is unavailable.' : '');
+		syncFileAccess(view.element, view.status, ref, actions);
 		if (view.html === undefined && view.frame.isConnected) { dispose(view); }
 		else if (view.html !== undefined && !view.stopped && !view.frame.isConnected) { attach(view); }
 		view.run.textContent = view.frame.isConnected ? 'Stop' : 'Run';

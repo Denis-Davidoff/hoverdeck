@@ -68,7 +68,7 @@
  * stall the tool call that evaluates this.
  */
 export const translatorSource = String.raw`(() => {
-	const KEY = Symbol.for('aiBrowser.translate.v4');
+	const KEY = Symbol.for('hoverdeck.translate.v4');
 	if (window[KEY]) {
 		return window[KEY];
 	}

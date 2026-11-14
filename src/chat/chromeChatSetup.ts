@@ -1,3 +1,4 @@
+import { productName } from '../core/flavor';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import * as vscode from 'vscode';
 import { hostIsRemote } from '../setup/proposedApi';
@@ -13,7 +14,7 @@ import { ChatViewProvider, chatViewId, remoteTerminalSetting, remoteTerminalOpen
  * (shared by every window of this profile). The key itself lives only in that
  * extension's `chrome.storage.local`. Disconnect Chrome Chat forgets them all.
  */
-const resumeKey = 'aiBrowser.chromeChat.resume';
+const resumeKey = 'hoverdeck.chromeChat.resume';
 const hashOf = (key: string) => createHash('sha256').update(key).digest('hex');
 async function readGrants(context: vscode.ExtensionContext): Promise<Record<string, string>> {
 	try {
@@ -80,7 +81,7 @@ export function registerChromeChat(context: vscode.ExtensionContext): void {
 	let connecting = false;
 	const deliveries = new Map<string, ChromeChatDelivery>();
 	let generation = 0;
-	const pairing = new ChromeChatPairing(vscode.workspace.name ? `AI Browser · ${vscode.workspace.name}` : 'AI Browser', async (id, extensionId, signal) => {
+	const pairing = new ChromeChatPairing(vscode.workspace.name ? `${productName()} · ${vscode.workspace.name}` : productName(), async (id, extensionId, signal) => {
 		const current = ++generation;
 		if (signal.aborted) { return undefined; }
 		await vscode.commands.executeCommand(`${chatViewId}.focus`);
@@ -136,10 +137,10 @@ export function registerChromeChat(context: vscode.ExtensionContext): void {
 	});
 	context.subscriptions.push(pairing);
 	if (!hostIsRemote()) { void pairing.start().catch(error => {
-		console.warn(`AI Browser quick connection unavailable: ${error instanceof Error ? error.message : String(error)}`);
+		console.warn(`${productName()} quick connection unavailable: ${error instanceof Error ? error.message : String(error)}`);
 	}); }
 	context.subscriptions.push({ dispose: () => { generation++; connection?.dispose(); } });
-	context.subscriptions.push(vscode.commands.registerCommand('aiBrowser.chat.disconnectChrome', () => {
+	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.chat.disconnectChrome', () => {
 		generation++;
 		pairing.cancelPending();
 		connection?.dispose(); connection = undefined; deliveries.clear();
@@ -147,7 +148,7 @@ export function registerChromeChat(context: vscode.ExtensionContext): void {
 		void context.secrets.delete(resumeKey).then(undefined, () => undefined);
 		void vscode.window.showInformationMessage('Chrome chat connection revoked.');
 	}));
-	context.subscriptions.push(vscode.commands.registerCommand('aiBrowser.chat.connectChrome', async () => {
+	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.chat.connectChrome', async () => {
 		if (connecting) { return; }
 		connecting = true;
 		const current = ++generation;
@@ -163,7 +164,7 @@ export function registerChromeChat(context: vscode.ExtensionContext): void {
 			});
 			if (!source) { return; }
 			const extensionId = await vscode.window.showInputBox({
-				title: 'Connect Chrome chat', prompt: 'Paste the extension ID shown in the AI Browser Chrome side panel',
+				title: 'Connect Chrome chat', prompt: `Paste the extension ID shown in the ${productName()} Chrome side panel`,
 				ignoreFocusOut: true,
 				validateInput: value => /^[a-p]{32}$/.test(value.trim()) ? undefined : 'A Chrome extension ID contains 32 letters (a–p).',
 			});

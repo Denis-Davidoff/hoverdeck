@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import * as vscode from 'vscode';
 import { loginsFromCsv, loginsToCsv } from './loginCsv';
 import { LoginVault } from './loginVault';
@@ -40,13 +41,13 @@ import { isSealed, seal, SealError, unseal } from './vaultSeal';
  * browser page is in front.
  */
 
-const fillCommand = 'aiBrowser.logins.fill';
-const saveFromPageCommand = 'aiBrowser.logins.saveFromPage';
-const manageCommand = 'aiBrowser.logins.manage';
-const importCommand = 'aiBrowser.logins.import';
-const exportCommand = 'aiBrowser.logins.export';
+const fillCommand = 'hoverdeck.logins.fill';
+const saveFromPageCommand = 'hoverdeck.logins.saveFromPage';
+const manageCommand = 'hoverdeck.logins.manage';
+const importCommand = 'hoverdeck.logins.import';
+const exportCommand = 'hoverdeck.logins.export';
 /** Not contributed: it exists for the status bar item, which is shown only while there is an offer. */
-const offerCommand = 'aiBrowser.logins.offer';
+const offerCommand = 'hoverdeck.logins.offer';
 
 /** How long an unanswered save offer stays. The password is held in memory until then, and no longer. */
 const offerLifetimeMs = 5 * 60_000;
@@ -66,7 +67,7 @@ interface LoginSettings {
 }
 
 function settings(): LoginSettings {
-	const config = vscode.workspace.getConfiguration('aiBrowser');
+	const config = vscode.workspace.getConfiguration('hoverdeck');
 	return {
 		enabled: config.get<boolean>('logins.enabled', true),
 		offerToSave: config.get<boolean>('logins.offerToSave', true),
@@ -141,8 +142,8 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	constructor(context: vscode.ExtensionContext) {
 		this._vault = new LoginVault(context.secrets, context.globalStorageUri, context.globalState);
 		this._watcher = new LoginWatcher(this, () => settings());
-		this._item = vscode.window.createStatusBarItem('aiBrowser.logins', vscode.StatusBarAlignment.Left, 998);
-		this._item.name = vscode.l10n.t("AI Browser: saved logins");
+		this._item = vscode.window.createStatusBarItem('hoverdeck.logins', vscode.StatusBarAlignment.Left, 998);
+		this._item.name = vscode.l10n.t("{0}: saved logins", productName());
 		this._disposables.push(this._vault, this._watcher, this._item);
 
 		const register = (id: string, run: (...args: any[]) => unknown) =>
@@ -155,18 +156,18 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		register(offerCommand, () => this._answerOffer());
 
 		this._disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('aiBrowser.logins.enabled') || e.affectsConfiguration('aiBrowser.passkeys.enabled')) {
+			if (e.affectsConfiguration('hoverdeck.logins.enabled') || e.affectsConfiguration('hoverdeck.passkeys.enabled')) {
 				if (!settings().enabled) {
 					this._clearOffer();
 				}
 				this._watcher.restart();
 			}
-			if (e.affectsConfiguration('aiBrowser.logins.offerToSave') && !settings().offerToSave) {
+			if (e.affectsConfiguration('hoverdeck.logins.offerToSave') && !settings().offerToSave) {
 				// Switched off with an offer up: the offer goes too, rather than
 				// staying for its five minutes against the setting.
 				this._clearOffer();
 			}
-			if (e.affectsConfiguration('aiBrowser.logins')) {
+			if (e.affectsConfiguration('hoverdeck.logins')) {
 				void this._refreshItem();
 			}
 		}));
@@ -292,13 +293,13 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			return;
 		}
 		if (this._watcher.tabInFront()) {
-			refuse(vscode.l10n.t("AI Browser's saved logins could not be read and are gone — see the message once you leave the browser tab."));
+			refuse(vscode.l10n.t("{0}'s saved logins could not be read and are gone — see the message once you leave the browser tab.", productName()));
 			return;
 		}
 		this._lossPending = false;
 		void vscode.window.showWarningMessage(process.platform === 'linux'
-			? vscode.l10n.t("AI Browser's saved logins are gone. VS Code could not decrypt its secret storage — the keyring changed — or no keyring is available, in which case VS Code keeps secrets in memory only, per window, until that window closes. An encrypted export, if you made one, can be imported again.")
-			: vscode.l10n.t("AI Browser's saved logins are gone: VS Code could not decrypt its secret storage — the system keychain changed — and discarded them. An encrypted export, if you made one, can be imported again."));
+			? vscode.l10n.t("{0}'s saved logins are gone. VS Code could not decrypt its secret storage — the keyring changed — or no keyring is available, in which case VS Code keeps secrets in memory only, per window, until that window closes. An encrypted export, if you made one, can be imported again.", productName())
+			: vscode.l10n.t("{0}'s saved logins are gone: VS Code could not decrypt its secret storage — the system keychain changed — and discarded them. An encrypted export, if you made one, can be imported again.", productName()));
 	}
 
 	private _clearOffer(): void {
@@ -346,7 +347,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	/** The browser tab the user means, with the watcher on it, or a refusal saying which half is missing. */
 	private async _focusedPage(): Promise<WatchedTab | undefined> {
 		if (!settings().enabled) {
-			refuse(vscode.l10n.t("Saved logins are turned off — see the setting aiBrowser.logins.enabled."));
+			refuse(vscode.l10n.t("Saved logins are turned off — see the setting hoverdeck.logins.enabled."));
 			return undefined;
 		}
 		if (!isBrowserApiGranted()) {
@@ -639,7 +640,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 				// Only once it is stored: confirming after a failed write put a
 				// success line over the refusal, about a setting that was never saved.
 				if (done) {
-					confirm(vscode.l10n.t("AI Browser will not offer to save logins on {0}", plainInLabel(submit.origin)));
+					confirm(vscode.l10n.t("{1} will not offer to save logins on {0}", plainInLabel(submit.origin), productName()));
 				}
 				return;
 			}
@@ -870,7 +871,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			if (keys.length === 0) {
 				// Nothing of ours: the request goes to the browser's own
 				// authenticators, which is what it would have met without us.
-				refuse(vscode.l10n.t("No passkey for {0} is saved in AI Browser.", plainInLabel(request.rpId)));
+				refuse(vscode.l10n.t("No passkey for {0} is saved in {1}.", plainInLabel(request.rpId), productName()));
 				return { kind: 'native' };
 			}
 			const items: Item<Choice>[] = keys.map(passkey => ({
@@ -902,7 +903,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		const account = request.userName || request.userDisplayName || '';
 		const choice = await pickWithCancellation<Choice>([
 			{
-				label: vscode.l10n.t("$(key) Save the passkey in AI Browser"),
+				label: vscode.l10n.t("$(key) Save the passkey in {0}", productName()),
 				detail: vscode.l10n.t("Kept in VS Code's secret storage, encrypted by the operating system"),
 				value: { kind: 'save' },
 			},
@@ -980,7 +981,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			| { kind: 'never'; origin: string }
 			| { kind: 'import' | 'export' | 'settings' };
 		const items: Item<Choice>[] = [
-			{ label: vscode.l10n.t("$(cloud-download) Import…"), detail: vscode.l10n.t("From an AI Browser export, or a CSV from Chrome, Firefox, Safari, Bitwarden or 1Password"), value: { kind: 'import' } },
+			{ label: vscode.l10n.t("$(cloud-download) Import…"), detail: vscode.l10n.t("From an AI Browser or HoverDeck export, or a CSV from Chrome, Firefox, Safari, Bitwarden or 1Password"), value: { kind: 'import' } },
 			{ label: vscode.l10n.t("$(cloud-upload) Export…"), value: { kind: 'export' } },
 			{ label: vscode.l10n.t("$(gear) Settings"), value: { kind: 'settings' } },
 		];
@@ -1024,7 +1025,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			case 'import': return this._import();
 			case 'export': return this._export();
 			case 'settings':
-				await vscode.commands.executeCommand('workbench.action.openSettings', 'aiBrowser.logins aiBrowser.passkeys');
+				await vscode.commands.executeCommand('workbench.action.openSettings', 'hoverdeck.logins hoverdeck.passkeys');
 				return;
 			case 'login': return this._manageLogin(choice.entry);
 			case 'passkey': return this._managePasskey(choice.entry);
@@ -1129,7 +1130,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 				return;
 			}
 			case 'open':
-				await vscode.commands.executeCommand('aiBrowser.show', entry.origin);
+				await vscode.commands.executeCommand('hoverdeck.show', entry.origin);
 				return;
 			case 'delete': {
 				const remove = vscode.l10n.t("Delete");
@@ -1184,7 +1185,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		const format = await vscode.window.showQuickPick<Item<Format>>([
 			{
 				label: vscode.l10n.t("$(lock) Encrypted file"),
-				detail: vscode.l10n.t("Logins and passkeys, protected by a passphrase — for AI Browser on another machine"),
+				detail: vscode.l10n.t("Logins and passkeys, protected by a passphrase — for {0} on another machine", productName()),
 				value: 'sealed',
 			},
 			{
@@ -1246,7 +1247,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			}
 			target = await vscode.window.showSaveDialog({
 				defaultUri: defaultExportUri(`ai-browser-logins-${stamp}.aibvault`),
-				filters: { [vscode.l10n.t("AI Browser export")]: ['aibvault'] },
+				filters: { [vscode.l10n.t("{0} export", productName())]: ['aibvault'] },
 			});
 			if (!target) {
 				return;
@@ -1270,7 +1271,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			canSelectMany: false,
 			openLabel: vscode.l10n.t("Import"),
 			filters: {
-				[vscode.l10n.t("AI Browser export or CSV")]: ['aibvault', 'json', 'csv'],
+				[vscode.l10n.t("{0} export or CSV", productName())]: ['aibvault', 'json', 'csv'],
 				[vscode.l10n.t("All files")]: ['*'],
 			},
 		});
@@ -1304,7 +1305,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			const read = loginsFromCsv(text);
 			if (!read) {
 				void vscode.window.showErrorMessage(vscode.l10n.t(
-					"{0} is neither an AI Browser export nor a CSV with url and password columns.", inBody(file.fsPath)));
+					"{0} is neither an AI Browser or HoverDeck export nor a CSV with url and password columns.", inBody(file.fsPath)));
 				return;
 			}
 			const now = Date.now();
@@ -1408,7 +1409,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 					() => unseal(text, passphrase));
 				const parsed = parseVault(plain);
 				if (!parsed) {
-					void vscode.window.showErrorMessage(vscode.l10n.t("The export was made by a newer version of AI Browser."));
+					void vscode.window.showErrorMessage(vscode.l10n.t("The export was made by a newer version of {0}.", productName()));
 					return undefined;
 				}
 				return parsed;
@@ -1421,8 +1422,8 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 				// file's own text: see `inBody`.
 				void vscode.window.showErrorMessage(err instanceof SealError
 					? err.reason === 'notSealed'
-						? vscode.l10n.t("This is not an AI Browser export.")
-						: vscode.l10n.t("This export was made by a newer version of AI Browser, or uses settings this version does not accept.")
+						? vscode.l10n.t("This is not an AI Browser or HoverDeck export.")
+						: vscode.l10n.t("This export was made by a newer version of {0}, or uses settings this version does not accept.", productName())
 					: vscode.l10n.t("Could not decrypt the export: {0}", inBody(errorText(err))));
 				return undefined;
 			}

@@ -41,7 +41,7 @@ Without this, browser features fail with `CANNOT use API proposal: browser`.
 webview panel is what works instead (set `aiBrowser.useIntegratedBrowser` to `false` and run
 **AI Browser: Show**). The table below says which is which.
 
-[![AI Browser in action](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/ai-browser-instruct.jpg)
+[![AI Browser in action](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/ai-browser-instruct.jpg)
 
 ---
 
@@ -65,7 +65,7 @@ takes:
 | **Theia IDE** | 1.75 | ❌ no | — | nothing helps — not a VS Code build |
 
 **On VS Code:**
-**[⬇️ download tab-browser-ultimate.vsix](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/raw/main/tab-browser-ultimate.vsix)**
+**[⬇️ download tab-browser-ultimate.vsix](https://github.com/Denis-Davidoff/hoverdeck/raw/main/tab-browser-ultimate.vsix)**
 → press `Cmd`/`Ctrl` + `Shift` + `P` → **Extensions: Install from VSIX…** → pick the file. There
 is no one-click route here, and it is not an oversight: VS Code's gallery *is* this Marketplace,
 and it rejects any extension declaring API proposals — which is exactly what the browser
@@ -92,11 +92,11 @@ have.
   🎥 VIDEO SLOT — fill this in when the recording is up, then delete these comment markers.
   The Marketplace strips <iframe> and <video>, so a video is always a still image that links out:
 
-  [![Watch the tour](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/vscode-marketplace/assets/video-thumbnail.png)](https://www.youtube.com/watch?v=VIDEO_ID)
+  [![Watch the tour](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/vscode-marketplace/assets/video-thumbnail.png)](https://www.youtube.com/watch?v=VIDEO_ID)
 
   An animated GIF under ~10 MB also plays inline and needs no click:
 
-  ![AI Browser tour](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/vscode-marketplace/assets/tour.gif)
+  ![AI Browser tour](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/vscode-marketplace/assets/tour.gif)
 -->
 
 ---
@@ -190,8 +190,8 @@ only **Check for Updates** remains.
 
 ## Links
 
-- 📖 **[Full documentation](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate#readme)**
-- 🐞 **[Issues](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/issues)**
+- 📖 **[Full documentation](https://github.com/Denis-Davidoff/hoverdeck#readme)**
+- 🐞 **[Issues](https://github.com/Denis-Davidoff/hoverdeck/issues)**
 - 🧩 **[Open VSX listing](https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate)** — the full build
 
 ### Another extension worth having

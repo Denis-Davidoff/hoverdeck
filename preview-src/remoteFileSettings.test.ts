@@ -8,16 +8,19 @@ import { connectionPermissionGroups, readConnectionPermissions } from '../src/ch
 test('Permissions shows saved access separately for Chrome and the website and posts the chosen level', () => {
 	const source = readFileSync('preview-src/chat.ts', 'utf8');
 	const permissionFn = /function createConnectionPermissionSettings\([\s\S]*?\n\}/.exec(source)![0];
+	const helpers = ['settingsRow', 'settingsCard'].map(name => new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`).exec(source)![0]).join('\n');
+	const icons = /const connectionPermissionIcons[\s\S]*?\n\};/.exec(source)![0];
 	const fn = /function createRemoteTerminalSettings\([\s\S]*?\n\}/.exec(source)![0];
 	const nodes: any[] = [], posts: any[] = [];
 	const context: any = {
 		remoteTerminalData: undefined, remoteTerminalRender: undefined, connectionPermissionRender: undefined,
-		state: undefined, connectionPermissionGroups, readConnectionPermissions,
+		state: undefined, connectionPermissionGroups, HTMLInputElement: class {}, readConnectionPermissions,
 		post: (message: any) => posts.push(message),
 		icon: (name: string) => ({ tag: 'i', icon: name }),
 		el(tag: string, props: any = {}, ...children: any[]) {
 			const node = { tag, ...props, children, isConnected: true, attrs: {} as any, events: {} as any, classes: new Set<string>(),
-					classList: { toggle(name: string, on: boolean) { on ? node.classes.add(name) : node.classes.delete(name); } },
+					classList: { add(name: string) { node.classes.add(name); }, toggle(name: string, on: boolean) { on ? node.classes.add(name) : node.classes.delete(name); } },
+					closest() { return undefined; },
 				append(...items: any[]) { this.children.push(...items); },
 				setAttribute(key: string, value: string) { this.attrs[key] = value; },
 				addEventListener(key: string, handler: () => void) { this.events[key] = handler; },
@@ -25,7 +28,7 @@ test('Permissions shows saved access separately for Chrome and the website and p
 			nodes.push(node); return node;
 		},
 	};
-	runInNewContext(transpileModule(`${permissionFn}\n${fn}\ncreateRemoteTerminalSettings();`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, context);
+	runInNewContext(transpileModule(`${helpers}\n${icons}\n${permissionFn}\n${fn}\ncreateRemoteTerminalSettings();`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, context);
 	assert.equal(posts[0].action, 'load');
 	const chrome = nodes.find(n => n.attrs['aria-label'] === 'Chrome project file access');
 	const website = nodes.find(n => n.attrs['aria-label'] === 'Website project file access');

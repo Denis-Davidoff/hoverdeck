@@ -31,6 +31,10 @@
 
 import type { ArtifactKind } from '../chat/visualizationProtocol';
 import { chatConnectionsEnabled } from '../chat/core/chatFeatures';
+import type { ChatSound } from '../chat/chatProtocol';
+
+/** The chat's sounds, written twice: this module is loaded by `npm test` and may not value-import `chatProtocol`. `chatTools.test.ts` holds the two equal. */
+export const chatToolSounds: readonly ChatSound[] = ['chime', 'bell', 'pop', 'dingdong', 'marimba', 'harp', 'kalimba', 'glass', 'bubble', 'coin', 'levelup', 'sparkle', 'sonar', 'arcade', 'droplet', 'woodblock', 'fanfare', 'zen', 'whistle', 'synth', 'lullaby', 'triad', 'ascend', 'descend', 'doorbell', 'tick', 'blip', 'laser', 'ufo', 'boing', 'piano', 'celesta', 'organ', 'flute', 'pluck', 'gong', 'twinkle', 'heartbeat', 'success', 'notice', 'trill', 'jingle', 'swoosh', 'robot', 'chirp', 'harmony', 'steel', 'cosmic', 'ping', 'victory'];
 import { schema, number, string, textArgument, numberArgument, type Caller, type Tool } from './mcpProtocol';
 import type { TerminalAgentApi } from './terminalTools';
 import type { TerminalGrants } from './terminalGrants';
@@ -49,6 +53,8 @@ export interface ChatControl {
 	/** Caller identity is verified by the MCP server; target IDs confer no rights. */
 	linkedChats?(callerChatId: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
 	presentRich(ownTab: string, kind: string, args: Record<string, unknown>): Promise<unknown>;
+	/** A sound in the user's chat view, and for `alert` a system notification and a card in the chat too. Only when the user asked for it. */
+	signal(ownTab: string, request: SignalRequest): Promise<unknown>;
 	presentArtifact(ownTab: string, file: string, kind: ArtifactKind, title?: string): Promise<unknown>;
 	presentImage(ownTab: string, file: string, title?: string): Promise<unknown>;
 	presentHtml(ownTab: string, file: string, title?: string): Promise<unknown>;
@@ -72,6 +78,59 @@ export interface ChatControl {
 	terminalDenied(chatId: string): boolean;
 }
 
+/** What `chat_play_sound` and `chat_alert` ask for; checked here, so the chat gets known values only. */
+export interface SignalRequest {
+	readonly kind: 'sound' | 'alert';
+	/** A sound of the settings' list, `none` for silence, absent for the one the user chose in Chat Settings. */
+	readonly sound?: ChatSound | 'none';
+	readonly repeat: number;
+	readonly title?: string;
+	readonly text?: string;
+}
+
+function soundArgument(value: unknown): ChatSound | 'none' | undefined {
+	if (value === undefined || value === null || value === '') { return undefined; }
+	if (value === 'none' || (typeof value === 'string' && (chatToolSounds as readonly string[]).includes(value))) { return value as ChatSound | 'none'; }
+	throw new Error(`Unknown sound ${JSON.stringify(value)}. Use one of: ${chatToolSounds.join(', ')}, or none; leave it out for the user's own choice.`);
+}
+
+function signalTools(port: ChatControlPort): Tool[] {
+	const sound = { type: 'string', enum: [...chatToolSounds, 'none'], description: 'One of the sounds in Chat Settings → Sound; leave it out to use the one the user chose there' };
+	const only = ' Use it only when the user asked to be told this way (for example "beep when the tests pass") or, for chat_alert, when something truly needs their attention now; never as a routine end-of-turn signal — the chat already plays the user\'s own finish sound.';
+	return [
+		{
+			name: 'chat_play_sound', title: 'Chat: play a sound',
+			description: 'Play a notification sound in the user\'s chat (VS Code, and the Exchange website when it shows this chat), at the volume set in Chat Settings.' + only,
+			inputSchema: schema({ sound, repeat: number('How many times to play it, 1–5; default 1') }),
+			run: async (args, caller) => control(port).signal(requireOwnTab(port, caller, 'play a sound'), {
+				kind: 'sound', sound: soundArgument(args.sound), repeat: repeatArgument(args.repeat),
+			}),
+		},
+		{
+			name: 'chat_alert', title: 'Chat: alert the user',
+			description: 'Call the user urgently: use it when you cannot continue without their feedback, a decision or an action, or when something important happened that they must see now. It shows a system notification on their computer (even while VS Code is focused) and in the Exchange website\'s browser when it shows this chat, a warning card in this conversation, and plays a sound (the user\'s own unless sound names another; none for silence). Say in text what you need from them; then wait for their answer rather than guessing.' + only,
+			inputSchema: schema({ text: string('What happened, one or two short sentences'), title: string('Short title; default: the chat\'s title'), sound, repeat: number('How many times to play the sound, 1–5; default 1') }, ['text']),
+			run: async (args, caller) => {
+				const text = textArgument(args.text, 'text')?.trim();
+				if (!text) { throw new Error('text is required.'); }
+				if (text.length > 300) { throw new Error('Keep text to 300 characters; put details in your reply.'); }
+				const title = args.title === undefined ? undefined : textArgument(args.title, 'title')?.trim();
+				if (title && title.length > 120) { throw new Error('Keep title to 120 characters.'); }
+				return control(port).signal(requireOwnTab(port, caller, 'alert the user'), {
+					kind: 'alert', sound: soundArgument(args.sound), repeat: repeatArgument(args.repeat), text, ...(title ? { title } : {}),
+				});
+			},
+		},
+	];
+}
+
+function repeatArgument(value: unknown): number {
+	if (value === undefined || value === null) { return 1; }
+	const n = numberArgument(value, 'repeat') ?? 1;
+	if (!Number.isInteger(n) || n < 1 || n > 5) { throw new Error('repeat is a whole number from 1 to 5.'); }
+	return n;
+}
+
 /** Filled in by the chat once it exists. */
 export class ChatControlPort {
 	public target: ChatControl | undefined;
@@ -79,7 +138,7 @@ export class ChatControlPort {
 
 function control(port: ChatControlPort): ChatControl {
 	if (!port.target) {
-		throw new Error('The AI Browser chat is not available in this window.');
+		throw new Error('The chat is not available in this window.');
 	}
 	return port.target;
 }
@@ -95,7 +154,7 @@ function requireOwnTab(port: ChatControlPort, caller: Caller, what: string): str
 	if (!tab) {
 		throw new Error(caller.chatId
 			? `Cannot ${what}: the conversation this call came from is no longer open in a tab.`
-			: `Only the agents of the AI Browser chat can ${what}, for their own tab. Other assistants may read chat_state and chat_usage.`);
+			: `Only the agents of the chat can ${what}, for their own tab. Other assistants may read chat_state and chat_usage.`);
 	}
 	return tab;
 }
@@ -106,7 +165,7 @@ export function chatTools(port: ChatControlPort): Tool[] {
 		...(chatConnectionsEnabled ? ownedChatTools(port) : []),
 		{
 			name: 'chat_present_html', title: 'Display an HTML visualization',
-			description: 'Display or update a completed self-contained HTML visualization in your own AI Browser conversation. Write the file directly in the conversation visualization directory supplied with the prompt, then call this tool with its absolute path. Reuse the path to update the existing card. At most 1 MB. Inline CSS/JavaScript, SVG, canvas and MathML work; external resources, network requests and host commands are blocked. Local preview only, no cloud publication. Do not repeat a visualize marker after a successful call.',
+			description: 'Display or update a completed self-contained HTML visualization in your own chat conversation. Write the file directly in the conversation visualization directory supplied with the prompt, then call this tool with its absolute path. Reuse the path to update the existing card. At most 1 MB. Inline CSS/JavaScript, SVG, canvas and MathML work; external resources, network requests and host commands are blocked. Local preview only, no cloud publication. Do not repeat a visualize marker after a successful call.',
 			inputSchema: schema({ path: string('Absolute path to the completed HTML file'), title: string('Short display title') }, ['path']),
 			run: async (args, caller) => {
 				const tab = requireOwnTab(port, caller, 'display HTML');
@@ -119,7 +178,7 @@ export function chatTools(port: ChatControlPort): Tool[] {
 		},
 		{
 			name: 'chat_present_image', title: 'Display an image',
-			description: 'Display or update a PNG, JPEG, GIF or WebP image in your own AI Browser conversation. Copy the completed image directly into the conversation visualization directory supplied with the prompt, then pass its absolute path. At most 4 MB. Reuse the same path to update the card. The image is saved with the conversation and displayed across VS Code, Chrome and Exchange. No additional image reference is needed after success.',
+			description: 'Display or update a PNG, JPEG, GIF or WebP image in your own chat conversation. Copy the completed image directly into the conversation visualization directory supplied with the prompt, then pass its absolute path. At most 4 MB. Reuse the same path to update the card. The image is saved with the conversation and displayed across VS Code, Chrome and Exchange. No additional image reference is needed after success.',
 			inputSchema: schema({ path: string('Absolute path to the completed image in the conversation visualization directory'), title: string('Short display title') }, ['path']),
 			run: async (args, caller) => {
 				const tab = requireOwnTab(port, caller, 'display an image');
@@ -150,9 +209,10 @@ export function chatTools(port: ChatControlPort): Tool[] {
 			},
 		})),
 		...richTools(port),
+		...signalTools(port),
 		{
-			name: 'chat_state', title: 'AI Browser chat: tabs',
-			description: 'The AI Browser chat\'s open tabs: status (working, waiting for the user\'s answer, unread, failed, read), '
+			name: 'chat_state', title: 'Chat: tabs',
+			description: 'The chat\'s open tabs: status (working, waiting for the user\'s answer, unread, failed, read), '
 				+ 'how many agents and background toolbar skills run, how many messages are queued and whether the queue is paused, '
 				+ 'and whether the computer is kept awake. For the chat\'s own agents, their own tab (own: true) also has its title '
 				+ 'and its last reply. Other tabs\' conversations are not shown.',
@@ -160,7 +220,7 @@ export function chatTools(port: ChatControlPort): Tool[] {
 			run: async (_args, caller) => control(port).state(ownTab(port, caller)),
 		},
 		{
-			name: 'chat_agents', title: 'AI Browser chat: your agents',
+			name: 'chat_agents', title: 'Chat: your agents',
 			description: 'The agents started in your own chat tab — sub-agents, background agents, toolbar skills run in the '
 				+ 'background — newest first, with status, type, model, how long they have run, tokens, tool uses, the tool they '
 				+ 'are on, and the last thing each said, short. The ids are for chat_stop_agent. The chat\'s own agents only.',
@@ -168,7 +228,7 @@ export function chatTools(port: ChatControlPort): Tool[] {
 			run: async (_args, caller) => control(port).agents(requireOwnTab(port, caller, 'list agents')),
 		},
 		{
-			name: 'chat_usage', title: 'AI Browser chat: plan limits',
+			name: 'chat_usage', title: 'Chat: plan limits',
 			description: 'What is known of each agent\'s plan limits — the share used of each window, when it resets, whether the '
 				+ 'agent is spending credits — and, for the chat\'s own agents, how full their conversation\'s context window is. '
 				+ 'Figures are the last the CLIs reported; nothing is asked of the provider for this call.',
@@ -333,7 +393,7 @@ function richTools(port: ChatControlPort): Tool[] {
 		}, required: ['citations'] },
 	];
 	return descriptors.map(({ name, kind, description, properties, required }): Tool => ({
-		name, title: name.replace(/^chat_/, '').replace(/_/g, ' '), description: description + ' Only available in your own AI Browser conversation. Displayed in VS Code, Chrome and Exchange.',
+		name, title: name.replace(/^chat_/, '').replace(/_/g, ' '), description: description + ' Only available in your own chat conversation. Displayed in VS Code, Chrome and Exchange.',
 		inputSchema: schema(properties, required),
 		run: async (args, caller) => control(port).presentRich(requireOwnTab(port, caller, 'display rich chat content'), kind, args),
 	}));

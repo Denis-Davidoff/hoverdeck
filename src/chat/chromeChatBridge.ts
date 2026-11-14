@@ -20,7 +20,7 @@ import { remoteTerminalView, terminalLifecycleTypes } from './remoteTerminalView
 export interface ChromeTerminalPort {
 	readonly terminals: { find(id: string): RemoteTerminalTarget | undefined; shared(): readonly TerminalTabSummary[]; support(): TerminalSupport; blocked(): boolean };
 	setting(): boolean;
-	/** `aiBrowser.chat.remoteTerminalShell` / `remoteTerminalAgent`. */
+	/** `hoverdeck.chat.remoteTerminalShell` / `remoteTerminalAgent`. */
 	openShell(): boolean;
 	openAgent(): boolean;
 	/** The modal in VS Code; asked once per bridge (connection). */
@@ -364,7 +364,7 @@ export class ChromeChatBridge implements ChatStateSurface {
 		if (!command) { reply(400, 'This action is not supported in Chrome yet.'); return; }
 		if ((terminalLifecycleTypes as readonly string[]).includes(command.message.type)) {
 			// Consent before anything reaches the terminals; the host checks the setting and the share again.
-			if (!(await this._terminalConsentFor())) { reply(409, this._terminalPort?.setting() === false ? 'Terminals are off for Chrome: in VS Code, turn on “AI Browser › Chat: Chrome Terminal Access” (aiBrowser.chat.chromeTerminalAccess), or use Chat Settings → Connections & permissions.' : 'Terminal access was not allowed in VS Code for this connection.'); return; }
+			if (!(await this._terminalConsentFor())) { reply(409, this._terminalPort?.setting() === false ? 'Terminals are off for Chrome: in VS Code, turn on “Chat: Chrome Terminal Access” (hoverdeck.chat.chromeTerminalAccess), or use Chat Settings → Connections & permissions.' : 'Terminal access was not allowed in VS Code for this connection.'); return; }
 			this._terminalPort?.audit(`chrome ${command.message.type}`);
 		}
 		const features = negotiateChromeChatCapabilities(request.headers[chromeChatCapabilitiesHeader.toLowerCase()], Number(request.headers[chromeChatProtocolHeader.toLowerCase()]));

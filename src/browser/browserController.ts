@@ -4,6 +4,7 @@ import { createRemoteVideoEncoder, type RemoteVideoEncoder, type RemoteVideoChun
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import { takeRemotePick } from './remotePick';
 import * as vscode from 'vscode';
 import { CDPClient } from '../core/cdp';
@@ -12,18 +13,23 @@ import type { RemoteBrowserInput } from './remoteBrowserProtocol';
 import { extractElementData, renderElementMarkdown } from '../elements/elementContext';
 import { tabs as tabSource } from './tabSource';
 import { legacyMarkerRemoval, stripMarker, stripMarkerFromHtml } from './shareIndicator';
-import { comparesFieldValue, isSecretField, redactSecretValues } from '../logins/secretGuards';
+import { comparesFieldValue, isProtectedField, isSecretField, redactSecretValues } from '../logins/secretGuards';
 import { encodeJpeg } from './jpegEncode';
 import { decodePng, rowsOf } from './pngDecode';
 import { fitBands, modelJpegQuality, pixelRatios, planFullPage, planViewport, type Rect } from './screenshotFrames';
 import {
-	callerKey, everyone, ShareRegistry, targetName,
+	assistantName, callerKey, everyone, ShareRegistry, targetName,
 	type CallerIdentity, type ShareTarget,
 } from './shareRegistry';
+import { agentCookieRefusal, listCookies, writeCookies, type CookieWriteResult } from './cookieAccess';
+import { formatNames, parseCookies, toCookieParams, type CookieParam } from '../logins/cookieParse';
 import type { ClientKind } from '../mcp/mcpProtocol';
 import { translatorSource } from '../translate/translateScript';
 import { isLanguageCode, maxSingleSegment, pageTitle, type Replacement } from '../translate/translateText';
 import { plainInLabel } from '../core/notifyText';
+import { guardEnabled } from '../core/securitySettings';
+import { confirm, refuse } from '../core/notify';
+import { addressForQuestion, isKnownSite, siteOf } from './siteApproval';
 import { chromeAnnotationSessions } from './chromeAnnotationSessions';
 import { PageAnnotations, type AnnotationChange } from './pageAnnotations';
 import type { PageAnnotation } from './annotationData';
@@ -143,7 +149,7 @@ function shareLostMessage(target: ShareTarget): string {
 		: `The browser tab the user shared with ${targetName(target)}`;
 	return `${whose} has been closed, so the browser tools are paused for you. They will not fall back to whichever `
 		+ 'page the user happens to be looking at. Ask the user to open the page you should work with and share it — '
-		+ '"AI Browser: Share Tab with…", from the status bar menu or the toolbar menu on the browser tab.';
+		+ `"${productName()}: Share Tab with…", from the status bar menu or the toolbar menu on the browser tab.`;
 }
 
 /**
@@ -694,7 +700,7 @@ function whenNotAborted(
 function requireGrant(): void {
 	if (!tabSource.available()) {
 		throw new Error(
-			'No browser is available. The integrated browser needs the `browser` API proposal (the user can enable it with the "AI Browser: Enable Integrated Browser API" command), or the user can connect Google Chrome with "AI Browser: Open in Google Chrome".');
+			`No browser is available. The integrated browser needs the \`browser\` API proposal (the user can enable it with the "${productName()}: Enable Integrated Browser API" command), or the user can connect Google Chrome with "${productName()}: Open in Google Chrome".`);
 	}
 }
 
@@ -1508,14 +1514,34 @@ export class BrowserController implements vscode.Disposable {
 		return { tab };
 	}
 
-	/** Whether a caller may act on a tab: free, its own chat's, or a user's command. */
+	/**
+	 * Whether a caller may act on a tab: free, its own chat's, or a user's command.
+	 *
+	 * **A tab of the user's own Chrome profile is not free**, unless it was
+	 * opened through us (or by such a tab): connected to their everyday Chrome,
+	 * an agent would otherwise list and reach their mail and bank, which is what
+	 * a misleading page would ask for. The user's share still reaches one —
+	 * shares are resolved before this — and `hoverdeck.security.hideOtherChromeTabs`
+	 * turns the rule off.
+	 */
 	private _usableBy(tab: vscode.BrowserTab, caller?: CallerIdentity): boolean {
+		if (!caller) {
+			return true;
+		}
 		const owner = this._chatOwners.get(tab);
-		return !owner || !caller || owner === caller.chatId;
+		if (owner) {
+			return owner === caller.chatId;
+		}
+		return !(tabSource.isUsersOwnChrome(tab) && guardEnabled('hideOtherChromeTabs'));
 	}
 
-	private _ownedRefusal(id: string): Error {
-		return new Error(`Browser tab ${id} belongs to another AI Browser chat, and only that chat's agent may use it. `
+	private _ownedRefusal(id: string, tab?: vscode.BrowserTab): Error {
+		if (tab && !this._chatOwners.has(tab) && tabSource.isUsersOwnChrome(tab)) {
+			return new Error(`Browser tab ${id} is one of the user's own Chrome tabs, which agents do not see unless the user `
+				+ 'shares it. Do not act on it. Open the page you need with `browser_navigate` and `newTab: true`, or ask '
+				+ `the user to share that tab from the ${productName()} status bar menu.`);
+		}
+		return new Error(`Browser tab ${id} belongs to another ${productName()} chat, and only that chat's agent may use it. `
 			+ 'Do not act on it. Ask the user to share it with this chat from the chat\'s Access tab, or open a page of your own '
 			+ 'with `browser_navigate` and `newTab: true`.');
 	}
@@ -2374,8 +2400,8 @@ export class BrowserController implements vscode.Disposable {
 			return {
 				available: false,
 				annotationTabs: chromeAnnotationSessions.visible(caller),
-				reason: 'Open Google Chrome with "AI Browser: Open in Google Chrome", or enable native browser tabs with '
-					+ '"AI Browser: Enable Integrated Browser API".',
+				reason: `Open Google Chrome with "${productName()}: Open in Google Chrome", or enable native browser tabs with `
+					+ `"${productName()}: Enable Integrated Browser API".`,
 			};
 		}
 
@@ -2424,8 +2450,8 @@ export class BrowserController implements vscode.Disposable {
 			return {
 				available: false,
 				annotationTabs: chromeAnnotationSessions.visible(caller),
-				reason: 'Open Google Chrome with "AI Browser: Open in Google Chrome", or enable native browser tabs with '
-					+ '"AI Browser: Enable Integrated Browser API".',
+				reason: `Open Google Chrome with "${productName()}: Open in Google Chrome", or enable native browser tabs with `
+					+ `"${productName()}: Enable Integrated Browser API".`,
 			};
 		}
 
@@ -2495,7 +2521,7 @@ export class BrowserController implements vscode.Disposable {
 			throw new Error(
 				`The user has given you one browser tab (${this._idOf(assignment.tab)}), and your tools act on that `
 				+ 'tab only — a selection made here could never take effect. Ask the user to give you a different '
-				+ 'tab, or to stop sharing, from the AI Browser status bar menu.');
+				+ `tab, or to stop sharing, from the ${productName()} status bar menu.`);
 		}
 
 		const open = tabSource.all ?? [];
@@ -2519,7 +2545,7 @@ export class BrowserController implements vscode.Disposable {
 		}
 
 		if (!this._usableBy(match, caller)) {
-			throw this._ownedRefusal(id);
+			throw this._ownedRefusal(id, match);
 		}
 		// The pin above is this caller's; `_lastTab` is the user's, and a
 		// selection is not a user action.
@@ -2593,6 +2619,7 @@ export class BrowserController implements vscode.Disposable {
 		// saying yes.
 
 		const url = parsed.toString();
+		await this._confirmSite(parsed, newTab, caller);
 		// Resolved through the caller, and re-checked afterwards: resolution is
 		// the lazy detector for an assigned tab that has gone — the only one on
 		// a host that does not fire `onDidCloseBrowserTab` — so the gate above
@@ -3207,11 +3234,11 @@ export class BrowserController implements vscode.Disposable {
 				+ 'Tell the user, and do not act on another tab instead.');
 		}
 		if (!target && !this._usableBy(tab, caller)) {
-			throw this._ownedRefusal(tabId);
+			throw this._ownedRefusal(tabId, tab);
 		}
 		if (target && own && own !== tab) {
 			throw new Error(`The user has given you browser tab ${this._idOf(own)}, and your tools act on that tab only, `
-				+ `not on ${tabId}. Tell the user: they can give you ${tabId}, or stop sharing, from the AI Browser `
+				+ `not on ${tabId}. Tell the user: they can give you ${tabId}, or stop sharing, from the ${productName()} `
 				+ 'status bar menu.');
 		}
 		this._noteTabUse(tab, caller);
@@ -3222,6 +3249,240 @@ export class BrowserController implements vscode.Disposable {
 		} finally {
 			release();
 		}
+	}
+
+	/**
+	 * The cookies the page is sent — `browser_get_cookies`. **Never their
+	 * values**: a session cookie is a credential, and a page an agent reads can
+	 * ask it to hand one over. Names, attributes and the value's length are
+	 * enough to tell whether a sign-in took.
+	 */
+	public async cookies(caller: CallerIdentity): Promise<unknown> {
+		return this._withSession(caller, async (session, tab) => {
+			const url = tab.url;
+			if (!url || !/^https?:/i.test(url)) {
+				throw new Error('The page is not an http or https page, so it has no cookies to list.');
+			}
+			const cookies = await listCookies((method, params) => session.client.send(method, params ?? {}, session.sessionId), url);
+			return {
+				url,
+				count: cookies.length,
+				cookies,
+				note: 'Values are never returned. valueLength is the length of each value.',
+			};
+		});
+	}
+
+	/** One confirmation at a time: a page looping an agent must not stack dialogs. */
+	private _cookieQuestion = false;
+
+	/** Sites each caller may open without asking, by `callerKey`. In memory: a reload asks again. */
+	private readonly _siteApprovals = new Map<string, { kind: ClientKind; chatId?: string; sites: Set<string>; all: boolean }>();
+	/** Site questions run one after another, and each one re-reads the approvals. */
+	private _siteQuestion: Promise<unknown> = Promise.resolve();
+	private readonly _onDidChangeSiteApprovals = new vscode.EventEmitter<void>();
+	/** Fires when a site is allowed or forgotten, so Chat Settings can redraw its list. */
+	public readonly onDidChangeSiteApprovals = this._onDidChangeSiteApprovals.event;
+
+	/** Every caller with sites it may open without asking, for Chat Settings → Security. */
+	public siteApprovals(): { key: string; kind: ClientKind; chatId?: string; sites: string[]; all: boolean }[] {
+		return [...this._siteApprovals].map(([key, a]) => ({ key, kind: a.kind, chatId: a.chatId, sites: [...a.sites].sort(), all: a.all }))
+			.filter(a => a.all || a.sites.length > 0);
+	}
+
+	/** Forgets one site of one caller, every site of one caller, or — with no key — everything. */
+	public forgetSites(key?: string, site?: string): void {
+		if (key === undefined) {
+			this._siteApprovals.clear();
+		} else if (site === undefined) {
+			this._siteApprovals.delete(key);
+		} else {
+			const entry = this._siteApprovals.get(key);
+			if (site === '*') {
+				if (entry) { entry.all = false; }
+			} else {
+				entry?.sites.delete(site);
+			}
+		}
+		this._onDidChangeSiteApprovals.fire();
+	}
+
+	/**
+	 * Asks before an agent opens a site it has not been to — the navigation an
+	 * injected instruction uses to send what the agent read somewhere
+	 * (`https://attacker.example/?d=…`). See `siteApproval.ts` for what counts
+	 * as known. The modal is the extension's own, so no CLI rule or Auto mode
+	 * answers it, and it shows the whole address — and says so outright when
+	 * the address carries data after its path.
+	 *
+	 * Known limit: it guards `browser_navigate` only. A click on a link or a
+	 * form submit can still take the page elsewhere; those carry what the page
+	 * already holds rather than what the agent chooses to put in an address.
+	 */
+	private async _confirmSite(target: URL, newTab: boolean, caller: CallerIdentity): Promise<void> {
+		if (!guardEnabled('confirmNewSites')) {
+			return;
+		}
+		const key = callerKey(caller);
+		const known = (): boolean => {
+			const approval = this._siteApprovals.get(key);
+			if (approval?.all) {
+				return true;
+			}
+			const hosts = [...(approval?.sites ?? [])];
+			const current = newTab ? undefined : this._resolveForCaller(caller).tab?.url;
+			if (current) {
+				try { hosts.push(new URL(current).hostname); } catch { /* not an address */ }
+			}
+			return isKnownSite(target.hostname, hosts);
+		};
+		if (known()) {
+			return;
+		}
+		const ask = this._siteQuestion.then(async () => {
+			if (known()) {
+				return;
+			}
+			const site = siteOf(target.hostname);
+			const who = assistantName(caller.kind);
+			const shown = plainInLabel(site);
+			const once = vscode.l10n.t('Open Once');
+			const always = vscode.l10n.t('Allow {0}', shown);
+			const every = vscode.l10n.t('Allow All Sites');
+			const carried = [...(target.search + target.hash)].length;
+			const answer = await vscode.window.showWarningMessage(
+				vscode.l10n.t('Let {0} open {1}?', who, shown),
+				{
+					modal: true,
+					detail: [
+						vscode.l10n.t('It wants to open this address, on a site it has not visited in this conversation:'),
+						addressForQuestion(target.toString()),
+						'',
+						...(carried >= 40 ? [vscode.l10n.t('The address carries {0} characters of data after the page path. Make sure it is nothing you would not send to {1}.', carried, shown), ''] : []),
+						vscode.l10n.t('Allow it if you asked for this. A page or a file the agent read can tell it to open an address that sends what it read to another site.'),
+						'',
+						vscode.l10n.t('"Allow {0}" covers its subdomains too; "Allow All Sites" stops this question for this conversation. Both last until the window reloads, and can be undone in Chat Settings → Security.', shown),
+					].join('\n'),
+				},
+				once, always, every,
+			);
+			if (answer === always || answer === every) {
+				const entry = this._siteApprovals.get(key) ?? { kind: caller.kind, chatId: caller.chatId, sites: new Set<string>(), all: false };
+				if (answer === always) { entry.sites.add(site); } else { entry.all = true; }
+				this._siteApprovals.set(key, entry);
+				this._onDidChangeSiteApprovals.fire();
+				confirm(answer === always
+					? vscode.l10n.t('$(shield) {0} may open {1} in this conversation', who, shown)
+					: vscode.l10n.t('$(shield) {0} may open any site in this conversation', who));
+			} else if (answer !== once) {
+				refuse(vscode.l10n.t('$(shield) Blocked: {0} wanted to open {1}', who, shown));
+				throw new Error(`The user declined to open ${target.hostname}. Do not try it again, and do not reach that site another way, unless the user says so.`);
+			}
+		});
+		this._siteQuestion = ask.catch(() => undefined);
+		await ask;
+	}
+
+	/**
+	 * Cookies an agent was given — `browser_set_cookies`. Three guards, and the
+	 * last is the one that matters against a prompt injection:
+	 *
+	 * - only for the site the tab is on (`agentCookieRefusal`), so a page cannot
+	 *   send an agent to plant a session on another site;
+	 * - at most 50, parsed by the same reader as the user's paste;
+	 * - **a modal the extension shows itself**, naming the agent, the site and
+	 *   every cookie, before anything is written. No CLI rule, hook or Auto in
+	 *   the approval menu answers it — session fixation (signing the user into
+	 *   somebody else's account) is exactly what a page would ask for.
+	 *
+	 * The tab is resolved, asked about, then resolved again: a share moved or a
+	 * navigation to another site in between refuses rather than writes.
+	 */
+	public async setCookies(input: unknown, reload: boolean, caller: CallerIdentity): Promise<unknown> {
+		const text = typeof input === 'string' ? input : input !== undefined && input !== null ? JSON.stringify(input) : '';
+		const parsed = parseCookies(text);
+		if (!parsed || parsed.cookies.length === 0) {
+			throw new Error('No cookies could be read. Pass a Cookie header ("a=1; b=2"), Set-Cookie lines, cookies.txt, '
+				+ 'a cURL command, or a JSON array of {name, value, domain?, path?, secure?, httpOnly?, sameSite?, expires?}.'
+				+ (parsed?.skipped.length ? ` Skipped: ${parsed.skipped.slice(0, 5).join('; ')}` : ''));
+		}
+		const { tab, url } = await this._withSession(caller, async (_session, tab) => ({ tab, url: tab.url ?? '' }));
+		const plan = toCookieParams(parsed.cookies, url);
+		const refusal = agentCookieRefusal(plan.params, url);
+		if (refusal) {
+			throw new Error(refusal);
+		}
+		const host = new URL(url).hostname;
+		const ask = guardEnabled('confirmCookies');
+		if (ask && this._cookieQuestion) {
+			throw new Error('The user is already being asked about cookies. Wait for that answer.');
+		}
+		if (ask) {
+			this._cookieQuestion = true;
+		}
+		let answer: string | undefined = ask ? undefined : vscode.l10n.t("Set Cookies");
+		try {
+			if (ask) {
+				const lines = plan.params.map(cookieLine);
+				answer = await vscode.window.showWarningMessage(
+					plan.params.length === 1
+						? vscode.l10n.t("Let {0} set a cookie on {1}?", assistantName(caller.kind), plainInLabel(host))
+						: vscode.l10n.t("Let {0} set {1} cookies on {2}?", assistantName(caller.kind), plan.params.length, plainInLabel(host)),
+					{
+						modal: true,
+						detail: [
+							vscode.l10n.t("Allow this only if you gave it these cookies yourself. A page can ask an agent to sign you into someone else's account."),
+							'',
+							...lines.slice(0, 20),
+							...(lines.length > 20 ? [vscode.l10n.t("…and {0} more", lines.length - 20)] : []),
+							...(reload ? ['', vscode.l10n.t("The page will reload.")] : []),
+							'',
+							vscode.l10n.t("This question can be turned off in Chat Settings → Security."),
+						].join('\n'),
+					},
+					vscode.l10n.t("Set Cookies"),
+				);
+			}
+		} finally {
+			if (ask) {
+				this._cookieQuestion = false;
+			}
+		}
+		if (answer !== vscode.l10n.t("Set Cookies")) {
+			refuse(vscode.l10n.t('$(shield) Blocked: {0} wanted to set cookies on {1}', assistantName(caller.kind), plainInLabel(host)));
+			throw new Error('The user declined to set these cookies. Do not ask again unless they say so.');
+		}
+		return this._withSession(caller, async (session, now) => {
+			if (now !== tab || !now.url || new URL(now.url).hostname !== host) {
+				throw new Error('The tab changed while the user was asked; nothing was set.');
+			}
+			const result = await writeCookies((method, params) => session.client.send(method, params ?? {}, session.sessionId), plan.params);
+			if (reload && result.set > 0) {
+				await withTimeout(session.client.send('Page.reload', {}, session.sessionId), pageScrollTimeoutMs, 'reload').catch(() => undefined);
+			}
+			return {
+				format: formatNames[parsed.format],
+				set: result.set,
+				failed: result.failed.length ? result.failed : undefined,
+				skipped: [...parsed.skipped, ...plan.skipped].length ? [...parsed.skipped, ...plan.skipped] : undefined,
+				reloaded: reload && result.set > 0,
+			};
+		});
+	}
+
+	/**
+	 * Cookies the user pasted, on the tab they named — the Paste Cookies
+	 * command. The user is the author, so there is no site rule and no
+	 * question beyond the summary the command shows.
+	 */
+	public async setCookiesForUser(tab: vscode.BrowserTab, params: readonly CookieParam[], reload: boolean): Promise<CookieWriteResult> {
+		return this._borrowSession(tab, async session => {
+			const result = await writeCookies((method, params) => session.client.send(method, params ?? {}, session.sessionId), params);
+			if (reload && result.set > 0) {
+				await withTimeout(session.client.send('Page.reload', {}, session.sessionId), pageScrollTimeoutMs, 'reload').catch(() => undefined);
+			}
+			return result;
+		});
 	}
 
 	public async consoleOutput(clear: boolean, caller: CallerIdentity): Promise<unknown> {
@@ -3642,15 +3903,21 @@ export class BrowserController implements vscode.Disposable {
 	public async press(selector: string, key: string, frameId: string | undefined, caller: CallerIdentity, signal?: AbortSignal): Promise<unknown> {
 		refuseValueProbe(selector);
 		requireFrameId(frameId);
-		return this._withSession(caller, (session, tab) => this._onScrollGate(tab,
-			() => session.actions.keyboardAction(selector, frameId, { key }, signal)));
+		return this._withSession(caller, async (session, tab) => {
+			// A key is typed text too: one press per character would get past the
+			// guard `type` and `fill` apply, so `press` asks the same question.
+			await refuseProtectedField(session.actions, selector, frameId, signal);
+			return this._onScrollGate(tab, () => session.actions.keyboardAction(selector, frameId, { key }, signal));
+		});
 	}
 
 	public async type(selector: string, text: string, frameId: string | undefined, caller: CallerIdentity, signal?: AbortSignal, humanize?: boolean): Promise<unknown> {
 		refuseValueProbe(selector);
 		requireFrameId(frameId);
-		return this._withSession(caller, (session, tab) => this._onScrollGate(tab,
-			() => session.actions.keyboardAction(selector, frameId, { text }, signal, humanize)));
+		return this._withSession(caller, async (session, tab) => {
+			await refuseProtectedField(session.actions, selector, frameId, signal);
+			return this._onScrollGate(tab, () => session.actions.keyboardAction(selector, frameId, { text }, signal, humanize));
+		});
 	}
 
 	public async drag(selector: string, targetSelector: string, frameId: string | undefined, caller: CallerIdentity, smooth?: boolean, signal?: AbortSignal, humanize?: boolean): Promise<unknown> {
@@ -3694,6 +3961,7 @@ export class BrowserController implements vscode.Disposable {
 		refuseValueProbe(selector);
 		requireFrameId(frameId);
 		return this._withSession(caller, async session => {
+			await refuseProtectedField(session.actions, selector, frameId, signal);
 			const result = await session.actions.onElement(selector, frameId, `function(value) {
 				const el = this;
 				const tag = el.tagName.toLowerCase();
@@ -3921,11 +4189,40 @@ export class BrowserController implements vscode.Disposable {
 		this._tabWatch?.dispose();
 		this._focusWatch?.dispose();
 		this._onDidChangeShare.dispose();
+		this._onDidChangeSiteApprovals.dispose();
 		for (const aborts of this._openAborts.values()) {
 			for (const abort of aborts) {
 				abort.abort();
 			}
 		}
 		this._dropSession();
+	}
+}
+
+/** One cookie for a confirmation: the value shown by its start and length, never whole. */
+function cookieLine(param: CookieParam): string {
+	const value = param.value.length > 6 ? `${param.value.slice(0, 4)}… (${param.value.length})` : '•'.repeat(param.value.length);
+	const where = param.domain ?? (param.url ? new URL(param.url).hostname : '');
+	const flags = [param.secure && 'Secure', param.httpOnly && 'HttpOnly', param.sameSite && `SameSite=${param.sameSite}`].filter(Boolean).join(', ');
+	return `• ${plainInLabel(param.name)} = ${plainInLabel(value)} — ${plainInLabel(where)}${param.path && param.path !== '/' ? plainInLabel(param.path) : ''}${flags ? ` (${flags})` : ''}`;
+}
+
+/**
+ * Refuses an agent's typing into a password or payment field
+ * (`hoverdeck.security.protectSecretFields`). The attributes are read from the
+ * page and judged here, by the one rule in `secretGuards.ts`.
+ */
+async function refuseProtectedField(actions: NativeActions, selector: string, frameId: string | undefined, signal?: AbortSignal): Promise<void> {
+	if (!guardEnabled('protectSecretFields')) {
+		return;
+	}
+	const attributes = await actions.onElement(selector, frameId, `function() {
+		return { type: this.getAttribute('type') ?? '', name: this.getAttribute('name') ?? '',
+			id: this.getAttribute('id') ?? '', autocomplete: this.getAttribute('autocomplete') ?? '' };
+	}`, [], signal) as Record<string, string> | undefined;
+	if (attributes && isProtectedField(attributes)) {
+		throw new Error('This is a password or payment field, and agents do not type into those: a page that asks for it '
+			+ 'would get the value. Ask the user to click the field and type it themselves, then carry on. (The user can allow it in Chat '
+			+ 'Settings → Security, setting hoverdeck.security.protectSecretFields.)');
 	}
 }

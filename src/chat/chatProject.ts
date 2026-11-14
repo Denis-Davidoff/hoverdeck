@@ -18,6 +18,7 @@ export interface SavedChatTabs {
 	repos?: unknown;
 	ultracodes?: unknown;
 	pinned?: unknown;
+	scheduled?: unknown;
 }
 
 /**

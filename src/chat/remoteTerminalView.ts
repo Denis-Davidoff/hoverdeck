@@ -15,11 +15,11 @@ export interface RemoteTerminalGates {
 	readonly surface: RemoteTerminalSurface;
 	/** The Exchange connection is end-to-end encrypted. Chrome's loopback bridge needs none. */
 	readonly encrypted: boolean;
-	/** `aiBrowser.chat.remoteTerminal`, read at the user level. */
+	/** `hoverdeck.chat.remoteTerminal`, read at the user level. */
 	readonly setting: boolean;
-	/** `aiBrowser.chat.remoteTerminalShell`: may this surface open a plain shell? Absent: yes. */
+	/** `hoverdeck.chat.remoteTerminalShell`: may this surface open a plain shell? Absent: yes. */
 	readonly openShell?: boolean;
-	/** `aiBrowser.chat.remoteTerminalAgent`: may this surface open an agent's CLI? Absent: yes. */
+	/** `hoverdeck.chat.remoteTerminalAgent`: may this surface open an agent's CLI? Absent: yes. */
 	readonly openAgent?: boolean;
 	/** The per-connection consent asked in VS Code. */
 	readonly consent: 'unasked' | 'asking' | 'yes' | 'no';
@@ -28,20 +28,20 @@ export interface RemoteTerminalGates {
 }
 
 /** The exact words for the setting, so a user can find it in Settings by either spelling. */
-export const remoteTerminalSettingHint = 'In VS Code, turn on the setting “AI Browser › Chat: Remote Terminal” (aiBrowser.chat.remoteTerminal) on the computer running VS Code.';
+export const remoteTerminalSettingHint = 'In VS Code, turn on the setting “Chat: Remote Terminal” (hoverdeck.chat.remoteTerminal) on the computer running VS Code.';
 
 /** The words for one of the two "open" settings. */
 export function remoteOpenHint(kind: 'shell' | 'agent', surface: RemoteTerminalSurface = 'exchange'): string {
 	if (surface === 'chrome') { return `Opening ${kind === 'shell' ? 'plain terminals' : 'agent terminals'} from Chrome is disabled in VS Code → Chat Settings → Connections & permissions.`; }
 	return kind === 'shell'
-		? 'Opening a plain terminal from Chrome and the website is off: in VS Code, turn on “AI Browser › Chat: Remote Terminal Shell” (aiBrowser.chat.remoteTerminalShell).'
-		: 'Opening an agent in a terminal from Chrome and the website is off: in VS Code, turn on “AI Browser › Chat: Remote Terminal Agent” (aiBrowser.chat.remoteTerminalAgent).';
+		? 'Opening a plain terminal from Chrome and the website is off: in VS Code, turn on “Chat: Remote Terminal Shell” (hoverdeck.chat.remoteTerminalShell).'
+		: 'Opening an agent in a terminal from Chrome and the website is off: in VS Code, turn on “Chat: Remote Terminal Agent” (hoverdeck.chat.remoteTerminalAgent).';
 }
 
 /** Why terminals are not on offer there, or `undefined` when they are. */
 export function remoteTerminalReason(g: RemoteTerminalGates): string | undefined {
 	if (g.surface === 'exchange' && !g.encrypted) { return 'Terminals need an encrypted connection: reconnect VS Code with a workspace password.'; }
-	if (!g.setting) { return g.surface === 'chrome' ? 'Chrome terminal access is disabled. In VS Code, turn on AI Browser › Chat: Chrome Terminal Access (aiBrowser.chat.chromeTerminalAccess), or use Chat Settings → Connections & permissions.' : `Terminals are off for the website. ${remoteTerminalSettingHint}`; }
+	if (!g.setting) { return g.surface === 'chrome' ? 'Chrome terminal access is disabled. In VS Code, turn on Chat: Chrome Terminal Access (hoverdeck.chat.chromeTerminalAccess), or use Chat Settings → Connections & permissions.' : `Terminals are off for the website. ${remoteTerminalSettingHint}`; }
 	if (g.consent === 'no') { return 'Terminal access was declined in VS Code for this connection. Reconnect to be asked again.'; }
 	if (g.blocked) { return 'The chat is not available in this VS Code window.'; }
 	return undefined;

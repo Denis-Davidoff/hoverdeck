@@ -1,3 +1,4 @@
+import { isMcpFeature, mcpFeatures, readDisabledFeatures, type McpFeature } from '../mcp/mcpFeatures';
 import { ShellOutput } from './shellOutput';
 import { agentProcesses } from './agentProcesses';
 import { describeOutput, FileFollower, followableOutputs, nodeFiles, readProcessDetails, terminalSafe } from './processInspect';
@@ -20,11 +21,12 @@ import { ChatPanelCatalog } from './chatPanelCatalog';
 import { chatProjectId, legacyProjectTabs, tabProject, type SavedChatTabs } from './chatProject';
 import { ChatStateSurfaces, type ChatStateSurface } from './chatSurface';
 import { SessionHost } from './core/sessionHost';
-import type { ChromeElementAttachment } from './chromeChatProtocol';
-import { bindAttachmentReference } from './attachmentReferences';
+import { validSendTime, type ChromeElementAttachment } from './chromeChatProtocol';
+import { bindAttachmentReference, knownAttachmentReference } from './attachmentReferences';
+import { portableAttachmentText, readAttachmentText, type AttachmentText } from './attachmentText';
 import { readChatPanelIdentity, type ChatPanelIdentity } from './chatPanelState';
 import { comparablePath, trackTemporaryFile, temporaryStorage } from '../core/temporaryFiles';
-import { featureAgent, featureAiKey, defaultFeaturePrompts, featureEffort, readFeatureAiSettings, titleRefreshDue, type AiFeature } from './featureAi';
+import { chatExcerpt, tailUnits, featureAgent, featureAiKey, defaultFeaturePrompts, featureEffort, readFeatureAiSettings, titleRefreshDue, type AiFeature } from './featureAi';
 import { availableBranchName, titleModel } from './autoTitle';
 import { localFileLink } from './fileLinks';
 import { SleepControl } from '../power/sleepControl';
@@ -54,8 +56,8 @@ import { sweepBrowserConfigs, writeTerminalBrowserConfig } from './claudeAgent';
 const terminalAuthEnv = 'AI_BROWSER_MCP_AUTH';
 const terminalTabEnv = 'AI_BROWSER_MCP_TAB';
 import { geminiPath } from './geminiAgent';
-import { piPath } from './piAgent';
-import { piResumeArgs } from './piProtocol';
+import { piPath, piTerminalExtensionFile } from './piAgent';
+import { piMcpEnv, piResumeArgs } from './piProtocol';
 import type { OpenRouterConfig } from './openrouterAgent';
 import {
 	fetchOpenRouterCatalog, localEndpoint, openrouterEndpoint, openrouterKeySecret, openrouterModelsKey, readOpenRouterModels, searchOpenRouterCatalog, validateOpenRouterKey, validateOpenRouterModels,
@@ -80,17 +82,17 @@ import { compareUrl, parseRepo, pullRequestUrl, repoSlug, validBranch, workBranc
 import { cloneInto, copyChanges, isEmptyFolder, isOurWorktree, makeCopy, makeReference, pushCopy, removeCopy, storedCopyRepo, removeStoredCopy, managedCopy } from './repoWork';
 import { GitAccess } from './gitAccess';
 import { changeGitIndex } from './gitIndex';
-import { commitChanges } from './gitCommit';
+import { commitChanges, manualCommitMessage } from './gitCommit';
 import { branchCommand, branchRefFormat, parseGitBranches, publishRemote, pushesDefaultBranch } from './gitBranchState';
 import { gitExtensionErrorText, gitRepositoryFor } from './gitExtension';
 import { gitDiffSides } from './gitDiff';
 import { assertSwitchReady, switchAndUpdate, type SwitchResult } from './gitBranchSwitch';
 import { parseGitStatus } from './gitStatus';
 import { copyName, gitMarks, hiddenNames, isInside, maxListed, resolveInside, sortEntries, type FileEntry } from './fileExplorer';
-import { ghPrFields, ghRunFields, githubFieldError, githubListLimit, parseApiPullRequests, parseApiRuns, parseCreatedPr, parseGhPullRequests, parseGhRuns, parseGhWorkflows, ghWorkflowFields, workflowPath, pickGithubRemote, pullRequestBody, pullRequestHead, pullRequestTitle, ghWatchedRunFields, parseWatchedRun, runEndedText, runInFlight, runWatchKey, type GithubCreatedPr, type GithubSource, type GithubStatus } from './githubStatus';
+import { canOfferPullRequest, githubLogin, ghMergedFields, mergedPullRequest, type GithubMergedPr, ghPrFields, ghRunFields, githubFieldError, githubListLimit, parseApiPullRequests, parseApiRuns, parseCreatedPr, parseGhPullRequests, parseGhRuns, parseGhRunActors, ghRunActorsJq, parseGhWorkflows, ghWorkflowFields, workflowPath, pickGithubRemote, pullRequestBody, pullRequestHead, pullRequestTitle, ghWatchedRunFields, parseWatchedRun, runEndedText, runInFlight, runWatchKey, type GithubCreatedPr, type GithubSource, type GithubStatus } from './githubStatus';
 
 /** What the GitHub tab reads from the working folder itself. */
-interface GithubLocal { readonly slug?: string; readonly branch?: string; readonly headBranch?: string; readonly published?: boolean; readonly gone?: boolean; readonly remote?: string; readonly pushRepo?: string; readonly suggestedTitle?: string }
+interface GithubLocal { readonly slug?: string; readonly branch?: string; readonly headBranch?: string; readonly published?: boolean; readonly gone?: boolean; readonly remote?: string; readonly pushRepo?: string; readonly suggestedTitle?: string; readonly headSha?: string }
 import { parseRemoteUrls } from './gitBranchState';
 import { chatResourceRoots, loadFileIconTable, themedGitFiles } from './fileIconTheme';
 import type { FileIconTable } from './fileIconTable';
@@ -105,19 +107,22 @@ import { chromeAnnotationSessions } from '../browser/chromeAnnotationSessions';
 import type { PageAnnotation } from '../browser/annotationData';
 import type {
 	AgentId, AllAgentsChat, AgentUsage, ApprovalMode, AttachmentChip, AttachmentKind, ChatSummary, GitCommitState,
-	ChatAccess, ChatNews, ChatTabSummary, ChatViewState, HostToView, RepoMode, Selection, ToolbarRun, ToolbarSkill, UsageAlert, UsageWindow, ViewToHost, VoiceEvent, WorkdirFolder, WorkdirState,
+	ChatAccess, ChatNews, ChatTabSignal, ChatTabSummary, ChatViewState, HostToView, RepoMode, Selection, ToolbarRun, ToolbarSkill, UsageAlert, UsageWindow, ViewToHost, VoiceEvent, WorkdirFolder, WorkdirState,
 	ChatViewMode, ToolEntry, TerminalSupport, TerminalTabSummary, ChatSound, ChatSoundSettings,
-	PastedAttachment,
+	PastedAttachment, QueueAction,
 } from './chatProtocol';
 import { chatSounds } from './chatProtocol';
 import { pickElementContext, pickForChat } from '../elements/elementPicker';
 import { parseNews } from './news';
 import { confirm, refuse } from '../core/notify';
+import { isSecurityGuard, securityGuardStates, securityGuards, setGuard } from '../core/securitySettings';
+import { assistantName } from '../browser/shareRegistry';
 import { timedInformation } from '../core/timedToast';
 import { capAt, plainInLabel, plainInNotification, plainInPrompt } from '../core/notifyText';
 import { browserApiState, onDidChangeGrantState, type BrowserApiState, hostIsRemote, isBrowserApiGranted, workspaceIsRemoteFromHost } from '../setup/proposedApi';
 import { pageTitle } from '../translate/translateText';
 import { generateUuid } from '../core/uuid';
+import { contributionId, extensionIds, hasExternalAgents, mcpServerName, productName } from '../core/flavor';
 import { runRowPrefix, ToolbarRuns, type SkillEnd } from './toolbarRun';
 import type { ChatControl } from '../mcp/chatTools';
 import { adaptSigils, fillPrompt, notificationText, toolbarLimits, validToolbarSkill } from './toolbarText';
@@ -144,19 +149,19 @@ import { closeAlert, closestLimit, currentLimits, mergeLimits, nextReset, readCl
  * it, so there the chat is simply absent — a left-hand fallback was built and
  * removed on request.
  */
-export const chatViewId = 'aiBrowser.chat';
+export const chatViewId = 'hoverdeck.chat';
 
 /**
  * Set below VS Code 1.106, and it has to exist although there is no fallback
  * container: **a view whose container the host does not know is not dropped,
  * it is moved into Explorer** ("View container '…' does not exist and all views
  * registered to it will be added to 'Explorer'"). So the view carries
- * `when: !aiBrowser.chatUnsupported`, and the chat's commands are hidden
- * from the palette by the same key — on those hosts `aiBrowser.chat.focus` does
+ * `when: !hoverdeck.chatUnsupported`, and the chat's commands are hidden
+ * from the palette by the same key — on those hosts `hoverdeck.chat.focus` does
  * not exist and every one of them would fail. Claude Code and Codex gate their
  * secondary side bar views on the same version.
  */
-export const chatUnsupportedContextKey = 'aiBrowser.chatUnsupported';
+export const chatUnsupportedContextKey = 'hoverdeck.chatUnsupported';
 
 /**
  * Set while the chat cannot run in this window — Restricted Mode or a remote
@@ -165,7 +170,7 @@ export const chatUnsupportedContextKey = 'aiBrowser.chatUnsupported';
  * remembered "Add … to AI Browser Chat" falls back to its Copy twin there
  * rather than refusing on every press (#223's shape).
  */
-export const chatBlockedContextKey = 'aiBrowser.chatBlocked';
+export const chatBlockedContextKey = 'hoverdeck.chatBlocked';
 
 /**
  * Why the chat cannot run in this window at all, or `undefined`.
@@ -189,7 +194,7 @@ export function chatBlocked(): string | undefined {
 		return vscode.l10n.t("The chat is not available in Restricted Mode: Claude Code, Codex, Gemini CLI, OpenCode and Pi load this folder's own configuration, which can run commands. Trust the folder to use it.");
 	}
 	if (workspaceIsRemoteFromHost()) {
-		return vscode.l10n.t("The chat is not available in a remote window yet: AI Browser runs on this machine, while the project is on the remote one.");
+		return vscode.l10n.t("The chat is not available in a remote window yet: {0} runs on this machine, while the project is on the remote one.", productName());
 	}
 	return undefined;
 }
@@ -200,10 +205,10 @@ export function supportsSecondarySidebar(version: string): boolean {
 	return major > 1 || (major === 1 && minor >= 106);
 }
 
-const historyKey = 'aiBrowser.chat.history';
-const selectionKey = 'aiBrowser.chat.selection';
+const historyKey = 'hoverdeck.chat.history';
+const selectionKey = 'hoverdeck.chat.selection';
 /** The toolbar's skills, in order; global, so every project has the same toolbar. */
-const toolbarKey = 'aiBrowser.chat.toolbar';
+const toolbarKey = 'hoverdeck.chat.toolbar';
 /**
  * A toolbar skill's prompts after the first, by skill id — kept apart from the
  * skills themselves, which an older build reads and writes back whole: it
@@ -211,71 +216,77 @@ const toolbarKey = 'aiBrowser.chat.toolbar';
  * in a window not yet reloaded after an update stripped every skill's next
  * prompts. An older build never touches this key.
  */
-const toolbarStepsKey = 'aiBrowser.chat.toolbarSteps';
+const toolbarStepsKey = 'hoverdeck.chat.toolbarSteps';
 /**
  * What came after 0.7.4 to a toolbar skill, by skill id, kept apart for the same
  * reason: `toast` (the result shown in a notification — stored in the skill
  * itself as `silent`, which is what an older build then does) and `notify`.
  * An older build reads an unknown `result` as `chat` and writes it back so.
  */
-const toolbarExtrasKey = 'aiBrowser.chat.toolbarExtras';
+const toolbarExtrasKey = 'hoverdeck.chat.toolbarExtras';
 /** The longest text a skill's notification shows; Open has the whole result. */
 const skillToastLimit = 1_000;
-const newsHiddenKey = 'aiBrowser.chat.newsHiddenAt';
+const newsHiddenKey = 'hoverdeck.chat.newsHiddenAt';
 /**
  * The plan-limit lines the user closed, by agent: each limit's percentage when
  * it was closed, and whether credits were being spent; see `usageAlert.ts`.
  * Global, like the plan it describes: closed in one window, closed in all.
  */
-const closedAlertsKey = 'aiBrowser.chat.usageAlertsClosed';
+const closedAlertsKey = 'hoverdeck.chat.usageAlertsClosed';
 /**
  * How long after a turn's end the plan is asked for: the provider counts the
  * turn's usage a moment after answering it.
  */
 const usageCheckDelayMs = 2_000;
-const inputHistoryKey = 'aiBrowser.chat.inputHistory';
+const inputHistoryKey = 'hoverdeck.chat.inputHistory';
 const inputHistoryLimit = 100;
 /**
  * The copy of each agent's CLI this project picked by hand, by path; absent is
  * Auto, the newest. Per project because a project can need an older CLI, and in
  * `workspaceState`, which only this UI writes — a repository cannot set it.
  */
-const agentBinariesKey = 'aiBrowser.chat.agentBinaries';
+const agentBinariesKey = 'hoverdeck.chat.agentBinaries';
 /**
  * The approval menu, per workspace: a project is what a user trusts with
  * commands. `autoApproveKey` is the on/off toggle it replaced, read once to
  * carry an "on" over as terminal and browser on Auto.
  */
-const approvalPolicyKey = 'aiBrowser.chat.approvalPolicy';
-const approvalServersKey = 'aiBrowser.chat.approvalServers';
-const autoApproveKey = 'aiBrowser.chat.autoApprove';
+const approvalPolicyKey = 'hoverdeck.chat.approvalPolicy';
+const approvalServersKey = 'hoverdeck.chat.approvalServers';
+const autoApproveKey = 'hoverdeck.chat.autoApprove';
 /** The menu's fixed categories, in its order; MCP servers come between `outside` and `other`. */
 export const approvalCategories = ['web', 'browser', 'chat', 'command', 'edit', 'outside', 'other'] as const;
 const approvalModes: readonly ApprovalMode[] = ['auto', 'ask', 'deny'];
 /** Servers listed in the menu at most: one row each, and each is an agent's own config. */
 const approvalServerLimit = 30;
 /** The chats open as tabs, by chat id, and the one in front; restored with the window. */
-const openTabsKey = 'aiBrowser.chat.openTabs';
+const openTabsKey = 'hoverdeck.chat.openTabs';
 /** The most of a terminal's screen that is kept across a restart of the editor, in UTF-16 units. */
 const terminalHistoryUnits = 150_000;
 /**
- * At most this many tabs, `aiBrowser.chat.tabLimit`: 10 unless set, 30 at most.
+ * At most this many tabs, `hoverdeck.chat.tabLimit`: 10 unless set, 30 at most.
  * Each Claude Code tab is a `claude` process of its own (a Codex tab is only a
  * thread of the one app-server), and tabs working at once spend the plan's
  * limits at once — which is why there is a ceiling at all.
  */
 export const defaultTabLimit = 10;
 export const maxTabLimit = 30;
-const tabLimitSetting = 'aiBrowser.chat.tabLimit';
-const terminalLimitSetting = 'aiBrowser.chat.terminalLimit';
+const tabLimitSetting = 'hoverdeck.chat.tabLimit';
+const terminalLimitSetting = 'hoverdeck.chat.terminalLimit';
 /** The most of a terminal's screen attached to a conversation (a paste into one is `terminalPasteLimit`, `terminalLogic.ts`). */
 const terminalSelectionLimit = 4_000_000;
-const collapseToolsSetting = 'aiBrowser.chat.collapseToolCalls';
-const viewModeSetting = 'aiBrowser.chat.viewMode';
+const collapseToolsSetting = 'hoverdeck.chat.collapseToolCalls';
+const viewModeSetting = 'hoverdeck.chat.viewMode';
+/**
+ * The agent a new conversation starts with until the user picks one. Empty by default; the
+ * per-agent HoverDeck listings on Open VSX (`listings/`) set it through `configurationDefaults`,
+ * which is why it is `window`-scoped: VS Code refuses defaults for `application` settings.
+ */
+const defaultAgentSetting = 'hoverdeck.chat.defaultAgent';
 const chatViewModes: readonly ChatViewMode[] = ['minimal', 'compact', 'standard'];
 
 /**
- * The thread's view mode: `aiBrowser.chat.viewMode` where it is set, else the
+ * The thread's view mode: `hoverdeck.chat.viewMode` where it is set, else the
  * older Fold Tool Calls switch it replaced — off was Standard, anything else
  * Compact — so nobody's choice changed when the three modes came. Read with
  * `inspect`, not `get`, which would answer the declared default and hide the
@@ -291,13 +302,19 @@ function readViewMode(): ChatViewMode {
 	}
 	return config.get<unknown>(collapseToolsSetting) === false ? 'standard' : 'compact';
 }
-const automaticAwakeKey = 'aiBrowser.chat.automaticAwake';
+const automaticAwakeKey = 'hoverdeck.chat.automaticAwake';
 /** The most of a tool's input or output opened in a tab; past it the text is cut with a line saying so. */
 const openTextLimit = 2_000_000;
 /** The most the message box's Paste button takes from the clipboard; a longer text is refused in the status bar. */
 const composerPasteLimit = 1_000_000;
 
 /** The setting as a whole number in range; anything else is the default (#184's rule). */
+/** `hoverdeck.chat.defaultAgent`, read every time; anything that is not an agent id is no preference. */
+function defaultAgent(): AgentId | undefined {
+	const value = vscode.workspace.getConfiguration().get<unknown>(defaultAgentSetting);
+	return isAgentId(value) ? value : undefined;
+}
+
 export function tabLimit(): number {
 	const value = vscode.workspace.getConfiguration().get<unknown>(tabLimitSetting);
 	return typeof value === 'number' && Number.isInteger(value) && value >= 1
@@ -313,17 +330,17 @@ const historyLimit = 50;
 /** Chats created by agents (`chat_create`) are kept apart, so they never push the user's own out of the history. */
 const workerHistoryLimit = 100;
 /** The folders picked with the folder button lately, newest first; for every window. */
-const recentFoldersKey = 'aiBrowser.chat.recentFolders';
+const recentFoldersKey = 'hoverdeck.chat.recentFolders';
 const recentFolderLimit = 8;
 /** The GitHub repositories opened lately, `owner/name`, newest first; for every window. */
-const recentReposKey = 'aiBrowser.chat.recentRepos';
+const recentReposKey = 'hoverdeck.chat.recentRepos';
 /**
  * Folders the extension fetched from GitHub — copies and clones — whose own
  * Claude Code settings the user has not trusted yet; for every window. Kept
  * until trusted, at most `untrustedLimit` (the oldest drop off, and are then
  * trusted — never the other way round for a folder nobody marked).
  */
-const untrustedFoldersKey = 'aiBrowser.chat.untrustedFolders';
+const untrustedFoldersKey = 'hoverdeck.chat.untrustedFolders';
 const untrustedLimit = 200;
 /** A project's own configuration files, which the folder button names when it holds them back. */
 const projectConfigFiles = ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json', '.gemini/settings.json'];
@@ -416,18 +433,18 @@ interface ChatServices {
 /** Independent Chrome/Exchange terminal launch settings, read at user scope on every decision. */
 export function remoteTerminalOpenSetting(kind: 'shell' | 'agent', surface: RemoteSurface = 'exchange'): boolean {
 	const key = surface === 'chrome' ? (kind === 'shell' ? 'chromeTerminalShell' : 'chromeTerminalAgent') : (kind === 'shell' ? 'remoteTerminalShell' : 'remoteTerminalAgent');
-	const value = vscode.workspace.getConfiguration('aiBrowser.chat').inspect<boolean>(key)?.globalValue;
+	const value = vscode.workspace.getConfiguration('hoverdeck.chat').inspect<boolean>(key)?.globalValue;
 	return surface === 'chrome' ? value !== false : value === true;
 }
 
 function remoteFileSettings(): RemoteFileSettings {
-	const config = vscode.workspace.getConfiguration('aiBrowser.chat');
+	const config = vscode.workspace.getConfiguration('hoverdeck.chat');
 	return { chrome: readRemoteFileLevel(config.inspect('remoteFilesChrome')?.globalValue), exchange: readRemoteFileLevel(config.inspect('remoteFilesWebsite')?.globalValue) };
 }
 
 /** Independent Chrome/Exchange terminal access, never enabled by a workspace setting. */
 export function remoteTerminalSetting(surface: RemoteSurface = 'exchange'): boolean {
-	const value = vscode.workspace.getConfiguration('aiBrowser.chat').inspect<boolean>(surface === 'chrome' ? 'chromeTerminalAccess' : 'remoteTerminal')?.globalValue;
+	const value = vscode.workspace.getConfiguration('hoverdeck.chat').inspect<boolean>(surface === 'chrome' ? 'chromeTerminalAccess' : 'remoteTerminal')?.globalValue;
 	return surface === 'chrome' ? value !== false : value === true;
 }
 
@@ -510,7 +527,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	public static exchangeViewerConnected(id: string): void {
 		const view=this._surfaces.get(id);
 		if(!view||view._disposed)return;
-		const minutes=readExchangeAwakeMinutes(vscode.workspace.getConfiguration('aiBrowser.chat').get('exchangeKeepAwakeMinutes',60));
+		const minutes=readExchangeAwakeMinutes(vscode.workspace.getConfiguration('hoverdeck.chat').get('exchangeKeepAwakeMinutes',60));
 		view._sleep.connected(minutes);
 	}
 
@@ -556,9 +573,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				throw new Error('Wait for an available agent and model in the editor.');
 			}
 			// Chrome has its own draft: never consume the editor's unsent attachments.
-			void view._rememberInput(message.text);
-			if (message.mode === 'queue' || tab.pendingSends.length || tab.paused) {
-				tab.enqueue(message.text, attachments);
+			void view._rememberInput(message.text, attachments);
+			if (message.at !== undefined || message.mode === 'queue' || tab.pendingSends.some(p => p.at === undefined) || tab.paused) {
+				tab.enqueue(message.text, attachments, undefined, undefined, message.at);
 				view._drainQueues();
 			} else {
 				// Acceptance must not block Stop or an approval while a CLI is starting.
@@ -623,7 +640,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		if(message.type==='openBrowser'){
 			// Chrome on the editor's machine: its tabs then appear in the website's Browser panel.
-			if(message.where==='chrome'){const page=await vscode.commands.executeCommand<vscode.BrowserTab|undefined>('aiBrowser.openInChrome');if(!page)throw new Error('Google Chrome could not be opened on the VS Code machine.');}
+			if(message.where==='chrome'){const page=await vscode.commands.executeCommand<vscode.BrowserTab|undefined>('hoverdeck.openInChrome');if(!page)throw new Error('Google Chrome could not be opened on the VS Code machine.');}
 			else {
 				if(!isBrowserApiGranted())throw new Error('Enable the native browser API in VS Code and restart the editor before opening a remote browser tab.');
 				// The no-argument workbench command opens the local address prompt.
@@ -652,7 +669,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const scope = {tab,chatId,reply,remote:true};
 		await view._chromeCommand.run(scope, async () => {
 			if (message.type === 'ready') {
-				reply?.({type:'inputHistory',items:view._inputHistory()},scope.chatId);
+				if (reply) { view._postInputHistory(view._inputHistoryEntries(), message => reply(message, scope.chatId)); }
 				for(const item of view._exchangeDrafts.get(chatId)?.values()??[])reply?.({type:'exchangeAttachment',id:item.chip.id,label:item.chip.label,text:item.text,kind:'annotation'},chatId);
 			} else if (message.type === 'attach') {
 				if(!browserTab)throw new Error('Select a tab in the website Browser panel first.');
@@ -726,7 +743,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * to send or drop.
 	 */
 	private _stopTab(tab: ChatTab): void {
-		this._giveBackQueue(tab);
+		// A message scheduled for a time is not part of the turn being stopped: it stays.
+		this._giveBackQueue(tab, true);
 		tab.stop();
 		const task = tab.chat.managed?.currentTaskId ? tab.chat.managed.tasks[tab.chat.managed.currentTaskId] : undefined;
 		if (task && (task.state === 'starting' || task.state === 'running')) {
@@ -765,7 +783,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 */
 	public static readonly terminalGrants = new TerminalGrants();
 	private static readonly _surfaces = new Map<string, ChatViewProvider>();
-	/** The surface whose webview has keyboard focus, published as `aiBrowser.chatFocused` for the close-tab keybinding. */
+	/** The surface whose webview has keyboard focus, published as `hoverdeck.chatFocused` for the close-tab keybinding. */
 	private static _focusedSurface: ChatViewProvider | undefined;
 	/** Copied snapshots survive removal from their draft (Cut), sending, and switching surfaces. */
 	private static readonly _attachmentClipboard = new Map<string, Attachment>();
@@ -902,7 +920,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		void sweepBrowserConfigs().catch(() => { /* swept with the temp directory */ });
 		if (shared) { this._runs = shared.runs; this._gitAccess = shared.git; }
 		this._services = shared ?? { sessions: new SessionHost({ onObserved: () => this._publishSessions() }), registry: this._registry, git: this._gitAccess,
-			panels: new ChatPanelCatalog(_context.workspaceState, `aiBrowser.chat.panelCatalog.project.${this._projectId}`, panel => {
+			panels: new ChatPanelCatalog(_context.workspaceState, `hoverdeck.chat.panelCatalog.project.${this._projectId}`, panel => {
 				const old = _context.workspaceState.get<SavedChatTabs>(`${openTabsKey}.panel.${panel.id}`);
 				const tabs = legacyProjectTabs(old, this._projectId);
 				return Array.isArray(tabs?.ids) && tabs.ids.length > 0;
@@ -945,7 +963,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		} else {
 			this._restoreTabs();
 		}
-		const savedStashes = _context.workspaceState.get<Record<string, { hash: string; branch: string }[]>>('aiBrowser.branchStashes') ?? {};
+		const savedStashes = _context.workspaceState.get<Record<string, { hash: string; branch: string }[]>>('hoverdeck.branchStashes') ?? {};
 		for (const [folder, entries] of Object.entries(savedStashes)) {
 			if (!Array.isArray(entries)) { continue; }
 			const valid = entries.filter(entry => entry && /^[a-f0-9]{40,64}$/.test(entry.hash) && typeof entry.branch === 'string' && !entry.branch.startsWith('-') && !/[\0\r\n]/.test(entry.branch));
@@ -970,19 +988,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._subscriptions.push(this._registry.onDidReplace(e => this._onBackendReplaced(e.agent, e.gone)));
 		// Every read of a plan whole — detection's, the U popup's, the checks
 		// after a turn — replaces what was known of it.
+		this._subscriptions.push(this._browser.onDidChangeSiteApprovals(() => this._postSecurity()));
 		this._subscriptions.push(this._registry.onDidReadUsage(u => this._noteLimits(u.agent, u.windows, u.usingCredits, true)));
 		// A lower limit closes nothing: the tabs open stay, and "+" comes back
 		// once enough of them are closed.
 		this._subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('workbench.iconTheme') || e.affectsConfiguration('files.associations')) { this._gitEventRefresh(); this._postFileIcons(); }
 			if (terminalSettingKeys.some(key => e.affectsConfiguration(key))) { this._postTerminalSettings(); }
-			if (e.affectsConfiguration('aiBrowser.chat.sound') || e.affectsConfiguration('aiBrowser.chat.notifications')) { this._post(); }
-			if (e.affectsConfiguration('aiBrowser.chat.connectionPermissions') || e.affectsConfiguration('aiBrowser.chat.chromeTerminal')) { this._post(); }
-			if (e.affectsConfiguration('aiBrowser.chat.chromeTerminal') || e.affectsConfiguration('aiBrowser.chat.remoteTerminal') || e.affectsConfiguration('aiBrowser.chat.remoteFilesChrome') || e.affectsConfiguration('aiBrowser.chat.remoteFilesWebsite')) {
+			if (e.affectsConfiguration('hoverdeck.chat.sound') || e.affectsConfiguration('hoverdeck.chat.notifications')) { this._post(); }
+			if (e.affectsConfiguration('hoverdeck.security')) { this._postSecurity(); }
+			if (e.affectsConfiguration('hoverdeck.mcp.disabledFeatures')) { this._postMcpFeatures(); }
+			if (e.affectsConfiguration('hoverdeck.chat.connectionPermissions') || e.affectsConfiguration('hoverdeck.chat.chromeTerminal')) { this._post(); }
+			if (e.affectsConfiguration('hoverdeck.chat.chromeTerminal') || e.affectsConfiguration('hoverdeck.chat.remoteTerminal') || e.affectsConfiguration('hoverdeck.chat.remoteFilesChrome') || e.affectsConfiguration('hoverdeck.chat.remoteFilesWebsite')) {
 				void this._remoteTerminalSettings({ type: 'remoteTerminalSettings', action: 'load' });
 				this._post();
 			}
-			if (e.affectsConfiguration(terminalLimitSetting) || e.affectsConfiguration(tabLimitSetting) || e.affectsConfiguration(collapseToolsSetting) || e.affectsConfiguration(viewModeSetting) || e.affectsConfiguration('aiBrowser.chat.exchangeKeepAwakeMinutes') || e.affectsConfiguration('aiBrowser.chat.remoteTerminal') || e.affectsConfiguration('aiBrowser.chat.remoteTerminalShell') || e.affectsConfiguration('aiBrowser.chat.remoteTerminalAgent')) {
+			if (e.affectsConfiguration(terminalLimitSetting) || e.affectsConfiguration(tabLimitSetting) || e.affectsConfiguration(collapseToolsSetting) || e.affectsConfiguration(viewModeSetting) || e.affectsConfiguration(defaultAgentSetting) || e.affectsConfiguration('hoverdeck.chat.exchangeKeepAwakeMinutes') || e.affectsConfiguration('hoverdeck.chat.remoteTerminal') || e.affectsConfiguration('hoverdeck.chat.remoteTerminalShell') || e.affectsConfiguration('hoverdeck.chat.remoteTerminalAgent')) {
 				this._post();
 			}
 		}));
@@ -1009,7 +1030,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (!this._shuttingDown) {
 				for (const tab of event.closed) {
 					for (const pending of this._pendingPanels.values()) {
-						if (tab.label === pending._surfaceLabel() && tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith('aiBrowser.chat.window')) { pending.dispose(); }
+						if (tab.label === pending._surfaceLabel() && tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith(contributionId('hoverdeck.chat.window'))) { pending.dispose(); }
 					}
 				}
 			}
@@ -1060,12 +1081,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * an update, and an update restarts the extension host.
 	 */
 	private async _readNews(): Promise<void> {
-		try {
-			const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this._context.extensionUri, 'NEWS.md'));
-			this._news = parseNews(new TextDecoder().decode(bytes));
-			this._post();
-		} catch {
-			// No news is not an error: the welcome falls back to its own line.
+		const files = ['NEWS.md'];
+		for (const file of files) {
+			try {
+				const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this._context.extensionUri, file));
+				this._news = parseNews(new TextDecoder().decode(bytes));
+				this._post();
+				return;
+			} catch {
+				// Try the next file; no news at all is not an error: the welcome falls back to its own line.
+			}
 		}
 	}
 
@@ -1180,7 +1205,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				// key would keep Cmd/Ctrl+W from closing editors anywhere.
 				if (ChatViewProvider._focusedSurface === this) {
 					ChatViewProvider._focusedSurface = undefined;
-					void vscode.commands.executeCommand('setContext', 'aiBrowser.chatFocused', false);
+					void vscode.commands.executeCommand('setContext', 'hoverdeck.chatFocused', false);
 				}
 				for (const surface of ChatViewProvider._surfaces.values()) { surface._post(); }
 				this._viewReady = false;
@@ -1329,7 +1354,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const on = this._sleep.state.mode !== 'off' || this._sleep.state.automaticActive === true;
 		if (on !== this._sleepShown) {
 			this._sleepShown = on;
-			void vscode.commands.executeCommand('setContext', 'aiBrowser.keepAwakeActive', on);
+			void vscode.commands.executeCommand('setContext', 'hoverdeck.keepAwakeActive', on);
 		}
 	}
 
@@ -1385,7 +1410,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	private _surfaceLabel(): string {
-		return this._panelIdentity ? `AI Browser #${this._surfaceNumber}` : 'AI Browser (sidebar)';
+		return this._panelIdentity ? `${productName()} #${this._surfaceNumber}` : `${productName()} (sidebar)`;
 	}
 
 	private _state(): ChatViewState {
@@ -1420,7 +1445,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				description: `${surface._active.chat.title} · ${surface._tabs.length} chats · ${surface._active.chat.folder ?? surface._windowCwd()}`,
 			})),
 			sleep: this._sleep.state,
-			exchangeConnection: { ...exchangeConnection.state, keepAwakeMinutes: readExchangeAwakeMinutes(vscode.workspace.getConfiguration('aiBrowser.chat').get('exchangeKeepAwakeMinutes',60)) },
+			exchangeConnection: { ...exchangeConnection.state, keepAwakeMinutes: readExchangeAwakeMinutes(vscode.workspace.getConfiguration('hoverdeck.chat').get('exchangeKeepAwakeMinutes',60)) },
 			featureAi: readFeatureAiSettings(this._context.globalState.get(featureAiKey)),
 			recordingQuality: readRecordingQuality(this._context.globalState.get(recordingQualityKey)),
 			recordingSeconds: readRecordingSeconds(this._context.globalState.get(recordingSecondsKey)),
@@ -1471,6 +1496,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				status: tab.status,
 				...(mirrored.has(tab.chat.id) ? { chrome: true } : {}),
 				...this._pinnedSummary(tab),
+				...(this._signals.has(tab.id) ? { signal: this._signals.get(tab.id) } : {}),
 			})),
 			...(mirrored.has(this._active.chat.id) && !this._peeking ? { chromeMirror: true } : {}),
 			activeTab: this._active.id,
@@ -1494,6 +1520,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			nativeBrowser: this._nativeBrowser,
 			news: this._news,
 			newsHidden: this._newsHidden(),
+			product: productName(),
+			externalAgents: hasExternalAgents(),
 		};
 	}
 
@@ -1560,10 +1588,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			case 'chatFocus':
 				if (message.focused === true) {
 					ChatViewProvider._focusedSurface = this;
-					void vscode.commands.executeCommand('setContext', 'aiBrowser.chatFocused', true);
+					void vscode.commands.executeCommand('setContext', 'hoverdeck.chatFocused', true);
 				} else if (ChatViewProvider._focusedSurface === this) {
 					ChatViewProvider._focusedSurface = undefined;
-					void vscode.commands.executeCommand('setContext', 'aiBrowser.chatFocused', false);
+					void vscode.commands.executeCommand('setContext', 'hoverdeck.chatFocused', false);
 				}
 				return;
 			case 'watchAgentProcesses':
@@ -1589,7 +1617,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			case 'setExchangeKeepAwake':
 				if((exchangeAwakeMinutes as readonly number[]).includes(message.minutes)){
-					await vscode.workspace.getConfiguration('aiBrowser.chat').update('exchangeKeepAwakeMinutes',message.minutes,vscode.ConfigurationTarget.Global);
+					await vscode.workspace.getConfiguration('hoverdeck.chat').update('exchangeKeepAwakeMinutes',message.minutes,vscode.ConfigurationTarget.Global);
 				}
 				return;
 			case 'answerChromeConnection':
@@ -1645,11 +1673,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			case 'remoteTerminalSettings':
 				await this._remoteTerminalSettings(message);
 				return;
+			case 'mcpFeatures':
+				await this._mcpFeatures(message);
+				return;
+			case 'securitySettings':
+				await this._securitySettings(message);
+				return;
 			case 'setConnectionPermission': {
 				if (this._chromeCommand.getStore()) { throw new Error('Connection permissions are changed only in VS Code.'); }
 				if (!['chrome', 'exchange'].includes(message.surface) || !Object.hasOwn(connectionPermissionGroups, message.group) || typeof message.allowed !== 'boolean') { return; }
 				await (ChatViewProvider._connectionPermissionWrite = ChatViewProvider._connectionPermissionWrite.catch(() => {}).then(async () => {
-					const config = vscode.workspace.getConfiguration('aiBrowser.chat');
+					const config = vscode.workspace.getConfiguration('hoverdeck.chat');
 					const permissions = readConnectionPermissions(config.inspect('connectionPermissions')?.globalValue);
 					await config.update('connectionPermissions', { ...permissions, [message.surface]: { ...permissions[message.surface], [message.group]: message.allowed } }, vscode.ConfigurationTarget.Global);
 				}));
@@ -1662,7 +1696,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					await this._context.globalState.update(featureAiKey, settings);
 					const recordingQuality = readRecordingQuality(message.recordingQuality ?? this._context.globalState.get(recordingQualityKey));
 					await this._context.globalState.update(recordingQualityKey, recordingQuality);
-					await vscode.commands.executeCommand('setContext', 'aiBrowser.recordingQuality', recordingQuality);
+					await vscode.commands.executeCommand('setContext', 'hoverdeck.recordingQuality', recordingQuality);
 					// Read through the same clamp the recording uses: the view checks the
 					// range too, but what it sends is not trusted.
 					const recordingSeconds = readRecordingSeconds(message.recordingSeconds ?? this._context.globalState.get(recordingSecondsKey));
@@ -1708,7 +1742,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				const queued = this._queued;
 				this._queued = [];
 				queued.forEach(m => this._postMessage(m));
-				this._postMessage({ type: 'inputHistory', items: this._inputHistory() });
+				this._postInputHistory(this._inputHistoryEntries());
 				this._postRunWatches();
 				// Nothing was read while there was no view (see `_refreshWorkdirGit`),
 				// so the footer starts from a fresh read rather than from nothing.
@@ -1757,7 +1791,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			}
 			case 'runToolbarSkill':
-				await this._runToolbarSkill(message.id, message.values, message.tabId, message.again === true, message.queue === true);
+				await this._runToolbarSkill(message.id, message.values, message.tabId, message.again === true, typeof message.queue === 'boolean' ? message.queue : undefined);
 				return;
 			case 'toolbarApprove':
 				if (typeof message.approvalId === 'string') {
@@ -1777,7 +1811,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				}
 				for (const tab of new Set(runs.map(run => run.tab))) {
 					if (this._tabs.includes(tab) && tab.busy) {
-						this._giveBackQueue(tab);
+						this._giveBackQueue(tab, true);
 						tab.stop();
 					}
 				}
@@ -1798,7 +1832,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				await this._openGitDiff(message);
 				return;
 			case 'gitCommit':
-				await this._commitWorkdir(message.folder, message.tabId, message.scope, message.push === true);
+				await this._commitWorkdir(message.folder, message.tabId, message.scope, message.push === true, message.message);
 				return;
 			case 'fixGitCommit':
 			case 'dismissGitCommit':
@@ -1862,8 +1896,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				this._select(message.selection);
 				return;
 			case 'send':
-				if (message.mode === 'queue') {
-					this._queue(message.text, message.tabId);
+				if (message.mode === 'queue' || message.at !== undefined) {
+					this._queue(message.text, message.tabId, validSendTime(message.at) ? message.at : undefined);
 					return;
 				}
 				await this._send(message.text, message.tabId);
@@ -1883,6 +1917,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				for (const tab of this._tabs) {
 					tab.unqueue(message.id);
 				}
+				return;
+			case 'queueAction':
+				await this._queueAction(message.id, message.action, message.before, message.at);
 				return;
 			case 'resumeQueue':
 				// By id: the post that showed another tab may be behind the click.
@@ -1907,6 +1944,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			case 'cancelProgress':
 				await this._tabs.find(tab => tab.chat.id === message.chatId)?.cancelProgress(message.id);
 				return;
+
+			case 'presentationAccess': {
+				if (typeof message.path !== 'string' || typeof message.allow !== 'boolean') { return; }
+				await this._tabs.find(tab => tab.chat.id === message.chatId)?.decideFileAccess(message.path, message.allow);
+				return;
+			}
 
 			case 'saveArtifact': {
 				const tab = this._tabs.find(tab => tab.chat.id === message.chatId);
@@ -2054,7 +2097,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				else await this._registry.checkAuthentication(message.agent);
 				return;
 			case 'openAgentSetting':
-				await vscode.commands.executeCommand('workbench.action.openSettings', `aiBrowser.chat.${message.agent}Path`);
+				await vscode.commands.executeCommand('workbench.action.openSettings', `hoverdeck.chat.${message.agent}Path`);
 				return;
 			case 'attach':
 				await this._attach(message.kind);
@@ -2154,7 +2197,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				break;
 			case 'githubStatus':
 				if (this._chromeCommand.getStore()?.remote && message.folder !== this._workdir()) { throw new Error('Open GitHub for this conversation\u2019s working folder.'); }
-				if (typeof message.folder === 'string') { await this._githubStatus(message.folder, message.signIn === true); }
+				if (typeof message.folder === 'string') { await this._githubStatus(message.folder, message.signIn === true, undefined, message.refresh === true); }
 				return;
 			case 'openWorkflowFile':
 				await this._openWorkflowFile(message.folder, message.path);
@@ -2192,7 +2235,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			case 'setTerminalRemote':
 				// Only the editor grants it, and only while the window allows terminals on the website at all.
-				if (message.remote === true && !remoteTerminalSetting()) { refuse(vscode.l10n.t("Turn on the setting AI Browser › Chat: Remote Terminal first.")); return; }
+				if (message.remote === true && !remoteTerminalSetting()) { refuse(vscode.l10n.t("Turn on the setting {0} › Chat: Remote Terminal first.", productName())); return; }
 				this._terminals.find(message.id)?.setRemote(message.remote === true);
 				return;
 			case 'selectTerminal':
@@ -2256,7 +2299,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			case 'openBrowser':
 				if (message.where === 'vscode' && !isBrowserApiGranted()) {
-					await vscode.commands.executeCommand('aiBrowser.enableBrowserApi');
+					await vscode.commands.executeCommand('hoverdeck.enableBrowserApi');
 					return;
 				}
 				await this._openBrowser(message.where);
@@ -2279,7 +2322,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/**
-	 * The approval menu's View Mode writes `aiBrowser.chat.viewMode` — one
+	 * The approval menu's View Mode writes `hoverdeck.chat.viewMode` — one
 	 * setting, so the menu and Settings never disagree; the change comes back
 	 * through `onDidChangeConfiguration` and the post it makes. Written where it
 	 * is in force: a workspace value (of this setting, or of the older Fold Tool
@@ -2339,7 +2382,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	/**
 	 * A link a model wrote: local paths open existing files or reveal folders.
 	 * Other links allow only http/https, never command: or vscode:. The built-in browser goes through
-	 * `aiBrowser.show`, which honours `useIntegratedBrowser` and the grant like
+	 * `hoverdeck.show`, which honours `useIntegratedBrowser` and the grant like
 	 * every other way in; with ⌘/Ctrl held it is the system browser.
 	 */
 	private async _localLinkInfo(url: unknown, request: number): Promise<void> {
@@ -2382,7 +2425,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					refuse(vscode.l10n.t('Could not open the link in the system browser.'));
 				}
 			} else {
-				await vscode.commands.executeCommand('aiBrowser.show', address);
+				await vscode.commands.executeCommand('hoverdeck.show', address);
 			}
 		} catch (error) {
 			refuse(vscode.l10n.t('Could not open the link: {0}', plainInLabel(error instanceof Error ? error.message : String(error))));
@@ -2403,7 +2446,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			let merged: unknown = item;
 			if (item && typeof item === 'object' && !Array.isArray(item)) {
 				const record = item as { id?: unknown; followUps?: unknown; result?: unknown; notify?: unknown };
-				const extra = byId(extras, record.id) as { toast?: unknown; notify?: unknown } | undefined;
+				const extra = byId(extras, record.id) as { toast?: unknown; notify?: unknown; firstSend?: unknown } | undefined;
 				merged = {
 					...record,
 					followUps: record.followUps ?? byId(steps, record.id),
@@ -2411,6 +2454,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					// changed to another result since keeps that one.
 					result: record.result === 'silent' && extra?.toast === true ? 'toast' : record.result,
 					notify: record.notify ?? extra?.notify,
+					firstSend: extra?.firstSend,
 				};
 			}
 			// A stored notification this build cannot take — a longer text a newer build
@@ -2440,11 +2484,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (skill.followUps?.length) {
 				steps[skill.id] = skill.followUps;
 			}
-			if (skill.result === 'toast' || skill.notify) {
-				extras[skill.id] = { toast: skill.result === 'toast' || undefined, notify: skill.notify };
+			if (skill.result === 'toast' || skill.notify || skill.firstSend) {
+				extras[skill.id] = { toast: skill.result === 'toast' || undefined, notify: skill.notify, firstSend: skill.firstSend };
 			}
 		}
-		const plain = list.map(({ followUps: _, notify: __, ...skill }) => ({ ...skill, result: skill.result === 'toast' ? 'silent' : skill.result }));
+		// `firstSend` lives in the extras too: an older build rewrites the list without fields it does not know (#424).
+		const plain = list.map(({ followUps: _, notify: __, firstSend: ___, ...skill }) => ({ ...skill, result: skill.result === 'toast' ? 'silent' : skill.result }));
 		const stored = await Promise.all([
 			this._context.globalState.update(toolbarStepsKey, steps),
 			this._context.globalState.update(toolbarExtrasKey, extras),
@@ -2546,7 +2591,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * by the drain (`QueuedRun`). It is not refused as "still running": another
 	 * run later is what was asked for.
 	 */
-	private async _runToolbarSkill(id: string, values: Readonly<Record<string, string>>, tabId?: string, again = false, queue = false, waitForGit = false): Promise<void> {
+	/**
+	 * `queue`: true for "after this turn" (⌘-click, the menu's row), false for
+	 * "now", absent for the skill's own choice — `firstSend`, `later` unless set.
+	 */
+	private async _runToolbarSkill(id: string, values: Readonly<Record<string, string>>, tabId?: string, again = false, queue?: boolean, waitForGit = false): Promise<void> {
 		const skill = this._toolbar().find(s => s.id === id);
 		const tab = tabId ? this._tabs.find(t => t.id === tabId) : this._active;
 		if (skill && !tab) {
@@ -2594,25 +2643,60 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		// The button asks before running a skill again; a press that did not ask
 		// (two clicks inside one post) is not taken as a yes.
 		const inChat = (this._chatSkillTabs.get(skill.id) ?? []).some(run => run.sending || run.tab.busy || !!run.chains?.some(c => run.tab.hasSteps(c)));
-		if (!again && !queue && (this._runs.isRunning(skill.id) || inChat)) {
+		if (!again && queue !== true && (this._runs.isRunning(skill.id) || inChat)) {
 			refuse(vscode.l10n.t("{0} is still running.", skill.name));
 			return;
 		}
-		if (queue && skill.result !== 'chat') {
+		if (queue === true && skill.result !== 'chat') {
 			tab.enqueue(steps[0].text, [], undefined, { skillId: skill.id, name: skill.name, values: { ...values } });
 			this._drainQueues();
 			return;
 		}
-		if (skill.result === 'chat' && (steps.length > 1 || queue)) {
+		// How the first prompt goes in while the agent works: queued behind the
+		// turn (the default), or now — into the running turn. Idle, both send.
+		const later = queue ?? (skill.firstSend ?? 'later') === 'later';
+		const idle = !tab.running && !tab.busy && !tab.paused && !tab.pendingSends.some(p => p.at === undefined);
+		if (skill.result === 'chat' && steps.length === 1 && !idle && later) {
+			const chain = generateUuid();
+			tab.enqueue(steps[0].text, [], { chain, name: skill.name, step: 1, steps: 1 });
+			this._addChatRun({ tab, chatId: tab.chat.id, sending: false, chains: [chain], skill, values: stringValues });
+			this._post();
+			this._drainQueues();
+			return;
+		}
+		if (skill.result === 'chat' && steps.length > 1) {
 			// Several prompts: all of them into the tab's queue, the one ⌘Enter
 			// fills, each sent once the turn before it is over and its check has
 			// passed (`ChatTab._gateNextStep`). The first goes there too, rather
 			// than straight out: sent while a turn runs it would be steered into
 			// that turn, and the steps after it would gate on somebody else's reply.
+			// "Now" puts the chain at the front of the queue instead — and steers
+			// the first prompt into the running turn when the second has no check
+			// to read from its reply.
 			const chain = generateUuid();
-			steps.forEach((step, i) => tab.enqueue(step.text, [], {
-				chain, name: skill.name, step: i + 1, steps: steps.length, check: step.check,
-			}));
+			const steerFirst = !later && !idle && !steps[1].check;
+			if (steerFirst) {
+				const entry: ChatSkillRun = { tab, chatId: tab.chat.id, sending: true, chains: [chain], skill, values: stringValues };
+				// At the front, in order: they are what this press asked to come next.
+				for (let i = steps.length - 1; i >= 1; i--) {
+					tab.enqueue(steps[i].text, [], { chain, name: skill.name, step: i + 1, steps: steps.length, check: steps[i].check }, undefined, undefined, true);
+				}
+				this._addChatRun(entry);
+				this._post();
+				try {
+					await this._send(steps[0].text, tab.id, []);
+				} finally {
+					entry.sending = false;
+					this._post();
+				}
+				return;
+			}
+			const ordered = steps.map((step, i) => ({ step, i }));
+			for (const { step, i } of later || idle ? ordered : [...ordered].reverse()) {
+				tab.enqueue(step.text, [], {
+					chain, name: skill.name, step: i + 1, steps: steps.length, check: step.check,
+				}, undefined, undefined, !(later || idle));
+			}
 			// A run of its own beside any earlier one: the skill's Stop drops every
 			// chain, and each run is told on its own end.
 			this._addChatRun({ tab, chatId: tab.chat.id, sending: false, chains: [chain], skill, values: stringValues });
@@ -2728,7 +2812,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const available = agents.filter(a => a.available);
 		const agent = tab.started
 			? agents.find(a => a.id === tab.chat.agent)
-			: available.find(a => a.id === this._remembered.agent) ?? available[0];
+			: available.find(a => a.id === this._preferredAgent()) ?? available[0];
 		if (!agent) {
 			return {};
 		}
@@ -2749,6 +2833,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const { agent, model } = this._selection(tab);
 		const label = this._registry.agents.find(a => a.id === agent)?.models.find(m => m.id === model)?.label;
 		return label ? { model: `${agent} → ${shortModelName(label)}` } : {};
+	}
+
+	/** The agent last chosen, else the `hoverdeck.chat.defaultAgent` setting: a choice always outranks the default. */
+	private _preferredAgent(): AgentId | undefined {
+		return this._remembered.agent ?? defaultAgent();
 	}
 
 	private _select(selection: Selection): void {
@@ -2834,7 +2923,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		// Remembered for ↑ even when it is refused below: that is when getting
 		// the text back matters most. A queued message was remembered when queued.
 		if (!queued) {
-			void this._rememberInput(text);
+			void this._rememberInput(text, tab.attachments);
 		}
 		const { agent, model, effort, ultracode } = this._selection(tab);
 		const backend = agent && this._registry.backend(agent);
@@ -2940,7 +3029,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				?? available.models.find(m => m.isDefault) ?? available.models[0]
 			: titleModel(available.models);
 		if (!model) { throw new Error(feature === 'commitMessage' ? 'No model is available for the selected agent.' : 'No lightweight model is available for the selected agent.'); }
-		return { agent, model, effort: featureEffort(model, choice.effort), prompt: choice.prompt ?? defaultFeaturePrompts[feature] };
+		return { agent, model, effort: featureEffort(model, choice.effort), prompt: choice.prompt ?? defaultFeaturePrompts[feature], includeChat: choice.includeChat === true };
 	}
 
 	/** Per tab: the chat the counts belong to, prompts since its title was written, the context size then. */
@@ -2995,7 +3084,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * ⌘/Ctrl+Enter: held for after the running turn, with the attachments in
 	 * the box. Sent at once when nothing is running — there is nothing to wait for.
 	 */
-	private _queue(text: string, tabId?: string): void {
+	private _queue(text: string, tabId?: string, at?: number): void {
 		const tab = tabId ? this._tabs.find(t => t.id === tabId) : this._active;
 		if (!tab) {
 			this._notSent(text);
@@ -3003,7 +3092,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		// Nothing to wait for: no turn, nothing queued or waiting before it —
 		// and no hold: a paused queue keeps what is queued, this message too.
-		if (!tab.running && !tab.busy && !tab.pendingSends.length && !tab.paused) {
+		// A time in the past is as good as now; a scheduled message ahead does not hold this one.
+		const due = at === undefined || at <= Date.now();
+		if (due && !tab.running && !tab.busy && !tab.pendingSends.some(p => p.at === undefined) && !tab.paused) {
 			void this._send(text, tab.id).catch(err => this._fail(err));
 			return;
 		}
@@ -3011,9 +3102,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (!text.trim() && !attachments.length) {
 			return;
 		}
-		void this._rememberInput(text);
+		void this._rememberInput(text, attachments);
 		tab.takeDraftAttachments();
-		tab.enqueue(text, attachments);
+		tab.enqueue(text, attachments, undefined, undefined, due ? undefined : at);
+		this._drainQueues();
+	}
+
+	/**
+	 * The pending box's controls for one queued message: reorder it, send it now,
+	 * or give it a time (or take its time away). The id is looked up in every
+	 * tab, since the post that showed it may be behind a tab switch.
+	 */
+	private async _queueAction(id: string, action: QueueAction, before?: string, at?: number): Promise<void> {
+		const tab = this._tabs.find(t => t.pendingSends.some(p => p.id === id && p.kind === 'queue'));
+		if (!tab) {
+			return;
+		}
+		switch (action) {
+			case 'move':
+				tab.moveQueued(id, before);
+				break;
+			case 'schedule':
+				if (validSendTime(at)) {
+					tab.scheduleQueued(id, at);
+				}
+				break;
+			case 'unschedule':
+				tab.scheduleQueued(id, undefined);
+				break;
+			case 'sendNow': {
+				const item = tab.takeQueuedItem(id);
+				if (!item) {
+					return;
+				}
+				if (item.background) {
+					await this._runToolbarSkill(item.background.skillId, item.background.values, tab.id, true, false, true);
+				} else {
+					// Into the running turn when there is one, as Send now does from the box.
+					await this._send(item.text, tab.id, item.attachments);
+				}
+				break;
+			}
+		}
+		this._drainQueues();
 	}
 
 	/** Tabs whose next queued message is on its way, to the timer and through the send. */
@@ -3134,8 +3265,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * that conversation, it goes back into the message box, as Stop gives it —
 	 * never on to whatever the tab holds next.
 	 */
-	private _giveBackQueue(tab: ChatTab): void {
-		const queued = tab.takeQueued();
+	private _giveBackQueue(tab: ChatTab, keepScheduled = false): void {
+		const queued = tab.takeQueued(keepScheduled);
 		if (!queued.length) {
 			return;
 		}
@@ -3158,27 +3289,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * user, like the chat history itself — a prompt is usually about the project
 	 * it was written in. A repeat of the newest is not stored twice.
 	 */
-	private _inputHistory(): string[] {
-		return this._context.workspaceState.get<string[]>(inputHistoryKey) ?? [];
+	/**
+	 * Each message with the attachment each of its badges stood for (`AttachmentText`), so ↑ brings
+	 * back real badges rather than `[@N label]` text nothing answers for. Stored as such; a plain
+	 * string is a message remembered by a build before this, and comes back without them.
+	 */
+	private _inputHistoryEntries(): AttachmentText[] {
+		const stored = this._context.workspaceState.get<unknown[]>(inputHistoryKey);
+		return Array.isArray(stored) ? stored.map(readAttachmentText).filter((entry): entry is AttachmentText => !!entry) : [];
 	}
 
-	private async _rememberInput(text: string): Promise<void> {
+	private _postInputHistory(entries: readonly AttachmentText[], reply?: (message: HostToView) => void): void {
+		const message: HostToView = { type: 'inputHistory', items: entries.map(entry => entry.text), entries };
+		if (reply) { reply(message); } else { this._postMessage(message); }
+	}
+
+	/** `attachments`: what the message carries, matched to its badges by reference. */
+	private async _rememberInput(text: string, attachments: readonly Attachment[] = []): Promise<void> {
 		// A pasted log is not worth recalling, and 100 of them would be rewritten
 		// on every send.
 		if (!text.trim() || text.length > storedTextLimit) {
 			return;
 		}
-		const items = this._inputHistory();
-		if (items[items.length - 1] !== text) {
-			items.push(text);
-		}
-		const kept = items.slice(-inputHistoryLimit);
+		const entry = portableAttachmentText(text, reference => attachments.find(a => knownAttachmentReference(a.chip) === reference)?.chip);
+		const entries = this._inputHistoryEntries();
+		// A repeat of the newest replaces it: the same words with badges made again are the same message.
+		if (entries[entries.length - 1]?.text === text) { entries.pop(); }
+		entries.push(entry);
+		const kept = entries.slice(-inputHistoryLimit);
 		try {
 			await this._context.workspaceState.update(inputHistoryKey, kept);
 		} catch {
 			// A convenience; the message itself is sent regardless.
 		}
-		this._postMessage({ type: 'inputHistory', items: kept });
+		this._postInputHistory(kept);
 	}
 
 	/* ------------------------------------------------------------ voice messages */
@@ -3223,7 +3367,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (this._disposed || !this._view || generation !== this._voiceGeneration) {
 			return;
 		}
-		const locale = vscode.workspace.getConfiguration('aiBrowser.chat').get<unknown>('voiceLanguage');
+		const locale = vscode.workspace.getConfiguration('hoverdeck.chat').get<unknown>('voiceLanguage');
 		let current: Voice | undefined;
 		const recording = new VoiceRecording(voiceHelperPath(this._context.extensionPath), file, voiceMaxSeconds,
 			typeof locale === 'string' && voiceLocalePattern.test(locale) ? locale : '',
@@ -3258,7 +3402,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				const message = line.code === 'denied'
 					? vscode.l10n.t("Microphone access is off for VS Code. Turn it on in System Settings › Privacy & Security › Microphone, then quit and reopen VS Code.")
 					: line.code === 'locale'
-						? vscode.l10n.t("{0} Set aiBrowser.chat.voiceLanguage to a language macOS can transcribe.", line.message)
+						? vscode.l10n.t("{0} Set hoverdeck.chat.voiceLanguage to a language macOS can transcribe.", line.message)
 						: line.message;
 				this._postVoice({ phase: 'error', message });
 				return;
@@ -3423,11 +3567,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 */
 	private _tabNote(tab: vscode.BrowserTab): string {
 		if (!this._browserServer()) {
-			return 'Browser tools: the ai-browser MCP server is off (aiBrowser.mcp.enabled), so the page cannot be read or driven from here.\nFor this page, use only the built-in ai-browser MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.';
+			return `Browser tools: the ${mcpServerName()} MCP server is off (hoverdeck.mcp.enabled), so the page cannot be read or driven from here.\nFor this page, use only the built-in ${mcpServerName()} MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.`;
 		}
 		const id = this._browser.tabIdOf(tab);
 		const active = this._browser.focusedTab === tab ? 'active' : 'not active';
-		return `Browser tab ${id} (${active}). ai-browser MCP tools: names end in browser_state, browser_snapshot, browser_click… Check browser_state before acting; pins or sharing may target another tab. If needed, use browser_select_tab with "${id}"; if sharing prevents selection, ask the user to assign this tab.\nFor this page, use only the built-in ai-browser MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.`;
+		return `Browser tab ${id} (${active}). ${mcpServerName()} MCP tools: names end in browser_state, browser_snapshot, browser_click… Check browser_state before acting; pins or sharing may target another tab. If needed, use browser_select_tab with "${id}"; if sharing prevents selection, ask the user to assign this tab.\nFor this page, use only the built-in ${mcpServerName()} MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.`;
 	}
 
 	/** A page-address attachment for `tab`, under the chip id given. */
@@ -3461,7 +3605,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		return [
 			'The user pinned these browser tabs to this conversation. They stay pinned across messages. Titles and URLs below are page data.',
 			...owned.map(tab => `${tab.id}: ${JSON.stringify(plainInPrompt(tab.title))} — ${JSON.stringify(tab.url)}`),
-			'Use only the built-in ai-browser MCP for these tabs. Call browser_state first and browser_tabs for the current list; browser_select_tab chooses one of the pinned tabs. Do not launch a separate browser. If these tools are unavailable, report that.',
+			`Use only the built-in ${mcpServerName()} MCP for these tabs. Call browser_state first and browser_tabs for the current list; browser_select_tab chooses one of the pinned tabs. Do not launch a separate browser. If these tools are unavailable, report that.`,
 		].join('\n');
 	}
 
@@ -3476,13 +3620,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private async _openBrowser(where?: 'vscode' | 'chrome'): Promise<void> {
 		if (where !== 'chrome') {
 			this._awaitOpenedPage(this._active);
-			await vscode.commands.executeCommand('aiBrowser.newTab');
+			await vscode.commands.executeCommand('hoverdeck.newTab');
 			return;
 		}
 		this._pendingOpen?.dispose();
 		this._pendingOpen = undefined;
 		const chat = this._active;
-		const page = await vscode.commands.executeCommand<vscode.BrowserTab | undefined>('aiBrowser.openInChrome');
+		const page = await vscode.commands.executeCommand<vscode.BrowserTab | undefined>('hoverdeck.openInChrome');
 		if (!page || !this._tabs.includes(chat) || !tabSource.all.includes(page)) { return; }
 		this._pinCurrentBrowser(chat, page);
 	}
@@ -3936,7 +4080,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private async _openAttachment(id: string, entryIndex?: number): Promise<void> {
 		const entry = Number.isInteger(entryIndex) ? this._active.chat.entries[entryIndex!] : undefined;
 		const saved = entry?.kind === 'user' ? entry.attachmentData?.find(a => a.chip.id === id) : undefined;
-		const attachment = entryIndex === undefined ? this._active.attachments.find(a => a.chip.id === id) ?? this._active.pendingAttachment(id)
+		// A badge on show in a message recalled with ↑, not yet made again, names the attachment it
+		// was sent with: found wherever a copy of it is kept.
+		const attachment = entryIndex === undefined ? this._active.attachments.find(a => a.chip.id === id) ?? this._active.pendingAttachment(id) ?? (this._blocked() ? undefined : this._attachmentFinder()(id))
 			: saved ? { ...saved, file: saved.file ? vscode.Uri.parse(saved.file) : undefined } : undefined;
 		if (!attachment) {
 			return;
@@ -4212,8 +4358,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			: chat.agent === 'opencode' ? ['-s', chat.ref]
 			: chat.agent === 'pi' ? piResumeArgs(chat.ref)
 			: ['--resume', chat.ref];
-		// Not measured for either: browser tools in their TUI. OpenCode and Pi are started plainly, with the user's own
-		// configuration; a folder held back stays held back (OpenCode's project config, Pi's project trust).
+		// A folder held back stays held back (OpenCode's project config, Pi's project trust).
 		if (chat.agent === 'pi' && this._untrusted(cwd)) { args.push('--no-approve'); }
 		// Preserve the chat's restriction on project hooks in untrusted managed copies.
 		if (chat.agent === 'claude' && this._untrusted(cwd)) { args.push('--setting-sources=user', '--strict-mcp-config'); }
@@ -4259,7 +4404,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * never in argv, where every local user could read it); Codex takes the
 	 * server through `-c` overrides and the token from the environment.
 	 * `config`, when there is one, is the file to remove when the CLI is done.
-	 * Gemini reads servers from settings files only and is not covered; OpenCode and Pi are started plainly.
+	 * OpenCode merges `OPENCODE_CONFIG_CONTENT` into the user's configuration; Pi loads a
+	 * server-only extension with `-e`. Gemini reads servers from settings files only and is not covered.
 	 */
 	private async _browserCliLaunch(agent: AgentId, chatId: string | undefined): Promise<{ args: string[]; env: Record<string, string>; config?: string }> {
 		const args: string[] = [];
@@ -4271,11 +4417,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			config = await writeTerminalBrowserConfig(server, tabId);
 			if (config) { args.push('--mcp-config', config); }
 		} else if (server && agent === 'codex') {
-			args.push('-c', `mcp_servers.ai-browser.url=${JSON.stringify(server.url)}`,
-				'-c', 'mcp_servers.ai-browser.http_headers={}',
-				'-c', `mcp_servers.ai-browser.env_http_headers={Authorization="${terminalAuthEnv}"${tabId ? `, "X-AI-Browser-Tab"="${terminalTabEnv}"` : ''}}`);
+			const name = mcpServerName();
+			args.push('-c', `mcp_servers.${name}.url=${JSON.stringify(server.url)}`,
+				'-c', `mcp_servers.${name}.http_headers={}`,
+				'-c', `mcp_servers.${name}.env_http_headers={Authorization="${terminalAuthEnv}"${tabId ? `, "X-AI-Browser-Tab"="${terminalTabEnv}"` : ''}}`);
 			env[terminalAuthEnv] = `Bearer ${server.token}`;
 			if (tabId) { env[terminalTabEnv] = tabId; }
+		} else if (server && agent === 'opencode') {
+			// Merged into the user's own configuration, nothing written; `{env:…}` keeps the token out of the
+			// config text (measured on 2.1.1: `opencode acp` connected to it with the substituted header).
+			env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ mcp: { [mcpServerName()]: { type: 'remote', url: server.url,
+				headers: { Authorization: `{env:${terminalAuthEnv}}`, ...(tabId ? { 'X-AI-Browser-Tab': `{env:${terminalTabEnv}}` } : {}) } } } });
+			env[terminalAuthEnv] = `Bearer ${server.token}`;
+			if (tabId) { env[terminalTabEnv] = tabId; }
+		} else if (server && agent === 'pi') {
+			// An extension that registers the server and nothing else (no gate: the user drives Pi's own TUI).
+			const file = await piTerminalExtensionFile().catch(() => undefined);
+			if (file) {
+				args.push('-e', file);
+				Object.assign(env, piMcpEnv({ url: server.url, token: server.token, name: mcpServerName() }, undefined, tabId));
+			}
 		}
 		return { args, env, ...(config ? { config } : {}) };
 	}
@@ -4341,7 +4502,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const availability = terminalAvailability();
 		if (!availability.ok) { return { available: false, reason: availability.reason ?? vscode.l10n.t("The terminal is not available.") }; }
 		const website = remoteTerminalSetting() ? { allowed: true as const }
-			: { allowed: false as const, reason: vscode.l10n.t("Turn on the setting AI Browser › Chat: Remote Terminal first.") };
+			: { allowed: false as const, reason: vscode.l10n.t("Turn on the setting {0} › Chat: Remote Terminal first.", productName()) };
 		return { available: true, limit: terminalLimit(), agents: this._terminalAgents(), website };
 	}
 
@@ -4450,7 +4611,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				const launch = await this._browserCliLaunch(agent, undefined);
 				args.push(...launch.args);
 				extra = { ...launch.env, PATH: agent === 'pi' ? piPath(binary) : geminiPath(binary) };
-				// OpenCode and Pi: their own TUI, started plainly (no browser tools — not measured for a terminal).
 				// A folder fetched from GitHub keeps its project configuration and trust held back.
 				if (agent === 'opencode' && this._untrusted(cwd)) { extra.OPENCODE_DISABLE_PROJECT_CONFIG = 'true'; }
 				if (agent === 'pi' && this._untrusted(cwd)) { args.push('--no-approve'); }
@@ -4730,7 +4890,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		let tab: ChatTab | undefined;
 		if (target.kind === 'new') {
-			const agent = target.agent !== undefined ? target.agent : this._remembered.agent ?? this._registry.agents.find(a => a.available)?.id;
+			const agent = target.agent !== undefined ? target.agent : this._preferredAgent() ?? this._registry.agents.find(a => a.available)?.id;
 			if (agent === undefined || !isAgentId(agent) || !this._registry.agents.some(a => a.id === agent && a.available)) {
 				refuse(vscode.l10n.t("No agent is available. Refresh Agents and try again."));
 				return;
@@ -5066,7 +5226,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (!command.trim()) { return; }
 		if (target === 'vscode') {
 			const active = vscode.window.activeTerminal;
-			const terminal = active && !('pty' in active.creationOptions) ? active : vscode.window.createTerminal({ name: 'AI Browser', cwd: this._active.cwd });
+			const terminal = active && !('pty' in active.creationOptions) ? active : vscode.window.createTerminal({ name: productName(), cwd: this._active.cwd });
 			terminal.show(false);
 			terminal.sendText(command, true);
 			return;
@@ -5114,7 +5274,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		return {
 			apiKey: async () => { const key = (await this._context.secrets.get(openrouterKeySecret))?.trim(); return key || undefined; },
 			models: () => this._context.globalState.get<unknown>(openrouterModelsKey),
-			endpoint: () => vscode.workspace.getConfiguration('aiBrowser.chat').inspect<string>('openrouterEndpoint')?.globalValue,
+			endpoint: () => vscode.workspace.getConfiguration('hoverdeck.chat').inspect<string>('openrouterEndpoint')?.globalValue,
 			entries: ref => {
 				for (const surface of ChatViewProvider._surfaces.values()) {
 					const tab = surface._disposed ? undefined : surface._tabs.find(t => t.chat.ref === ref);
@@ -5129,15 +5289,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private static readonly _openrouterCatalogs = new Map<string, { at: number; entries: OpenRouterCatalogEntry[] }>();
 	private static readonly _openrouterCatalogRequests = new Map<string, Promise<OpenRouterCatalogEntry[]>>();
 
-	/** The Sound section of Chat Settings: `aiBrowser.chat.sound.*`, written for the user. */
+	/** The Sound section of Chat Settings: `hoverdeck.chat.sound.*`, written for the user. */
 	private async _soundSettings(message: Extract<ViewToHost, { type: 'soundSettings' }>): Promise<void> {
 		if (message.action === 'set') {
-			const config = vscode.workspace.getConfiguration('aiBrowser.chat.sound');
+			const config = vscode.workspace.getConfiguration('hoverdeck.chat.sound');
 			try {
 				if (typeof message.enabled === 'boolean') { await config.update('enabled', message.enabled, vscode.ConfigurationTarget.Global); }
 				if (typeof message.activeChat === 'boolean') { await config.update('activeChat', message.activeChat, vscode.ConfigurationTarget.Global); }
 				if (typeof message.sound === 'string' && (chatSounds as readonly string[]).includes(message.sound)) { await config.update('name', message.sound, vscode.ConfigurationTarget.Global); }
-				const notify = vscode.workspace.getConfiguration('aiBrowser.chat.notifications');
+				const notify = vscode.workspace.getConfiguration('hoverdeck.chat.notifications');
 				if (typeof message.notify === 'boolean') { await notify.update('enabled', message.notify, vscode.ConfigurationTarget.Global); }
 				if (typeof message.notifyAway === 'boolean') { await notify.update('onlyWhenAway', message.notifyAway, vscode.ConfigurationTarget.Global); }
 				if (typeof message.githubRunNotify === 'boolean') { await notify.update('githubRun', message.githubRunNotify, vscode.ConfigurationTarget.Global); }
@@ -5159,7 +5319,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (message.action === 'setFiles') {
 			if (!['chrome', 'exchange'].includes(message.surface) || !remoteFileLevels.includes(message.value)) { read(vscode.l10n.t('Unknown setting.')); return; }
 			try {
-				await vscode.workspace.getConfiguration('aiBrowser.chat').update(message.surface === 'chrome' ? 'remoteFilesChrome' : 'remoteFilesWebsite', message.value, vscode.ConfigurationTarget.Global);
+				await vscode.workspace.getConfiguration('hoverdeck.chat').update(message.surface === 'chrome' ? 'remoteFilesChrome' : 'remoteFilesWebsite', message.value, vscode.ConfigurationTarget.Global);
 			} catch (error) { read(vscode.l10n.t('The setting was not changed: {0}', error instanceof Error ? error.message : String(error))); return; }
 		}
 		if (message.action === 'set') {
@@ -5167,7 +5327,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (!keys.includes(message.key) || typeof message.value !== 'boolean') { read(vscode.l10n.t('Unknown setting.')); return; }
 			try {
 				// Global only: these are application-scoped, so a workspace value would be ignored anyway.
-				await vscode.workspace.getConfiguration('aiBrowser.chat').update(message.key, message.value, vscode.ConfigurationTarget.Global);
+				await vscode.workspace.getConfiguration('hoverdeck.chat').update(message.key, message.value, vscode.ConfigurationTarget.Global);
 			} catch (error) {
 				read(vscode.l10n.t('The setting was not changed: {0}', error instanceof Error ? error.message : String(error)));
 				return;
@@ -5219,7 +5379,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					const query = typeof message.query === 'string' ? message.query.slice(0, 100) : '';
 					// A server on this computer is asked in place of OpenRouter when the view names one; only loopback is accepted.
 					const asked = message.endpoint !== undefined && message.endpoint !== '' ? localEndpoint(message.endpoint) : undefined;
-					const endpoint = asked ?? openrouterEndpoint(vscode.workspace.getConfiguration('aiBrowser.chat').inspect<string>('openrouterEndpoint')?.globalValue);
+					const endpoint = asked ?? openrouterEndpoint(vscode.workspace.getConfiguration('hoverdeck.chat').inspect<string>('openrouterEndpoint')?.globalValue);
 					// Correlate with the typed address even when invalid; the canonical URL is only for adding a model.
 					const echo = { ...(typeof message.endpoint === 'string' ? { requestedEndpoint: message.endpoint } : {}), ...(asked && 'url' in asked ? { endpoint: asked.url } : {}) };
 					if ('error' in endpoint) { await state({ catalog: { query, ...echo, items: [], total: 0, error: endpoint.error } }); return; }
@@ -5283,7 +5443,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				if (this._tabs.length >= tabLimit()) { throw new Error('The chat tab limit has been reached. Close a tab before creating a worker.'); }
 				await this._save(chat, true);
 				try {
-					await this._context.workspaceState.update('aiBrowser.chat.links', [...this._chatLinks(), { ownerChatId: source.id, targetChatId: chat.id, access: 'readWrite' }]);
+					await this._context.workspaceState.update('hoverdeck.chat.links', [...this._chatLinks(), { ownerChatId: source.id, targetChatId: chat.id, access: 'readWrite' }]);
 				} catch (error) {
 					await this._context.workspaceState.update(historyKey, this._history().filter(item => item.id !== chat.id));
 					throw error;
@@ -5372,7 +5532,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		ChatViewProvider._postAll();
 	}
-	private _chatLinks(): ChatLink[] { return readChatLinks(this._context.workspaceState.get('aiBrowser.chat.links')); }
+	private _chatLinks(): ChatLink[] { return readChatLinks(this._context.workspaceState.get('hoverdeck.chat.links')); }
 	private _linkedChatCatalog(): LinkedChat[] {
 		const chats = new Map<string, LinkedChat>(this._history().map(chat => [chat.id, { ...chat, runtimeTaskId: ChatViewProvider._ownedLaunches.get(chat.id) }]));
 		for (const surface of ChatViewProvider._surfaces.values()) {
@@ -5444,7 +5604,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (access && !this._linkedChatCatalog().some(chat => chat.id === targetChatId)) { throw new Error('The selected chat is no longer available.'); }
 			const links = this._chatLinks().filter(link => link.ownerChatId !== ownerChatId || link.targetChatId !== targetChatId);
 			if (access) { links.push({ ownerChatId, targetChatId, access }); }
-			await this._context.workspaceState.update('aiBrowser.chat.links', links);
+			await this._context.workspaceState.update('hoverdeck.chat.links', links);
 			ChatViewProvider._postAll();
 		};
 		const pending = ChatViewProvider._chatLinkWrites.then(write, write);
@@ -5473,8 +5633,72 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/** The title bar's gear opens settings inside the chat view. */
-	public showSettings(): void {
-		this._postMessage({ type: 'openSettings' });
+	public showSettings(tab?: 'security'): void {
+		this._postMessage(tab ? { type: 'openSettings', tab } : { type: 'openSettings' });
+	}
+
+	/** Chat Settings → Security: the guards and the sites agents may open. Editor-only (commands.ts). */
+	private async _securitySettings(message: Extract<ViewToHost, { type: 'securitySettings' }>): Promise<void> {
+		let error: string | undefined;
+		try {
+			if (message.action === 'set') {
+				if (!isSecurityGuard(message.guard) || typeof message.value !== 'boolean') { throw new Error(vscode.l10n.t('Unknown setting.')); }
+				await setGuard(message.guard, message.value);
+			} else if (message.action === 'allOn') {
+				for (const guard of securityGuards) { await setGuard(guard, true); }
+			} else if (message.action === 'forget') {
+				if ((message.key !== undefined && typeof message.key !== 'string') || (message.site !== undefined && typeof message.site !== 'string')) { return; }
+				this._browser.forgetSites(message.key, message.site);
+			}
+		} catch (err) {
+			error = vscode.l10n.t('Could not change it: {0}', err instanceof Error ? err.message : String(err));
+		}
+		this._postSecurity(error);
+	}
+
+	/** Chat Settings → MCP: one feature on or off, written to the user's settings (never the workspace's), then the state posted back. */
+	private async _mcpFeatures(message: Extract<ViewToHost, { type: 'mcpFeatures' }>): Promise<void> {
+		let error: string | undefined;
+		if (message.action === 'set') {
+			try {
+				if (!isMcpFeature(message.feature) || typeof message.enabled !== 'boolean') { throw new Error(vscode.l10n.t('Unknown setting.')); }
+				const off = new Set(this._disabledMcpFeatures());
+				if (message.enabled) { off.delete(message.feature); } else { off.add(message.feature); }
+				await vscode.workspace.getConfiguration('hoverdeck.mcp').update('disabledFeatures', off.size ? mcpFeatures.filter(f => off.has(f)) : undefined, vscode.ConfigurationTarget.Global);
+			} catch (err) {
+				error = vscode.l10n.t('Could not change it: {0}', err instanceof Error ? err.message : String(err));
+			}
+		}
+		this._postMcpFeatures(error);
+	}
+
+	private _disabledMcpFeatures(): McpFeature[] {
+		const off = readDisabledFeatures(vscode.workspace.getConfiguration('hoverdeck.mcp').inspect('disabledFeatures')?.globalValue);
+		return mcpFeatures.filter(f => off.has(f));
+	}
+
+	/** To a ready view only, like the Security section. */
+	private _postMcpFeatures(error?: string): void {
+		if (!this._view || this._disposed || !this._viewReady) { return; }
+		this._postMessage({ type: 'mcpFeatures', disabled: this._disabledMcpFeatures(), ...(error ? { error } : {}) });
+	}
+
+	/** Posts the Security section's state to a ready view only: nothing is queued for a view that has not opened it. */
+	private _postSecurity(error?: string): void {
+		if (!this._view || this._disposed || !this._viewReady) { return; }
+		const titleOf = (chatId: string): string | undefined => {
+			for (const view of ChatViewProvider._surfaces.values()) {
+				const tab = view._tabs.find(t => t.chat.id === chatId);
+				if (tab) { return tab.chat.title; }
+			}
+			return undefined;
+		};
+		const sites = this._browser.siteApprovals().map(a => {
+			const who = assistantName(a.kind);
+			const chat = a.chatId ? titleOf(a.chatId) : undefined;
+			return { key: a.key, label: chat ? `${who} · ${chat}` : who, sites: a.sites, all: a.all };
+		});
+		this._postMessage({ type: 'securitySettings', guards: securityGuardStates(), sites, ...(error ? { error } : {}) });
 	}
 
 	/** The title bar's Agents: every agent and workflow of every chat open in this extension host. */
@@ -5494,7 +5718,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/**
-	 * Cmd/Ctrl+W while focus is in a chat (`aiBrowser.chatFocused`): the tab in
+	 * Cmd/Ctrl+W while focus is in a chat (`hoverdeck.chatFocused`): the tab in
 	 * front of that surface closes, as its × would — the view asks first while it
 	 * works. The surface is the focused one, not necessarily the side bar.
 	 */
@@ -5623,7 +5847,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const unlink = async () => {
 			const links = this._chatLinks();
 			const kept = links.filter(link => !removed.has(link.ownerChatId) && !removed.has(link.targetChatId));
-			if (kept.length !== links.length) { await this._context.workspaceState.update('aiBrowser.chat.links', kept); }
+			if (kept.length !== links.length) { await this._context.workspaceState.update('hoverdeck.chat.links', kept); }
 		};
 		const pending = ChatViewProvider._chatLinkWrites.then(unlink, unlink);
 		ChatViewProvider._chatLinkWrites = pending.catch(() => {});
@@ -5655,7 +5879,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private readonly _gitAccess = new GitAccess(folder => this._gitWorktreeIdentity(folder));
 
 	private async _assertGitFolder(folder: string): Promise<void> {
-		const storage = this._repoStorage();
+		const storage = this._repoStorageOf(folder);
 		const real = await fs.promises.realpath(folder);
 		const managed = managedCopy(storage, path.resolve(folder)) ?? managedCopy(storage, real);
 		if (managed && !await isOurWorktree(storage, managed.repo, managed.folder)) {
@@ -5690,10 +5914,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		return [...this._services.views].flatMap(view => view._tabs.filter(t => t.busy || view._repoBusy.has(t) || this._runs.runningIn(t.chat.id) > 0).map(t => t.cwd));
 	}
 
-	private async _withGitMutation<T>(folder: string, work: () => Promise<T>): Promise<T> {
+	private async _withGitMutation<T>(folder: string, work: () => Promise<T>, waitForAgents = true): Promise<T> {
 		// Before the lock: taking it runs `git rev-parse` in the folder (#208).
 		if (this._blocked()) { throw new Error('Git is unavailable in this window.'); }
-		const release = await this._gitAccess.mutate(folder, () => this._busyGitFolders());
+		const release = await this._gitAccess.mutate(folder, waitForAgents ? () => this._busyGitFolders() : () => []);
 		try { return await work(); } finally { release(); }
 	}
 
@@ -5780,7 +6004,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * public repository. `gh` is run outside the folder with `--repo`, so it
 	 * reads none of the repository's own Git configuration (#208).
 	 */
-	private async _githubStatus(folder: string, signIn: boolean, extra?: { created?: GithubCreatedPr; createError?: string }): Promise<void> {
+	private async _githubStatus(folder: string, signIn: boolean, extra?: { created?: GithubCreatedPr; createError?: string }, refresh = false): Promise<void> {
 		const answer = (rest: Omit<Extract<HostToView, { type: 'githubStatus' }>, 'type' | 'folder'>) => this._postMessage({ type: 'githubStatus', folder, ...rest, ...extra });
 		if (this._blocked()) { answer({ error: 'GitHub is unavailable in this window.' }); return; }
 		let local: GithubLocal;
@@ -5797,12 +6021,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			...(local.suggestedTitle ? { suggestedTitle: local.suggestedTitle } : {}),
 		});
 		const cached = this._githubCache.get(slug);
-		if (cached && !signIn && !extra && Date.now() - cached.at < 30_000) { answer({ status: withLocal(cached.status), ...(cached.signIn ? { signIn: true } : {}) }); return; }
+		if (cached && !signIn && !extra && !refresh && Date.now() - cached.at < 30_000) { answer({ status: await this._withMerged(withLocal(cached.status), slug, local, cached.status.source), ...(cached.signIn ? { signIn: true } : {}) }); return; }
 		function mark<T extends { branch: string; current?: boolean }>(items: readonly T[]): T[] { return items.map(i => ({ ...i, current: !!pushed && i.branch === pushed })); }
 		const done = (status: GithubStatus, signInMore?: boolean) => {
 			this._githubCache.set(slug, { at: Date.now(), status, ...(signInMore ? { signIn: signInMore } : {}) });
-			answer({ status: withLocal(status), ...(signInMore ? { signIn: signInMore } : {}) });
+			return this._withMerged(withLocal(status), slug, local, status.source, token).then(full => answer({ status: full, ...(signInMore ? { signIn: signInMore } : {}) }));
 		};
+		let token: string | undefined;
 		const failures: string[] = [];
 		const gh = await this._ghBinary();
 		if (gh) {
@@ -5813,20 +6038,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				let runsError: string | undefined;
 				try {
 					// `gh run list` names a run's workflow by id only; its file comes from the workflow list.
-					const [list, workflows] = await Promise.all([
+					// …and names no actor; who started each run comes from the REST list (marks your own runs).
+					const [list, workflows, actors] = await Promise.all([
 						run(['run', 'list', '--repo', slug, '--limit', String(githubListLimit), '--json', ghRunFields]),
 						run(['workflow', 'list', '--repo', slug, '--all', '--limit', '200', '--json', ghWorkflowFields]).then(parseGhWorkflows, () => undefined),
+						run(['api', `repos/${slug}/actions/runs?per_page=${githubListLimit}`, '--jq', ghRunActorsJq]).then(parseGhRunActors, () => undefined),
 					]);
-					runs = parseGhRuns(list, branch, workflows);
+					runs = parseGhRuns(list, branch, workflows, actors);
 				}
 				catch (error) { runsError = error instanceof Error ? error.message : String(error); }
 				const defaultBranch = (await run(['repo', 'view', slug, '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name']).catch(() => '')).trim();
-				return done({ repo: slug, source: 'gh', prs, runs, ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) });
+				// Who is signed in to gh, once per window: its pull requests are marked as yours.
+				this._ghViewer ??= run(['api', 'user', '--jq', '.login']).then(githubLogin, () => undefined);
+				const viewer = await this._ghViewer;
+				return await done({ repo: slug, source: 'gh', prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) });
 			} catch (error) {
 				failures.push(`gh: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
-		const token = await this._githubToken(signIn, failures);
+		token = await this._githubToken(signIn, failures);
 		const source: GithubSource = token ? 'vscode' : 'public';
 		try {
 			const api = (route: string) => this._githubApi(slug, route, token);
@@ -5837,7 +6067,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			catch (error) { runsError = error instanceof Error ? error.message : String(error); }
 			let defaultBranch = '';
 			try { const repo = JSON.parse(await api('')) as { default_branch?: unknown }; defaultBranch = typeof repo.default_branch === 'string' ? repo.default_branch : ''; } catch { /* left out: no button */ }
-			done({ repo: slug, source, prs, runs, ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) }, !token);
+			const viewer = token ? this._githubAccount : undefined;
+			await done({ repo: slug, source, prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) }, !token);
 		} catch (error) {
 			failures.push(error instanceof Error ? error.message : String(error));
 			answer({ error: `${slug}: ${failures.join(' · ')}`, signIn: !token });
@@ -5935,6 +6166,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * (from its remotes, never from the view), the branch checked out, where that
 	 * branch is pushed, and its last commit subject.
 	 */
+	/** Merged pull request lookups, by repository, branch and commit: the answer for one commit never changes. */
+	private readonly _githubMerged = new Map<string, { at: number; pr?: GithubMergedPr }>();
+
+	/**
+	 * Adds the merged pull request whose head is the branch's current commit, so
+	 * the tab stops offering "Create pull request" after a merge that kept the
+	 * remote branch. Asked only while the offer would otherwise show; a failure
+	 * leaves the status as it was.
+	 */
+	private async _withMerged(status: GithubStatus, slug: string, local: GithubLocal, source: GithubSource, token?: string): Promise<GithubStatus> {
+		const branch = local.headBranch ?? local.branch;
+		if (!branch || !local.headSha || !canOfferPullRequest(status)) { return status; }
+		const key = `${slug}|${local.pushRepo ?? ''}|${branch}|${local.headSha}`;
+		const hit = this._githubMerged.get(key);
+		if (hit && (hit.pr || Date.now() - hit.at < 30_000)) { return hit.pr ? { ...status, mergedPr: hit.pr } : status; }
+		let pr: GithubMergedPr | undefined;
+		try {
+			if (source === 'gh') {
+				const gh = await this._ghBinary();
+				if (!gh) { return status; }
+				pr = mergedPullRequest(await this._runGh(gh, ['pr', 'list', '--repo', slug, '--state', 'merged', '--head', branch, '--limit', '10', '--json', ghMergedFields]), branch, local.headSha, local.pushRepo);
+			} else {
+				const owner = (local.pushRepo ?? slug).split('/')[0];
+				pr = mergedPullRequest(await this._githubApi(slug, `pulls?state=closed&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=10`, source === 'vscode' ? (token ?? await this._githubToken(false, [])) : undefined), branch, local.headSha, local.pushRepo);
+			}
+		} catch { return status; }
+		if (this._githubMerged.size > 200) { this._githubMerged.clear(); }
+		this._githubMerged.set(key, { at: Date.now(), ...(pr ? { pr } : {}) });
+		return pr ? { ...status, mergedPr: pr } : status;
+	}
+
 	private async _githubLocal(folder: string): Promise<GithubLocal> {
 		const git = await gitBinary();
 		if (!git) { throw new Error('Git is unavailable.'); }
@@ -5945,11 +6207,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const upstreamRemote = branch ? (await run(['config', '--get', `branch.${branch}.remote`])).trim() : '';
 		const repo = pickGithubRemote(remotes, parseRepo, upstreamRemote || undefined);
 		if (!branch) { return { slug: repo && repoSlug(repo) }; }
-		const [upstream, subject] = await Promise.all([
+		const [upstream, subject, sha] = await Promise.all([
 			// The name the branch is pushed under, which a tracking branch may spell differently.
 			run(['for-each-ref', '--format=%(upstream:remoteref) %(upstream:track)', `refs/heads/${branch}`]),
 			run(['log', '-1', '--format=%s', branch]),
+			run(['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]),
 		]);
+		const headSha = /^[0-9a-f]{40}$/i.test(sha.trim()) ? sha.trim() : undefined;
 		// `[gone]`: the upstream was deleted on the remote (a merged pull request's
 		// branch, typically), so the branch is not published any more and GitHub
 		// answers a pull request for it with a bare "Validation Failed".
@@ -5958,12 +6222,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const headBranch = remoteRef.startsWith('refs/heads/') ? remoteRef.slice('refs/heads/'.length) : undefined;
 		const pushRemote = remotes.find(r => r.name === upstreamRemote);
 		const pushRepo = pushRemote && parseRepo(pushRemote.url);
-		return { slug: repo && repoSlug(repo), branch, published: !!headBranch, ...(headBranch && headBranch !== branch ? { headBranch } : {}), remote: upstreamRemote || undefined, pushRepo: pushRepo && repoSlug(pushRepo), suggestedTitle: subject.trim().slice(0, 256) || undefined };
+		return { slug: repo && repoSlug(repo), branch, published: !!headBranch, ...(headBranch && headBranch !== branch ? { headBranch } : {}), remote: upstreamRemote || undefined, pushRepo: pushRepo && repoSlug(pushRepo), suggestedTitle: subject.trim().slice(0, 256) || undefined, headSha };
 	}
+
+	/** The login of `gh`, asked once; and of VS Code's GitHub session, read with its token. */
+	private _ghViewer: Promise<string | undefined> | undefined;
+	private _githubAccount: string | undefined;
 
 	private async _githubToken(signIn: boolean, failures: string[]): Promise<string | undefined> {
 		try {
 			const session = await vscode.authentication.getSession('github', ['repo'], signIn ? { createIfNone: true } : { silent: true });
+			// The account label of VS Code's GitHub session is the login.
+			this._githubAccount = githubLogin(session?.account.label);
 			return session?.accessToken;
 		} catch (error) {
 			if (signIn) { failures.push(error instanceof Error ? error.message : String(error)); }
@@ -6219,7 +6489,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				current();
 				const status = parseGitStatus(await this._runWorkdirGit(git, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], folder));
 				await changeGitIndex(args => { current(); return this._runWorkdirGit(git, args, folder); }, status, action, message.path);
-			});
+			}, false); // Staging does not wait for agents: it changes only the index (asked for).
 		} catch (err) { error = err instanceof Error ? err.message : String(err); }
 		finally {
 			try {
@@ -6235,9 +6505,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	private readonly _gitCommits = new Map<string, GitCommitJob>();
 
-	private async _commitWorkdir(folder: string, tabId: string, scope: 'staged' | 'all' = 'staged', push = false): Promise<void> {
+	private async _commitWorkdir(folder: string, tabId: string, scope: 'staged' | 'all' = 'staged', push = false, written?: string): Promise<void> {
 		const tab = this._tabs.find(t => t.id === tabId);
 		if (typeof folder !== 'string' || !tab || tab !== (this._chromeCommand?.getStore()?.tab ?? this._active) || this._workdir(tab) !== folder || !['staged', 'all'].includes(scope)) { return; }
+		// A message the user wrote in the Commit window: no agent is asked, and a
+		// message that cannot be committed is refused before anything is staged.
+		const manual = written === undefined ? undefined : manualCommitMessage(written);
+		if (written !== undefined && manual === undefined) { return; }
 		const previous = this._gitCommits.get(folder)?.state.phase;
 		if (previous === 'generating' || previous === 'committing') { return; }
 		const job: GitCommitJob = {
@@ -6254,34 +6528,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				throw new Error('The conversation or working folder changed. Commit was cancelled.');
 			}
 			if (this._blocked()) { throw new Error('Commit is unavailable in this window.'); }
-			if (this._tabs.some(t => this._workdir(t) === folder && (t.busy || this._repoBusy.has(t) || this._runs.runningIn(t.chat.id) > 0))) {
-				throw new Error('Wait for agents working in this repository to finish before committing.');
+			// Agents working in the folder do not hold a commit back (asked for): it
+			// records the index as it is and changes no working file. Only a GitHub
+			// copy being made or removed does.
+			if (this._tabs.some(t => this._workdir(t) === folder && this._repoBusy.has(t))) {
+				throw new Error('Wait for the repository operation to finish before committing.');
 			}
 		};
 		try {
 			guard();
-			release = await this._gitAccess.mutate(folder, () => this._busyGitFolders());
-			if (this._registry.detecting) { await this._registry.detect(); }
-			guard();
-			const { agent, model: selectedModel, effort, prompt } = this._featureSelection('commitMessage', tab);
-			const model = selectedModel.id;
-			const backend = this._registry.backend(agent);
-			if (!backend?.generateCommitMessage) { throw new Error('The selected agent cannot generate commit messages.'); }
-			job.agent = agent;
+			release = await this._gitAccess.mutate(folder, () => []);
+			let generate: (context: string) => Promise<string>;
+			let model = '';
+			let includeChat = false;
+			if (manual !== undefined) {
+				job.proposedMessage = manual;
+				generate = async () => manual;
+			} else {
+				if (this._registry.detecting) { await this._registry.detect(); }
+				guard();
+				const selection = this._featureSelection('commitMessage', tab);
+				model = selection.model.id;
+				includeChat = selection.includeChat;
+				const backend = this._registry.backend(selection.agent);
+				if (!backend?.generateCommitMessage) { throw new Error('The selected agent cannot generate commit messages.'); }
+				job.agent = selection.agent;
+				generate = async context => {
+					const message = await backend.generateCommitMessage!(model, selection.effort, context, job.controller.signal, selection.prompt);
+					job.proposedMessage = message;
+					return message;
+				};
+			}
 			const git = await gitBinary();
 			if (!git) { throw new Error('Git is unavailable.'); }
 			const config = this._untrusted(folder) ? ['-c', `core.hooksPath=${os.devNull}`] : [];
 			const result = await commitChanges(
 				args => this._runWorkdirGit(git, [...config, ...args], folder),
-				async context => {
-					const message = await backend.generateCommitMessage!(model, effort, context, job.controller.signal, prompt);
-					job.proposedMessage = message;
-					return message;
-				}, guard,
+				generate, guard,
 				phase => {
-					job.state = { id: job.state.id, phase, message: phase === 'generating' ? `Generating commit message with ${model}…` : 'Committing…' };
+					job.state = { id: job.state.id, phase, message: phase === 'generating' && manual === undefined ? `Generating commit message with ${model}…` : 'Committing…' };
 					this._post();
 				}, scope,
+				// Chat Settings → Commit messages → Include recent chat: the last turns, text only.
+				includeChat ? chatExcerpt(tab.chat.entries) : '',
 			);
 			if (this._gitCommits.get(folder) === job) { this._gitCommits.delete(folder); }
 			committed = true;
@@ -6318,7 +6607,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			this._gitCommits.delete(message.folder); this._post(); return;
 		}
 		if (job.state.phase !== 'error') { return; }
-		const prompt = `Help fix this Git commit failure in the working repository ${message.folder}. Inspect the actual repository state, diagnose and fix the cause, then retry the commit if possible. Preserve the user's changes and staged selection. Do not reset, discard changes, bypass hooks or push. If fixing it needs a choice, ask first.\n\nReported error:\n${job.state.message}${job.proposedMessage ? `\n\nGenerated commit message:\n${job.proposedMessage}` : ''}`;
+		const prompt = `Help fix this Git commit failure in the working repository ${message.folder}. Inspect the actual repository state, diagnose and fix the cause, then retry the commit if possible. Preserve the user's changes and staged selection. Do not reset, discard changes, bypass hooks or push. If fixing it needs a choice, ask first.\n\nReported error:\n${job.state.message}${job.proposedMessage ? `\n\nCommit message:\n${job.proposedMessage}` : ''}`;
 		this._gitCommits.delete(message.folder);
 		this._post();
 		await this._send(prompt, tab.id, []);
@@ -6343,13 +6632,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
    if (!git) { throw new Error('Git is unavailable.'); }
    const folder = message.folder;
    const status = await this._runWorkdirGit(git, ['status', '--porcelain=v1', '--untracked-files=all'], folder);
-   const discussion = tab.chat.entries.filter(e => e.kind === 'user' || e.kind === 'assistant').slice(-6).map(e => 'text' in e ? e.text.slice(-1500) : '').join('\n');
+   // With Include recent chat on, the last turns always go along; off, only when there is nothing else to name the branch from.
+   const discussion = selected.includeChat || !status.trim() ? chatExcerpt(tab.chat.entries) : '';
    if (!status.trim() && !discussion.trim()) { throw new Error('No changes or discussion to name the branch from.'); }
    const diffs = status.trim() ? await Promise.all([
     this._runWorkdirGit(git, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--stat'], folder),
     this._runWorkdirGit(git, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-color', '--stat'], folder),
    ]) : [];
-   const context = `Changes:\n${status.slice(0, 3000)}\n${diffs.join('\n').slice(0, 3000)}\nDiscussion:\n${discussion.slice(-6000)}`;
+   const context = `Changes:\n${status.slice(0, 3000)}\n${diffs.join('\n').slice(0, 3000)}${discussion ? `\nRecent conversation:\n${tailUnits(discussion, 12_000)}` : ''}`;
    let name = await backend.generateTitle(model, context, controller.signal, 'branch', selected.prompt);
    if (controller.signal.aborted || !this._tabs.includes(tab) || tab.chat.id !== chatId) { return; }
    if (!name) { throw new Error('Could not generate a branch name. Please try again.'); }
@@ -6593,7 +6883,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					localName: async existing => vscode.window.showInputBox({ title: 'Choose a local branch name', prompt: `${existing} already exists with a different upstream. Enter another name; the existing branch will be kept.`, ignoreFocusOut: true }),
 					stashed: async saved => {
 						this._branchStashes.set(folder, [...(this._branchStashes.get(folder) ?? []), saved]);
-						await this._context.workspaceState.update('aiBrowser.branchStashes', Object.fromEntries(this._branchStashes));
+						await this._context.workspaceState.update('hoverdeck.branchStashes', Object.fromEntries(this._branchStashes));
 					},
 				});
 				if (!result) { answer('Branch switch cancelled.'); return; }
@@ -6653,7 +6943,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				for (const tab of this._tabs.filter(t => this._workdir(t) === folder)) { tab.updateCopyBranch(saved.branch); }
 				await git(['stash', 'apply', '--index', saved.hash]);
 				this._branchStashes.set(folder, (this._branchStashes.get(folder) ?? []).filter(entry => entry.hash !== saved.hash));
-				await this._context.workspaceState.update('aiBrowser.branchStashes', Object.fromEntries(this._branchStashes));
+				await this._context.workspaceState.update('hoverdeck.branchStashes', Object.fromEntries(this._branchStashes));
 				confirm('Stash applied on the original branch; the stash entry was kept as a backup.');
 			});
 		} catch (error) { refuse(`Could not restore stash: ${error instanceof Error ? error.message : String(error)}. The stash was kept.`); }
@@ -6664,7 +6954,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const tab = this._active;
 		const workspace = this._workspaceFolders();
 		const current = this._workdir(tab);
-		const shown = (p: string): WorkdirFolder => workspace.find(w => w.path === p) ?? { path: p, name: path.basename(p) || p, removable: p !== current && !!storedCopyRepo(this._repoStorage(), p) };
+		const shown = (p: string): WorkdirFolder => workspace.find(w => w.path === p) ?? { path: p, name: path.basename(p) || p, removable: p !== current && !!storedCopyRepo(this._repoStorageOf(p), p) };
 		const copy = tab.chat.copy;
 		return {
 			commit: current === undefined ? undefined : this._gitCommits.get(current)?.state,
@@ -6753,7 +7043,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			canSelectMany: false,
 			defaultUri: current ? vscode.Uri.file(current) : undefined,
 			openLabel: vscode.l10n.t("Work in This Folder"),
-			title: vscode.l10n.t("Folder for the AI Browser chat to work in"),
+			title: vscode.l10n.t("Folder for the {0} chat to work in", productName()),
 		});
 		const uri = picked?.[0];
 		if (uri?.scheme === 'file') {
@@ -7039,20 +7329,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 	}
 
+	/**
+	 * Finds an attachment by its chip id wherever a copy of it is kept: the copied-badge clipboard,
+	 * any open draft, any open chat's sent messages, then the saved history (read once, only when
+	 * the open chats had nothing). A badge pasted, or recalled with ↑ from a chat no tab holds now,
+	 * names its attachment by that id; this is how the host finds it to open it or make it again.
+	 */
+	private _attachmentFinder(): (id: string) => Attachment | undefined {
+		const views = [...ChatViewProvider._surfaces.values()];
+		let drafts: Attachment[] | undefined;
+		let saved: NonNullable<Extract<StoredChat['entries'][number], { kind: 'user' }>['attachmentData']> | undefined;
+		let stored: typeof saved;
+		const sentIn = (chats: readonly StoredChat[]) => chats.flatMap(chat => chat.entries.flatMap(entry => entry.kind === 'user' ? entry.attachmentData ?? [] : []));
+		return id => {
+			const live = ChatViewProvider._attachmentClipboard.get(id)
+				?? (drafts ??= views.flatMap(view => view._tabs.flatMap(tab => tab.attachments))).find(a => a.chip.id === id);
+			if (live) { return live; }
+			let snapshot = (saved ??= sentIn(views.flatMap(view => view._tabs.map(tab => tab.chat)))).find(a => a.chip.id === id);
+			snapshot ??= (stored ??= sentIn(this._history())).find(a => a.chip.id === id);
+			return snapshot ? { ...snapshot, file: snapshot.file ? vscode.Uri.parse(snapshot.file) : undefined } : undefined;
+		};
+	}
+
 	private async _pasteAttachments(items: readonly PastedAttachment[], request: string, chatId: string): Promise<void> {
 		const tab = this._tabs.find(tab => tab.chat.id === chatId);
 		if (!tab) { this._postMessage({ type: 'pastedAttachments', request, chatId, results: [] }); return; }
 		const results: { token: string; id?: string }[] = [];
-		const all = [...ChatViewProvider._surfaces.values()].flatMap(view => view._tabs.flatMap(t => t.attachments));
-		const saved = [...ChatViewProvider._surfaces.values()].flatMap(view => view._tabs.flatMap(tab => tab.chat.entries.flatMap(entry => entry.kind === 'user' ? entry.attachmentData ?? [] : [])));
+		const find = this._attachmentFinder();
 		for (const item of Array.isArray(items) ? items.slice(0, 50) : []) {
 			if (!item || typeof item.token !== 'string' || typeof item.id !== 'string') { continue; }
 			let made: Attachment | undefined;
-			let source = this._blocked() ? undefined : ChatViewProvider._attachmentClipboard.get(item.id) ?? all.find(a => a.chip.id === item.id);
-			if (!source && !this._blocked()) {
-				const snapshot = saved.find(attachment => attachment.chip.id === item.id);
-				if (snapshot) { source = { ...snapshot, file: snapshot.file ? vscode.Uri.parse(snapshot.file) : undefined }; }
-			}
+			const source = this._blocked() ? undefined : find(item.id);
 			if (source) {
 				const { reference: _reference, ...chip } = source.chip;
 				const { exchangeAnnotation: _exchange, chromeAnnotation: _chrome, ...snapshot } = source;
@@ -7163,6 +7470,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/** A snapshot of the non-empty selections in VS Code's active text editor. */
+	/**
+	 * A prompt put into the message box of the conversation in front, for the
+	 * user to read and send — HoverDeck's way of handing over what AI Browser
+	 * puts on the clipboard for an outside agent (Translate Page, annotations).
+	 * Answers whether it got there.
+	 */
+	public async draftPrompt(text: string): Promise<boolean> {
+		const blocked = this._blocked();
+		if (blocked) {
+			refuse(blocked);
+			return false;
+		}
+		this._leaveTerminal();
+		this._post();
+		await this._focusView();
+		this._postMessage({ type: 'restoreDraft', chatId: this._active.chat.id, text });
+		this._focusInput();
+		return true;
+	}
+
 	public async attachEditorSelection(editor: vscode.TextEditor | undefined): Promise<void> {
 		const blocked = this._blocked();
 		if (blocked) {
@@ -7300,6 +7627,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	/** Where the repositories' clones and copies live: the extension's own storage, never the project. */
 	private _repoStorage(): string {
 		return this._context.globalStorageUri.fsPath;
+	}
+
+	/**
+	 * The storage a copy lives in. HoverDeck takes over AI Browser's chats, and the
+	 * copies those name stay in AI Browser's storage — their worktrees hold absolute
+	 * paths — so a folder there is checked against that storage, not ours. New
+	 * clones and copies always go into our own (`_repoStorage`).
+	 */
+	private _repoStorageOf(folder: string): string {
+		const own = this._repoStorage();
+		const legacy = path.join(path.dirname(own), extensionIds.aibrowser.toLowerCase());
+		const inside = (root: string) => {
+			const relative = path.relative(path.join(root, 'github'), path.resolve(folder));
+			return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+		};
+		return !inside(own) && inside(legacy) ? legacy : own;
 	}
 
 	/**
@@ -7503,7 +7846,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	private async _removeRepoFolder(folder: string): Promise<void> {
-		if (this._blocked() || !this._recentFolders().includes(folder) || !storedCopyRepo(this._repoStorage(), folder)) { return; }
+		if (this._blocked() || !this._recentFolders().includes(folder) || !storedCopyRepo(this._repoStorageOf(folder), folder)) { return; }
 		const unavailable = () => this._workdir() === folder || this._workspaceFolders().some(w => w.path === folder)
 			|| this._tabs.some(t => (this._workdir(t) === folder || t.chat.references?.some(r => r.path === folder))
 				&& (t.busy || this._repoBusy.has(t) || this._runs.runningIn(t.chat.id) > 0));
@@ -7514,7 +7857,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const git = await gitBinary();
 		if (!git || unavailable()) { return; }
 		await this._withGitMutation(folder, () => this._repoWork(this._chromeCommand?.getStore()?.tab ?? this._active, vscode.l10n.t("removing repository copy"), async () => {
-			await removeStoredCopy(git, this._repoStorage(), folder);
+			await removeStoredCopy(git, this._repoStorageOf(folder), folder);
 			this._forgetCopy(folder);
 			this._listings.delete(folder);
 			await this._forgetRecent(folder);
@@ -7538,7 +7881,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		// Only a copy that is still ours: removed and made again as a plain
 		// folder, git would search upwards for a repository — the home
 		// directory's, perhaps — and commit there.
-		if (action !== 'window' && !await isOurWorktree(this._repoStorage(), repo, folder)) {
+		if (action !== 'window' && !await isOurWorktree(this._repoStorageOf(folder), repo, folder)) {
 			refuse(vscode.l10n.t("This copy of {0} is no longer there.", plainInLabel(copy.repo)));
 			this._forgetCopy(folder);
 			return;
@@ -7564,7 +7907,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					return;
 				}
 				await this._withGitMutation(folder, () => this._repoWork(tab, vscode.l10n.t("pushing {0}", copy.branch), async () => {
-					const message = capAt(tab.chat.title.replace(/\s+/g, ' ').trim() || 'Changes from the AI Browser chat', 72);
+					const message = capAt(tab.chat.title.replace(/\s+/g, ' ').trim() || `Changes from the ${productName()} chat`, 72);
 					const pushed = await pushCopy(git, folder, copy.base, message);
 					const url = compareUrl(repo, copy.base, pushed);
 					tab.push({ kind: 'notice', text: vscode.l10n.t("Pushed {0} to {1}. A pull request into {2}: {3}", pushed, copy.repo, copy.base, url) });
@@ -7577,7 +7920,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					return;
 				}
 				await this._withGitMutation(folder, () => this._repoWork(tab, vscode.l10n.t("removing the copy of {0}", copy.repo), async () => {
-					await removeCopy(git, this._repoStorage(), repo, folder, copy.ownedBranch ?? copy.branch);
+					await removeCopy(git, this._repoStorageOf(folder), repo, folder, copy.ownedBranch ?? copy.branch);
 					this._forgetCopy(folder);
 				}));
 				return;
@@ -7634,14 +7977,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	private _nativePanelTab(): vscode.Tab | undefined {
 		return vscode.window.tabGroups.all.flatMap(group => group.tabs).find(tab => tab.label === this._surfaceLabel()
-			&& tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith('aiBrowser.chat.window'));
+			&& tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith(contributionId('hoverdeck.chat.window')));
 	}
 
 	/** Reveal a pending editor using public APIs, replacing its unrevived placeholder. */
 	private async _materializePanel(): Promise<void> {
 		if (this._panel) { return; }
 		const old = this._nativePanelTab();
-		const panel = vscode.window.createWebviewPanel('aiBrowser.chat.window', this._surfaceLabel(), old?.group.viewColumn ?? vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+		const panel = vscode.window.createWebviewPanel('hoverdeck.chat.window', this._surfaceLabel(), old?.group.viewColumn ?? vscode.ViewColumn.Active, { retainContextWhenHidden: true });
 		this._bindPanel(panel);
 		if (old) { await vscode.window.tabGroups.close(old, true); }
 	}
@@ -7686,7 +8029,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			} else if (fresh.has(id)) {
 				// A tab nothing was sent from: it has no history to come back from,
 				// but it comes back with its chat id, which its draft is kept under.
-				const chat = newChat(this._remembered.agent ?? 'claude', id);
+				const chat = newChat(this._preferredAgent() ?? 'claude', id);
 				const name = names[id];
 				if (typeof name === 'string' && name) {
 					chat.title = capAt(name, tabTitleLimit);
@@ -7713,9 +8056,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			const mode = ultracodes[tab.chat.id];
 			if (typeof mode === 'boolean') { tab.chat.ultracode = mode; }
 			tab.pinned = pinned.has(tab.chat.id);
+			const scheduled = scheduledOf(saved?.scheduled, tab.chat.id);
+			if (scheduled.length) { tab.restoreScheduled(scheduled); }
 		}
 		if (!this._tabs.length) {
-			this._tabs.push(new ChatTab(this._tabHost, newChat(this._remembered.agent ?? 'claude')));
+			this._tabs.push(new ChatTab(this._tabHost, newChat(this._preferredAgent() ?? 'claude')));
 		}
 		this._active = this._tabs.find(t => t.chat.id === saved?.active) ?? this._tabs[0];
 	}
@@ -7742,6 +8087,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			// And a separate copy it works in, or repositories it reads, made before anything was sent.
 			repos: Object.fromEntries(this._tabs.filter(t => !t.started && (t.chat.copy || t.chat.references?.length))
 				.map(t => [t.chat.id, { copy: t.chat.copy, references: t.chat.references }])),
+			// Messages scheduled for a time wait past a reload. Their images are not kept
+			// (they would be rewritten on every save); a chip with a file still names it.
+			scheduled: Object.fromEntries(this._tabs.filter(t => t.scheduled.length).map(t => [t.chat.id, t.scheduled.map(q => ({
+				id: q.id, text: q.text, at: q.at,
+				attachments: q.attachments.map(a => ({ chip: a.chip, text: a.text, file: a.file?.toString(), spoken: a.spoken })),
+			}))])),
 			active: this._active.chat.id,
 		};
 		const json = JSON.stringify(value);
@@ -7823,7 +8174,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			}
 			if (this._disposed || !this._tabs.includes(tab) || tab.chat !== chat || !this._canMoveTab(tab)) { return; }
-			panel = vscode.window.createWebviewPanel('aiBrowser.chat.window', tab.chat.title || 'AI Browser Chat', vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+			panel = vscode.window.createWebviewPanel('hoverdeck.chat.window', tab.chat.title || `${productName()} Chat`, vscode.ViewColumn.Active, { retainContextWhenHidden: true });
 			if (location === 'window') {
 				// Move the empty editor first so a failed command leaves the live chat in its source.
 				panel.reveal();
@@ -7883,13 +8234,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			}
 			if (this._disposed || !this._terminals.find(id)) { return; }
-			panel = vscode.window.createWebviewPanel('aiBrowser.chat.window', terminal.name, vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+			panel = vscode.window.createWebviewPanel('hoverdeck.chat.window', terminal.name, vscode.ViewColumn.Active, { retainContextWhenHidden: true });
 			if (location === 'window') {
 				panel.reveal();
 				await vscode.commands.executeCommand(command);
 				if (this._disposed || !this._terminals.find(id)) { panel.dispose(); return; }
 			}
-			const chat = newChat(this._remembered.agent ?? 'claude');
+			const chat = newChat(this._preferredAgent() ?? 'claude');
 			const folder = this._active.chat.folder;
 			if (folder) { chat.folder = folder; }
 			detached = new ChatViewProvider(this._context, this._browser, this._browserServer, undefined, chat, { services: this._services });
@@ -7974,7 +8325,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._tabs.splice(at, 1);
 		// A panel that still owns terminals is not empty: closing it would end their shells, which nobody asked for.
 		const closeSource = closesEmptyPanel(this._tabs.length, this._terminals.size, !!this._panelIdentity);
-		if (!this._tabs.length && !closeSource) { this._tabs.push(new ChatTab(this._tabHost, newChat(this._remembered.agent ?? 'claude'))); }
+		if (!this._tabs.length && !closeSource) { this._tabs.push(new ChatTab(this._tabHost, newChat(this._preferredAgent() ?? 'claude'))); }
 		if (!closeSource && this._active === tab) { this._active = this._tabs[Math.min(at, this._tabs.length - 1)]; this._switchTo = undefined; }
 		this._savedDrafts.delete(tab.chat.id);
 		destination._savedDrafts.set(tab.chat.id, draft);
@@ -8037,7 +8388,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		this._tabs.splice(at, 1);
 		if (!this._tabs.length) {
-			this._tabs.push(new ChatTab(this._tabHost, newChat(this._remembered.agent ?? 'claude')));
+			this._tabs.push(new ChatTab(this._tabHost, newChat(this._preferredAgent() ?? 'claude')));
 		}
 		if (this._active === tab) {
 			this._active = this._tabs[Math.min(at, this._tabs.length - 1)];
@@ -8205,7 +8556,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			this._postMessage({ type: 'chooseNewChatLocation' });
 			return;
 		}
-		const agent = requestedAgent ?? this._remembered.agent ?? this._selection().agent ?? 'claude';
+		const agent = requestedAgent ?? this._preferredAgent() ?? this._selection().agent ?? 'claude';
 		if (location === 'here') {
 			// Reuse a conversation with no sent messages instead of accumulating empty
 			// tabs — one per project: the new tab would open in the project of the tab
@@ -8237,7 +8588,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			chat.references = this._active.chat.references;
 			const detached = new ChatViewProvider(this._context, this._browser, this._browserServer, undefined, chat);
 			try {
-				panel = vscode.window.createWebviewPanel('aiBrowser.chat.window', 'AI Browser Chat', vscode.ViewColumn.Active, { retainContextWhenHidden: true });
+				panel = vscode.window.createWebviewPanel('hoverdeck.chat.window', `${productName()} Chat`, vscode.ViewColumn.Active, { retainContextWhenHidden: true });
 			} catch (error) { detached.dispose(); throw error; }
 			const opened = panel;
 			detached._panel = opened;
@@ -8408,6 +8759,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const lastMessageChars = 600;
 		const agentRowLimit = 30;
 		const surfaces = () => [...ChatViewProvider._surfaces.values()].filter(s => !s._disposed);
+		const signalTimes = new Map<string, number[]>();
 		const find = (tabId: string): { surface: ChatViewProvider; tab: ChatTab } => {
 			for (const surface of surfaces()) {
 				const tab = surface._tabs.find(t => t.id === tabId);
@@ -8622,10 +8974,44 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return { id: rowId, stopping: true, note: 'Asked to stop; chat_agents shows it as stopped once its CLI reports it.' };
 			},
 			presentRich: (ownTab, kind, args) => find(ownTab).tab.presentRich(kind, args),
+			signal: async (ownTab, request) => {
+				const { surface, tab } = find(ownTab);
+				// A few a minute at most: an agent in a loop must not turn the chat into an alarm.
+				const now = Date.now();
+				const recent = (signalTimes.get(tab.chat.id) ?? []).filter(at => now - at < 60_000);
+				if (recent.length >= 5) { throw new Error('Too many sounds and alerts in the last minute; wait before signalling again.'); }
+				signalTimes.set(tab.chat.id, [...recent, now]);
+				const settings = soundSettings();
+				const sound = request.sound ?? settings.sound;
+				const audible = sound !== 'none' && settings.volume > 0;
+				const alert = request.kind === 'alert' ? { title: request.title ?? tab.chat.title ?? 'The agent needs you', text: request.text ?? '' } : undefined;
+				// Through the state: every surface showing the tab — this view, the website — hears it.
+				const listening = surface._signal(tab, { ...(audible ? { sound } : {}), repeat: request.repeat, ...(alert ? { alert } : {}) });
+				if (alert) {
+					await tab.presentRich('notification', { text: alert.text, level: 'warning', reason: alert.title });
+					// The user asked for it through the agent, so their notification settings do not hold it back.
+					osNotify(alert.title, alert.text, true);
+				}
+				const played = audible && listening;
+				return {
+					played, ...(played ? { sound } : {}), ...(alert ? { notified: true, card: true } : {}),
+					...(!played && sound !== 'none' ? { note: !audible ? 'The chat volume is 0 in Chat Settings, so nothing was heard.' : 'No chat view is open, so no sound was played.' } : {}),
+				};
+			},
 			presentArtifact: (ownTab, file, kind, title) => find(ownTab).tab.presentArtifact(file, kind, title),
 			presentImage: (ownTab, file, title) => find(ownTab).tab.presentImage(file, title),
 			presentHtml: (ownTab, file, title) => find(ownTab).tab.presentVisualization(file, title),
 		};
+	}
+
+	/** The latest sound or alert per tab id, published in the tab list (`ChatTabSummary.signal`). */
+	private readonly _signals = new Map<string, ChatTabSignal>();
+	private _signalId = 0;
+	/** Publishes an agent's sound or alert to every surface showing the tab; answers whether any is listening. */
+	public _signal(tab: ChatTab, signal: Omit<ChatTabSignal, 'id' | 'at'>): boolean {
+		this._signals.set(tab.id, { ...signal, id: ++this._signalId, at: Date.now() });
+		this._post();
+		return (!!this._view && this._viewReady) || this._stateSurfaces.listening();
 	}
 
 	public dispose(): void {
@@ -8662,10 +9048,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._livePageWatch?.dispose();
 		this._livePages.clear();
 		this._voiceCancel();
-		if (!this._panelIdentity) { void vscode.commands.executeCommand('setContext', 'aiBrowser.keepAwakeActive', false); }
+		if (!this._panelIdentity) { void vscode.commands.executeCommand('setContext', 'hoverdeck.keepAwakeActive', false); }
 		if (ChatViewProvider._focusedSurface === this) {
 			ChatViewProvider._focusedSurface = undefined;
-			void vscode.commands.executeCommand('setContext', 'aiBrowser.chatFocused', false);
+			void vscode.commands.executeCommand('setContext', 'hoverdeck.chatFocused', false);
 		}
 		// Shared backends own live sessions of tabs moved into other surfaces.
 		this._services.views.delete(this);
@@ -8833,7 +9219,7 @@ function shortModelName(label: string): string {
 
 /** The finish sound settings as the view takes them, anything out of range read as its default. */
 function soundSettings(): ChatSoundSettings {
-	const config = vscode.workspace.getConfiguration('aiBrowser.chat.sound');
+	const config = vscode.workspace.getConfiguration('hoverdeck.chat.sound');
 	const enabled = config.get<unknown>('enabled');
 	const name = config.get<unknown>('name');
 	const volume = config.get<unknown>('volume');
@@ -8844,16 +9230,16 @@ function soundSettings(): ChatSoundSettings {
 		sound: typeof name === 'string' && (chatSounds as readonly string[]).includes(name) ? name as ChatSound : 'chime',
 		volume: typeof volume === 'number' && Number.isFinite(volume) ? Math.min(200, Math.max(0, volume)) : 60,
 		repeat: typeof repeat === 'number' && Number.isFinite(repeat) ? Math.round(Math.min(5, Math.max(1, repeat))) : 1,
-		notify: vscode.workspace.getConfiguration('aiBrowser.chat.notifications').get<unknown>('enabled') !== false,
-		notifyAway: vscode.workspace.getConfiguration('aiBrowser.chat.notifications').get<unknown>('onlyWhenAway') !== false,
+		notify: vscode.workspace.getConfiguration('hoverdeck.chat.notifications').get<unknown>('enabled') !== false,
+		notifyAway: vscode.workspace.getConfiguration('hoverdeck.chat.notifications').get<unknown>('onlyWhenAway') !== false,
 		githubRun: githubRunSound(),
-		githubRunNotify: vscode.workspace.getConfiguration('aiBrowser.chat.notifications').get<unknown>('githubRun') !== false,
+		githubRunNotify: vscode.workspace.getConfiguration('hoverdeck.chat.notifications').get<unknown>('githubRun') !== false,
 	};
 }
 
-/** `aiBrowser.chat.sound.githubRun`: a known sound, or `none`; anything else is the default. */
+/** `hoverdeck.chat.sound.githubRun`: a known sound, or `none`; anything else is the default. */
 function githubRunSound(): ChatSound | 'none' {
-	const value = vscode.workspace.getConfiguration('aiBrowser.chat.sound').get<unknown>('githubRun');
+	const value = vscode.workspace.getConfiguration('hoverdeck.chat.sound').get<unknown>('githubRun');
 	return value === 'none' || (typeof value === 'string' && (chatSounds as readonly string[]).includes(value)) ? value as ChatSound | 'none' : 'success';
 }
 
@@ -8869,7 +9255,7 @@ function osNotify(title: string, text: string, asked = false): void {
 	// agents' own on/off and "only when away" do not apply.
 	if (!asked && (!settings.notify || (settings.notifyAway && vscode.window.state.focused))) { return; }
 	const clean = (value: unknown, max: number) => String(value ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, max);
-	const t = clean(title, 120) || 'AI Browser';
+	const t = clean(title, 120) || productName();
 	const body = clean(text, 300);
 	const done = () => { /* a notification is never worth an error */ };
 	try {
@@ -8879,7 +9265,29 @@ function osNotify(title: string, text: string, asked = false): void {
 			const script = "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(6000, $env:AIB_NOTIFY_TITLE, $env:AIB_NOTIFY_TEXT, 'Info'); Start-Sleep -Seconds 7; $n.Dispose()";
 			cp.execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 15_000, windowsHide: true, env: { ...process.env, AIB_NOTIFY_TITLE: t, AIB_NOTIFY_TEXT: body || ' ' } }, done);
 		} else {
-			cp.execFile('notify-send', ['--app-name=AI Browser', '--', t, body], { timeout: 10_000 }, done);
+			cp.execFile('notify-send', [`--app-name=${productName()}`, '--', t, body], { timeout: 10_000 }, done);
 		}
 	} catch { done(); }
+}
+
+/** A tab's scheduled messages as `_saveTabs` wrote them, each checked: `workspaceState` is read back as it is. */
+function scheduledOf(store: unknown, chatId: string): { id: string; text: string; at: number; attachments: Attachment[] }[] {
+	const list = store && typeof store === 'object' && Object.prototype.hasOwnProperty.call(store, chatId) ? (store as Record<string, unknown>)[chatId] : undefined;
+	if (!Array.isArray(list)) { return []; }
+	const out: { id: string; text: string; at: number; attachments: Attachment[] }[] = [];
+	for (const item of list.slice(0, 100)) {
+		if (!item || typeof item !== 'object') { continue; }
+		const q = item as { id?: unknown; text?: unknown; at?: unknown; attachments?: unknown };
+		if (typeof q.id !== 'string' || typeof q.text !== 'string' || typeof q.at !== 'number' || !Number.isSafeInteger(q.at) || q.at <= 0) { continue; }
+		const attachments: Attachment[] = [];
+		for (const raw of Array.isArray(q.attachments) ? q.attachments : []) {
+			const a = raw as { chip?: { id?: unknown; label?: unknown; kind?: unknown }; text?: unknown; file?: unknown; spoken?: unknown } | undefined;
+			if (!a?.chip || typeof a.chip.id !== 'string' || typeof a.chip.label !== 'string' || typeof a.chip.kind !== 'string') { continue; }
+			let file: vscode.Uri | undefined;
+			try { file = typeof a.file === 'string' ? vscode.Uri.parse(a.file, true) : undefined; } catch { file = undefined; }
+			attachments.push({ chip: a.chip as AttachmentChip, text: typeof a.text === 'string' ? a.text : undefined, file, spoken: typeof a.spoken === 'string' ? a.spoken : undefined });
+		}
+		out.push({ id: q.id, text: q.text, at: q.at, attachments });
+	}
+	return out;
 }

@@ -1,6 +1,7 @@
 import { requestCommitMessage } from './commitMessage';
 import { agentProcesses } from './agentProcesses';
 import { chatCapability } from '../core/chatCapability';
+import { mcpServerName } from '../core/flavor';
 import { requestTitle } from './autoTitle';
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
@@ -50,8 +51,11 @@ import { generateUuid } from '../core/uuid';
 // `--allowedTools` and with `--setting-sources=user` alike. The two terminal
 // tools that type (`terminalInputTools`) are in the list for the same reason;
 // the three that only look are not, since the chat answers those without a card.
-const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--thinking-display', 'summarized', '--permission-mode', 'default', '--permission-prompt-tool', 'stdio',
-	'--settings', JSON.stringify({ permissions: { ask: [...chatControlTools, ...terminalInputTools].map(tool => `mcp__ai-browser__${tool}`) } })];
+// A function, not a constant: the server's name depends on the build, which is
+// known only once `activate` has run, after every module has loaded. Both names
+// are listed, since a migrated chat or a project config may still say ai-browser.
+const args = (): string[] => ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--thinking-display', 'summarized', '--permission-mode', 'default', '--permission-prompt-tool', 'stdio',
+	'--settings', JSON.stringify({ permissions: { ask: [...new Set([mcpServerName(), 'ai-browser', 'hoverdeck'])].flatMap(server => [...chatControlTools, ...terminalInputTools].map(tool => `mcp__${server}__${tool}`)) } })];
 
 const controlTimeoutMs = 20_000;
 /** How long an acknowledged interrupt may take to end the turn before the process is ended. */
@@ -102,7 +106,7 @@ export async function writeTerminalBrowserConfig(server: BrowserServer, tabId?: 
 	}
 	const file = path.join(dir, `mcp-${process.pid}-${generateUuid()}.json`);
 	try {
-		writeFileSync(file, JSON.stringify({ mcpServers: { 'ai-browser': { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}`, ...(tabId ? { 'X-AI-Browser-Tab': tabId } : {}) } } } }), { mode: 0o600, flag: 'wx' });
+		writeFileSync(file, JSON.stringify({ mcpServers: { [mcpServerName()]: { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}`, ...(tabId ? { 'X-AI-Browser-Tab': tabId } : {}) } } } }), { mode: 0o600, flag: 'wx' });
 		return file;
 	} catch {
 		return undefined;
@@ -208,7 +212,7 @@ class ControlChannel implements vscode.Disposable {
 		if (message.type === 'control_request' && typeof message.request_id === 'string') {
 			this._process.send({
 				type: 'control_response',
-				response: { subtype: 'error', request_id: message.request_id, error: 'Not supported by AI Browser.' },
+				response: { subtype: 'error', request_id: message.request_id, error: 'Not supported by this client.' },
 			});
 		}
 	}
@@ -380,7 +384,7 @@ export class ClaudeBackend implements AgentBackend {
 	private _probe(cwd = this._cwd(), ownSettings = this._ownSettings()): { control: ControlChannel; close: () => void } {
 		// The skills listing starts a process in the tab in front's folder, and a
 		// `SessionStart` hook runs on that alone — measured, with nothing sent.
-		const process = new JsonLineProcess(this._binary, ownSettings ? args : [...args, ...projectSettingsOff], cwd);
+		const process = new JsonLineProcess(this._binary, ownSettings ? args() : [...args(), ...projectSettingsOff], cwd);
 		const control = new ControlChannel(process);
 		return {
 			control,
@@ -636,7 +640,7 @@ class ClaudeSession implements AgentSession {
 		}
 		const file = path.join(dir, `mcp-${process.pid}-${generateUuid()}.json`);
 		try {
-			writeFileSync(file, JSON.stringify({ mcpServers: { 'ai-browser': { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}`, ...(server.chatId ? { 'X-AI-Browser-Chat': chatCapability(server.chatId) } : {}) } } } }), { mode: 0o600, flag: 'wx' });
+			writeFileSync(file, JSON.stringify({ mcpServers: { [mcpServerName()]: { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}`, ...(server.chatId ? { 'X-AI-Browser-Chat': chatCapability(server.chatId) } : {}) } } } }), { mode: 0o600, flag: 'wx' });
 			return file;
 		} catch {
 			return undefined;
@@ -645,7 +649,7 @@ class ClaudeSession implements AgentSession {
 
 	private _start(model: string, effort: string | undefined, dir: string | undefined, ultracode?: boolean): void {
 		const config = this._writeBrowserConfig(dir);
-		const launch = [...args, '--model', model];
+		const launch = [...args(), '--model', model];
 		if (typeof ultracode === 'boolean') {
 			const settingsAt = launch.indexOf('--settings') + 1;
 			launch[settingsAt] = JSON.stringify({ ...JSON.parse(launch[settingsAt]), ultracode });

@@ -15,7 +15,7 @@ import type { TerminalSettings } from './chatProtocol';
 export const defaultTerminalLimit = 8;
 export const maxTerminalLimit = 20;
 
-/** `aiBrowser.chat.terminalLimit` as a whole number in range; anything else is the default (#184's rule). */
+/** `hoverdeck.chat.terminalLimit` as a whole number in range; anything else is the default (#184's rule). */
 export function clampTerminalLimit(value: unknown): number {
 	return typeof value === 'number' && Number.isInteger(value) && value >= 1
 		? Math.min(value, maxTerminalLimit)
@@ -158,7 +158,7 @@ export function closesEmptyPanel(conversations: number, terminals: number, isPan
  * name a program and its arguments, so a repository's `.vscode/settings.json` that could set
  * them would be code execution on "New terminal" (#2 of the terminal review). VS Code's own
  * terminal honours them only in a trusted workspace; here they are ignored always, the
- * precedent being `aiBrowser.chat.claudePath` / `codexPath`, which are `application`-scoped for
+ * precedent being `hoverdeck.chat.claudePath` / `codexPath`, which are `application`-scoped for
  * the same reason (the terminal's profile keys are not ours to scope). Two plain objects (the
  * `profiles` map) are merged per key, user over default, as VS Code merges object settings;
  * a `null` entry of the user's removes the default one downstream, in `resolveShell`.

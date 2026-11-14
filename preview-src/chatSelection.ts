@@ -2,6 +2,31 @@
 export interface SelectionPayload { text: string; html?: string }
 
 /**
+ * Put `payload` on the clipboard in both formats from a click (the "To paste"
+ * block's Copy). A one-off `copy` listener in the capture phase fills the event
+ * and stops it, so the selection handler below never sees it; without a
+ * clipboard in this frame the text goes through `fallback` (the host's
+ * text-only `env.clipboard`). Returns whether the rich copy happened.
+ */
+export function copyRich(document: Document, payload: SelectionPayload, fallback: (text: string) => void): boolean {
+  let delivered = false;
+  const handler = (event: ClipboardEvent) => {
+    event.stopImmediatePropagation();
+    if (!event.clipboardData) return;
+    event.clipboardData.setData('text/plain', payload.text);
+    if (payload.html) event.clipboardData.setData('text/html', payload.html);
+    event.preventDefault();
+    delivered = true;
+  };
+  document.addEventListener('copy', handler as EventListener, true);
+  let ran = false;
+  try { ran = document.execCommand?.('copy') ?? false; } catch { ran = false; }
+  document.removeEventListener('copy', handler as EventListener, true);
+  if (!ran || !delivered) fallback(payload.text);
+  return ran && delivered;
+}
+
+/**
  * Copy a selection in the chat as Markdown (text/plain) and, where it carries
  * formatting, as HTML (text/html), so a paste into a document keeps headings,
  * lists, code and links, and a paste into a plain editor or a chat gets Markdown.

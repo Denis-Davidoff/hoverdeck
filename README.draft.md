@@ -140,13 +140,13 @@ Every tool below works from the browser tab's toolbar. Agents get the same abili
 
 1. **Install the extension.**
    - **VSCodium, Devin, Cursor, Windsurf:** [Open VSX](https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate) — one click.
-   - **VS Code:** download [`tab-browser-ultimate.vsix`](https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/raw/main/tab-browser-ultimate.vsix) → **Extensions: Install from VSIX…**
+   - **VS Code:** download [`tab-browser-ultimate.vsix`](https://github.com/Denis-Davidoff/hoverdeck/raw/main/tab-browser-ultimate.vsix) → **Extensions: Install from VSIX…**
 2. **Enable the browser API (VS Code, VSCodium, Devin).** Click the orange **Enable Browser API** button in the status bar, then quit and reopen the editor. *Skip this for Google Chrome: it needs no setup.*
 3. **Open a page and chat.** Run **AI Browser: Show**, enter a URL, then open the **AI Browser** chat in the secondary side bar and say what you want.
 
 <!-- 🎬 **MEDIA-TODO · GIF (8 s):** install, click Enable Browser API, restart, first page open. -->
 
-[![Step-by-step setup](ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/vs-code-tab-browser-ultimate/main/ai-browser-instruct.jpg)
+[![Step-by-step setup](ai-browser-instruct.jpg)](https://raw.githubusercontent.com/Denis-Davidoff/hoverdeck/main/ai-browser-instruct.jpg)
 
 ### Editor support
 

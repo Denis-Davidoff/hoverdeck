@@ -3,7 +3,7 @@ import { remoteRefusal as commandRefusal, readConnectionPermissions, type Remote
 
 /** Ignore workspace settings: a repository cannot change a connected client's grants. */
 export function connectionPermissions() {
-	return readConnectionPermissions(vscode.workspace.getConfiguration('aiBrowser.chat').inspect('connectionPermissions')?.globalValue);
+	return readConnectionPermissions(vscode.workspace.getConfiguration('hoverdeck.chat').inspect('connectionPermissions')?.globalValue);
 }
 
 export function remoteRefusal(surface: RemoteSurface, type: string): string | undefined {

@@ -13,8 +13,8 @@ test('the setting off: the entry stays, disabled, naming the setting both ways',
 		assert.deepEqual(view.terminals, []);
 		assert.equal(view.terminalSupport.available, false);
 		const reason = (view.terminalSupport as { reason: string }).reason;
-		assert.match(reason, surface === 'chrome' ? /AI Browser › Chat: Chrome Terminal Access/ : /AI Browser › Chat: Remote Terminal/);
-		assert.match(reason, surface === 'chrome' ? /aiBrowser\.chat\.chromeTerminalAccess/ : /aiBrowser\.chat\.remoteTerminal/);
+		assert.match(reason, surface === 'chrome' ? /Chat: Chrome Terminal Access/ : /Chat: Remote Terminal/);
+		assert.match(reason, surface === 'chrome' ? /hoverdeck\.chat\.chromeTerminalAccess/ : /hoverdeck\.chat\.remoteTerminal/);
 		assert.deepEqual(view.controls.newTerminal, { s: 'off', reason });
 	}
 });

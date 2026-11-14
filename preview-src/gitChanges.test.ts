@@ -36,7 +36,7 @@ function production(name: string, context: Record<string, unknown>): (...args: a
 	assert.ok(body, name);
 	return runInNewContext(transpileModule(`${body}\n${name};`, { compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 } }).outputText, context);
 }
-function panel(staged: string[], unstaged: string[], available = true) {
+function panel(staged: string[], unstaged: string[], available = true, manual?: string) {
 	const actions: { kind: string; path?: string; staged?: boolean }[] = [];
 	const files: WorkdirGitStatus = { staged: staged.map(path => ({ path, status: 'M' })), unstaged: unstaged.map(path => ({ path, status: 'M' })), changed: new Set([...staged, ...unstaged]).size, deleted: 0 };
 	const list = new Node(), footer = new Node();
@@ -53,6 +53,8 @@ function panel(staged: string[], unstaged: string[], available = true) {
 		gitPopupError: new Node(), gitPopupList: list, gitPopupActions: footer, el, button, icon: () => new Node(),
 		commitGitFiles: (scope: string, push?: boolean) => actions.push({ kind: push ? `${scope}+push` : scope }),
 		changeGitFiles: (kind: string, path?: string) => actions.push({ kind, path }),
+		gitMessage: Object.assign(new Node(), { value: manual ?? '' }), gitMessageBox: new Node(), gitManual: manual !== undefined,
+		setGitManual: (on: boolean) => actions.push({ kind: on ? 'manual' : 'agent' }),
 	};
 	production('renderGitChanges', context)();
 	return { context, actions, list, footer };
@@ -60,23 +62,28 @@ function panel(staged: string[], unstaged: string[], available = true) {
 function nodes(node: Node, className: string): Node[] {
 	return node.children.filter((child): child is Node => child instanceof Node && child.className === className);
 }
+/** Every button of the footer, row by row: each row is a commit and its Push. */
+function footerButtons(footer: Node): Node[] {
+	return nodes(footer, 'git-changes-row').flatMap(row => row.children.filter((child): child is Node => child instanceof Node));
+}
 
-test('mixed changes ask staged-only or all, and dispatch the exact chosen scope', () => {
+test('mixed changes offer Commit staged and Commit all, each with a Push on its right', () => {
 	const { footer, actions } = panel(['staged.txt'], ['unstaged.txt']);
-	assert.match(footer.textContent, /What would you like to commit/);
-	const choices = nodes(footer, 'git-changes-commit');
-	assert.equal(choices.length, 4);
-	assert.match(choices[2].textContent, /& Push$/);
-	// With something staged, "Commit staged (N) & Push" stands last, below every note and button.
-	assert.match(choices[3].textContent, /^Commit staged \(1\) & Push$/);
+	const choices = footerButtons(footer);
+	assert.deepEqual(choices.map(c => c.textContent), ['Commit staged1', 'Push', 'Commit all2', 'Push']);
 	for (const choice of choices) { choice.click(); }
-	assert.deepEqual(actions, [{ kind: 'staged' }, { kind: 'all' }, { kind: 'all+push' }, { kind: 'staged+push' }]);
+	assert.deepEqual(actions, [{ kind: 'staged' }, { kind: 'staged+push' }, { kind: 'all' }, { kind: 'all+push' }]);
+});
+
+test('only staged changes offer Commit staged and its Push', () => {
+	const { footer } = panel(['staged.txt'], []);
+	assert.deepEqual(footerButtons(footer).map(c => c.textContent), ['Commit staged1', 'Push']);
 });
 
 test('an empty index offers staging all first and does not start a commit', () => {
 	const { footer, actions } = panel([], ['unstaged.txt']);
 	assert.match(footer.textContent, /Nothing staged/);
-	const choices = nodes(footer, 'git-changes-commit');
+	const choices = footerButtons(footer);
 	assert.equal(choices.length, 1); assert.equal(choices[0].textContent, 'Stage all files');
 	choices[0].click();
 	assert.deepEqual(actions, [{ kind: 'stage', path: undefined }]);
@@ -104,7 +111,7 @@ test('clicking the file opens the correct diff without staging or unstaging', ()
 test('model unavailability explains commit restrictions while staging remains usable', () => {
 	const { footer, list, actions } = panel(['staged.txt'], ['unstaged.txt'], false);
 	assert.match(footer.textContent, /Choose an available agent/);
-	assert.equal(nodes(footer, 'git-changes-commit').every(choice => choice.disabled), true);
+	assert.equal(footerButtons(footer).every(choice => choice.disabled), true);
 	const unstaged = nodes(list, 'git-changes-file')[1];
 	(unstaged.children.at(-1) as Node).click();
 	assert.deepEqual(actions, [{ kind: 'stage', path: 'unstaged.txt' }]);
@@ -116,6 +123,7 @@ test('the combined trigger remains accessible with staged files while the chat i
 		renderGitChanges() {}, workdirButton: new Node(), workdirMode: new Node(), workdirLocationText: new Node(),
 		workdirLocation: new Node(), workdirSummary: new Node(), workdirFooter: new Node(), workdirPopup: new Node(),
 		commitNotice: new Node(), commitNoticeText: new Node(), commitFix: new Node(),
+		gitManualSent: undefined, gitManual: false, gitMessage: { value: '' },
 	};
 	context.commitButton.disabled = true;
 	production('renderWorkdir', context)({
@@ -132,4 +140,25 @@ test('the combined trigger remains accessible with staged files while the chat i
 		});
 		assert.equal(context.commitNotice.hidden, phase !== 'error');
 	}
+});
+
+test('a message written by hand needs no agent, only text, and the footer switches between the two', () => {
+	// The agent's message: the footer offers "Write message".
+	const agent = panel(['a.txt'], []);
+	const toggle = (footer: Node) => footer.children.flatMap(c => c instanceof Node ? c.children : []).find((c): c is Node => c instanceof Node && c.className.includes('git-message-toggle'));
+	assert.equal(toggle(agent.footer)?.textContent, 'Write message');
+	toggle(agent.footer)!.click();
+	assert.deepEqual(agent.actions, [{ kind: 'manual' }]);
+	// No agent available, an empty message: Commit waits for text.
+	const empty = panel(['a.txt'], [], false, '  ');
+	assert.ok(footerButtons(empty.footer).every(b => b.disabled));
+	assert.equal(footerButtons(empty.footer)[0].title, 'Write a commit message first');
+	assert.equal(empty.context.gitMessageBox.hidden, false);
+	// With text, Commit and Push work although no agent is available.
+	const written = panel(['a.txt'], [], false, 'fix: typo');
+	assert.ok(footerButtons(written.footer).every(b => !b.disabled));
+	assert.match(footerButtons(written.footer)[0].title, /your message/);
+	assert.ok(!written.footer.textContent.includes('Choose model'));
+	toggle(written.footer)!.click();
+	assert.deepEqual(written.actions, [{ kind: 'agent' }]);
 });

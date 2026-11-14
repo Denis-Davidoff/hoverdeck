@@ -71,7 +71,7 @@ test('managed-copy ownership is checked before Git, also for selected subdirecto
 	await fixture(async ({ storage, base, copy, git }) => {
 		await fs.mkdir(path.join(copy, 'sub'));
 		const globals = { fs: { promises: fs }, path, managedCopy: repoWork.managedCopy, isOurWorktree: repoWork.isOurWorktree, parseRepo: github.parseRepo };
-		const host: any = { _tabs: [], _repoStorage: () => storage };
+		const host: any = { _tabs: [], _repoStorage: () => storage, _repoStorageOf: () => storage };
 		host._assertGitFolder = method(view, '_assertGitFolder', globals);
 		await host._assertGitFolder(copy);
 		await host._assertGitFolder(path.join(copy, 'sub'));
@@ -130,7 +130,7 @@ test('background toolbar skills use the same Git launch guard as composer sends'
 	const access = new GitAccess(async () => 'same-worktree');
 	const release = await access.mutate('/repo', () => []);
 	let started = false, failure = '';
-	const tab = { id: 'tab', chat: { id: 'chat' }, cwd: '/repo/sub' };
+	const tab = { id: 'tab', chat: { id: 'chat' }, cwd: '/repo/sub', pendingSends: [] };
 	const host = {
 		_tabs: [tab], _active: tab, _disposed: false, _gitAccess: access, _blocked: () => false,
 		_toolbar: () => [{ id: 'skill', name: 'skill', agents: 'all', params: [], result: 'silent' }],

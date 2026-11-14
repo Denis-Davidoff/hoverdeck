@@ -1,5 +1,5 @@
 export type RecordingQuality = 'balanced' | 'high' | 'maximum';
-export const recordingQualityKey = 'aiBrowser.recording.quality';
+export const recordingQualityKey = 'hoverdeck.recording.quality';
 export const recordingProfiles = {
 	balanced: { width: 1920, height: 1080, bitrate: 6_000_000, label: 'Balanced · 1080p' },
 	high: { width: 2560, height: 1440, bitrate: 12_000_000, label: 'High · 1440p' },
@@ -10,7 +10,7 @@ export function readRecordingQuality(value: unknown): RecordingQuality {
 }
 
 /** How long a recording may run, in active (unpaused) seconds; set in Chat Settings. */
-export const recordingSecondsKey = 'aiBrowser.recording.maxSeconds';
+export const recordingSecondsKey = 'hoverdeck.recording.maxSeconds';
 export const defaultRecordingSeconds = 300;
 export const minRecordingSeconds = 10;
 export const maxRecordingSeconds = 3600;

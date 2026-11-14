@@ -135,17 +135,17 @@ export async function unseal(text: string, passphrase: string): Promise<string> 
 	try {
 		raw = JSON.parse(text);
 	} catch {
-		throw new SealError('notSealed', 'Not an AI Browser export file');
+		throw new SealError('notSealed', 'Not a saved logins export file');
 	}
 	if (raw?.format !== sealFormat) {
-		throw new SealError('notSealed', 'Not an AI Browser export file');
+		throw new SealError('notSealed', 'Not a saved logins export file');
 	}
 	// The version is read from a file somebody handed the user, so it is never
 	// echoed: the message reaches a notification, whose body renders links that
 	// run commands, and `1 [Update](command:…)` would have been one.
 	if (raw.version !== sealVersion) {
 		throw new SealError('unsupported', typeof raw.version === 'number' && raw.version > sealVersion
-			? 'The export was made by a newer version of AI Browser'
+			? 'The export was made by a newer version of this extension'
 			: 'The export file has a version this build does not know');
 	}
 	const kdf = raw.kdf;

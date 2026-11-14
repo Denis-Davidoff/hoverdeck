@@ -1,6 +1,7 @@
 import { deepStrictEqual, strictEqual, throws } from 'node:assert';
 import { test } from 'node:test';
-import { canOfferPullRequest, githubFieldError, parseCreatedPr, pullRequestBody, pullRequestHead, pullRequestTitle, parseApiPullRequests, parseApiRuns, parseGhPullRequests, parseGhRuns, parseGhWorkflows, pickGithubRemote, workflowFileUrl, workflowPath, runState, summarizeChecks, parseWatchedRun, runWatchKey, runInFlight, runEndedText } from './githubStatus.ts';
+import { canOfferPullRequest, mergedPullRequest, githubFieldError, parseCreatedPr, pullRequestBody, pullRequestHead, pullRequestTitle, parseApiPullRequests, parseApiRuns, parseGhPullRequests, parseGhRuns, parseGhWorkflows, pickGithubRemote, workflowFileUrl, workflowPath, runState, summarizeChecks, parseWatchedRun, runWatchKey, runInFlight, runEndedText, runsForPullRequest, githubLogin, isOwnPullRequest, isOwnRun, parseGhRunActors } from './githubStatus.ts';
+import type { GithubRun } from './githubStatus.ts';
 
 test('summarizeChecks mixes check runs and status contexts', () => {
 	deepStrictEqual(summarizeChecks([
@@ -63,6 +64,7 @@ test('a pull request is offered for a branch that has none and is not the defaul
 	strictEqual(canOfferPullRequest({ ...base, branch: 'feat', prs: [pr] }), false);
 	// A merged pull request's branch, deleted on the remote: nothing to open a pull request for.
 	strictEqual(canOfferPullRequest({ ...base, branch: 'feat', upstreamGone: true }), false);
+	strictEqual(canOfferPullRequest({ ...base, branch: 'feat', mergedPr: { number: 7, url: 'https://github.com/o/r/pull/7' } }), false);
 });
 
 test('the head names the fork when the branch was pushed elsewhere', () => {
@@ -146,4 +148,94 @@ test('run watch keys, in flight, ended text', () => {
 	strictEqual(runInFlight('success'), false);
 	strictEqual(runEndedText('failure'), 'Failed.');
 	strictEqual(runEndedText('other'), 'Finished.');
+});
+
+test('runsForPullRequest: the newest run per workflow of the pull request, finished ones included', () => {
+	const run = (id: number, branch: string, event: string, name: string, workflowPath?: string, sha?: string): GithubRun =>
+		({ id, name, title: 't', url: 'u', branch, event, state: 'success', updatedAt: '', ...(workflowPath ? { workflowPath } : {}), ...(sha ? { sha } : {}) });
+	const runs = [
+		run(5, 'feat', 'pull_request', 'Tests', '.github/workflows/test.yml'),
+		run(4, 'feat', 'push', 'Tests', '.github/workflows/test.yml'),
+		run(3, 'main', 'push', 'Build', '.github/workflows/build.yml'),
+		run(2, 'feat', 'push', 'Lint'),
+		run(1, 'feat', 'push', 'Lint'),
+	];
+	deepStrictEqual(runsForPullRequest('o/r', { branch: 'feat' }, runs).map(r => r.id), [5, 2]);
+	deepStrictEqual(runsForPullRequest('o/r', { branch: 'feat', headRepo: 'O/R' }, runs).map(r => r.id), [5, 2]);
+	// A fork's branch name is not the base repository's: only pull_request runs are its.
+	deepStrictEqual(runsForPullRequest('o/r', { branch: 'feat', headRepo: 'fork/r' }, runs).map(r => r.id), [5]);
+	deepStrictEqual(runsForPullRequest('o/r', { branch: '' }, runs), []);
+});
+
+test('runsForPullRequest: a release or a manual run on the branch is not the pull request\'s (reported)', () => {
+	const head = 'a'.repeat(40), old = 'b'.repeat(40);
+	const run = (id: number, event: string, name: string, sha: string): GithubRun =>
+		({ id, name, title: 't', url: 'u', branch: 'trunk', event, state: 'success', updatedAt: '', workflowPath: `.github/workflows/${name}.yml`, sha });
+	const runs = [
+		run(9, 'pull_request', 'test', head),
+		run(8, 'workflow_run', 'release-production', head),
+		run(7, 'workflow_dispatch', 'db-operations', old),
+		run(6, 'schedule', 'nightly', head),
+		run(5, 'push', 'lint', old),
+		run(4, 'pull_request', 'build', old),
+	];
+	// Without the head commit: pull_request and push runs only.
+	deepStrictEqual(runsForPullRequest('o/r', { branch: 'trunk' }, runs).map(r => r.id), [9, 5, 4]);
+	// With it: only the runs on that commit.
+	deepStrictEqual(runsForPullRequest('o/r', { branch: 'trunk', headSha: head.toUpperCase() }, runs).map(r => r.id), [9]);
+});
+
+test('the head commit of a pull request is read from gh and the API', () => {
+	const sha = 'c'.repeat(40);
+	strictEqual(parseGhPullRequests(JSON.stringify([{ number: 1, url: 'https://github.com/o/r/pull/1', headRefName: 'x', headRefOid: sha }]))[0].headSha, sha);
+	strictEqual(parseApiPullRequests(JSON.stringify([{ number: 1, html_url: 'https://github.com/o/r/pull/1', head: { ref: 'x', sha } }]))[0].headSha, sha);
+	strictEqual(parseGhPullRequests(JSON.stringify([{ number: 1, url: 'https://github.com/o/r/pull/1', headRefName: 'x', headRefOid: 'nope' }]))[0].headSha, undefined);
+});
+
+test('mergedPullRequest: only a merged pull request whose head is the current commit', () => {
+	const sha = 'a'.repeat(40);
+	const gh = JSON.stringify([
+		{ number: 3, url: 'https://github.com/o/r/pull/3', headRefName: 'feat', headRefOid: 'b'.repeat(40), headRepository: { nameWithOwner: 'o/r' } },
+		{ number: 5, url: 'https://github.com/o/r/pull/5', headRefName: 'feat', headRefOid: sha, headRepository: { nameWithOwner: 'o/r' } },
+	]);
+	deepStrictEqual(mergedPullRequest(gh, 'feat', sha, 'o/r'), { number: 5, url: 'https://github.com/o/r/pull/5' });
+	strictEqual(mergedPullRequest(gh, 'feat', 'c'.repeat(40), 'o/r'), undefined, 'a commit after the merge offers again');
+	strictEqual(mergedPullRequest(gh, 'other', sha), undefined);
+	strictEqual(mergedPullRequest(gh, 'feat', sha, 'fork/r'), undefined, 'another fork\'s branch of the same name');
+	const api = JSON.stringify([
+		{ number: 8, html_url: 'https://github.com/o/r/pull/8', merged_at: null, head: { ref: 'feat', sha, repo: { full_name: 'o/r' } } },
+		{ number: 9, html_url: 'https://github.com/o/r/pull/9', merged_at: '2026-11-12T10:00:00Z', head: { ref: 'feat', sha, repo: { full_name: 'o/r' } } },
+	]);
+	deepStrictEqual(mergedPullRequest(api, 'feat', sha, 'o/r'), { number: 9, url: 'https://github.com/o/r/pull/9' }, 'closed without merge is skipped');
+	strictEqual(mergedPullRequest('not json', 'feat', sha), undefined);
+});
+
+test('your pull requests: a login read strictly, compared without case', () => {
+	strictEqual(githubLogin(' DenisDavydov\n'), 'DenisDavydov');
+	strictEqual(githubLogin('-bad'), undefined);
+	strictEqual(githubLogin('a'.repeat(40)), undefined);
+	strictEqual(githubLogin('[x](command:y)'), undefined);
+	strictEqual(isOwnPullRequest({ author: 'denisdavydov' }, 'DenisDavydov'), true);
+	strictEqual(isOwnPullRequest({ author: '' }, ''), false);
+	strictEqual(isOwnPullRequest({ author: 'me' }, undefined), false);
+});
+
+test('a run names who started it, and your own runs are told apart', () => {
+	const actors = parseGhRunActors(JSON.stringify([{ id: 1, actor: 'DenisDavydov' }, { id: 2, actor: 'dependabot[bot]' }, { id: 3, actor: '<b>x</b>' }, { id: 'x', actor: 'a' }]));
+	deepStrictEqual([...actors], [[1, 'DenisDavydov'], [2, 'dependabot[bot]']]);
+	const runs = parseGhRuns(JSON.stringify([
+		{ databaseId: 1, url: 'https://github.com/o/r/actions/runs/1', status: 'completed', conclusion: 'success' },
+		{ databaseId: 3, url: 'https://github.com/o/r/actions/runs/3', status: 'completed', conclusion: 'success' },
+	]), undefined, undefined, actors);
+	strictEqual(runs[0].actor, 'DenisDavydov');
+	strictEqual(runs[1].actor, undefined);
+	const api = parseApiRuns(JSON.stringify({ workflow_runs: [
+		{ id: 5, html_url: 'https://github.com/o/r/actions/runs/5', actor: { login: 'alice' }, triggering_actor: { login: 'bob' } },
+		{ id: 6, html_url: 'https://github.com/o/r/actions/runs/6', actor: { login: 'alice' } },
+	] }));
+	deepStrictEqual(api.map(r => r.actor), ['bob', 'alice']);
+	strictEqual(isOwnRun({ actor: 'denisdavydov' }, 'DenisDavydov'), true);
+	strictEqual(isOwnRun({ actor: 'alice' }, 'DenisDavydov'), false);
+	strictEqual(isOwnRun({}, 'DenisDavydov'), false);
+	strictEqual(isOwnRun({ actor: 'alice' }, undefined), false);
 });

@@ -8,12 +8,12 @@
 	"icon": "media/icon.png",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate.git"
+		"url": "https://github.com/Denis-Davidoff/hoverdeck.git"
 	},
 	"bugs": {
-		"url": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate/issues"
+		"url": "https://github.com/Denis-Davidoff/hoverdeck/issues"
 	},
-	"homepage": "https://github.com/Denis-Davidoff/vs-code-tab-browser-ultimate#readme",
+	"homepage": "https://github.com/Denis-Davidoff/hoverdeck#readme",
 	"engines": {
 		"vscode": "^1.85.0"
 	},

@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { productName } from '../core/flavor';
 import { onRemotePick } from '../browser/remotePick';
 import * as vscode from 'vscode';
 import { CDPClient } from '../core/cdp';
@@ -632,7 +633,7 @@ function requireBrowserTab(): vscode.BrowserTab | undefined {
 		// and the pause is decided geometrically, so a toast would pause exactly
 		// the page this message tells the user to go and focus.
 		refuse(vscode.l10n.t(
-			"No integrated browser tab is active. Open a page with \"AI Browser: Show\", focus that tab, then try again."));
+			"No integrated browser tab is active. Open a page with \"{0}: Show\", focus that tab, then try again.", productName()));
 	}
 	return tab;
 }
@@ -739,7 +740,7 @@ async function pickAndDeliver<T>(
 					return;
 				}
 				vscode.window.showErrorMessage(vscode.l10n.t(
-					"AI Browser: {0}", err instanceof Error ? err.message : String(err)));
+					"{1}: {0}", err instanceof Error ? err.message : String(err), productName()));
 			}
 		});
 	} finally {
@@ -764,8 +765,8 @@ let cancelHolders = 0;
 function cancelButton(): vscode.Disposable {
 	if (!cancelItem) {
 		cancelItem = vscode.window.createStatusBarItem(
-			'aiBrowser.cancelPick', vscode.StatusBarAlignment.Left, 1001);
-		cancelItem.name = vscode.l10n.t("AI Browser: cancel element pick");
+			'hoverdeck.cancelPick', vscode.StatusBarAlignment.Left, 1001);
+		cancelItem.name = vscode.l10n.t("{0}: cancel element pick", productName());
 		cancelItem.text = vscode.l10n.t("$(stop-circle) Cancel pick");
 		cancelItem.tooltip = vscode.l10n.t("Stop picking an element");
 		cancelItem.command = cancelPickCommand;
@@ -787,7 +788,7 @@ function cancelButton(): vscode.Disposable {
 	});
 }
 
-export const cancelPickCommand = 'aiBrowser.cancelElementPick';
+export const cancelPickCommand = 'hoverdeck.cancelElementPick';
 
 /** Truncates a value so a notification stays readable. */
 function short(value: string): string {

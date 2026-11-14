@@ -83,6 +83,7 @@ function rig() {
 		_terminalsStarting: 0,
 		_active: tabs[0],
 		_remembered: { agent: 'claude' },
+		_preferredAgent(this: any) { return this._remembered.agent; },
 		_registry: { agents: [{ id: 'claude', available: true }, { id: 'codex', available: true }, { id: 'gemini', available: false }] },
 		_windowCwd: () => '/win',
 		_terminalSupport: () => supportReason ? { available: false, reason: supportReason } : { available: true, limit, agents: [] },

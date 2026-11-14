@@ -9,7 +9,7 @@
 export const voiceMaxSeconds = 300;
 
 /**
- * What `aiBrowser.chat.voiceLanguage` may hold: a BCP 47 tag. The manifest's `pattern` is the same
+ * What `hoverdeck.chat.voiceLanguage` may hold: a BCP 47 tag. The manifest's `pattern` is the same
  * expression, so a setting that would be refused here is marked in the Settings editor first.
  */
 export const voiceLocalePattern = /^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})*$/;

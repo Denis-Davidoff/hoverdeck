@@ -47,12 +47,37 @@ suite('parseNews', () => {
 		assert.deepStrictEqual(news.entries, [{ title: '1.0', items: ['x'] }]);
 	});
 
-	test('the shipped NEWS.md parses into an introduction and at least one entry', () => {
-		// `npm test` runs from the repository root.
-		const news = parseNews(fs.readFileSync('NEWS.md', 'utf8'));
+	test('a quote before the first entry is a notice; inside an entry it is a highlight', () => {
+		const news = parseNews('Intro.\n\n> $(megaphone) **Big news** — first line\n> and the rest\n>\n> plain notice\n\n- $(eye) **View** — x\n\n## 1.0\n> **Important** first\n- item\n\n## 0.9\n- y');
+		assert.strictEqual(news.intro, 'Intro.');
+		assert.deepStrictEqual(news.notices, [
+			{ icon: 'megaphone', title: 'Big news', text: 'first line and the rest' },
+			{ icon: 'megaphone', title: '', text: 'plain notice' },
+		]);
+		assert.strictEqual(news.features.length, 1);
+		assert.deepStrictEqual(news.entries, [
+			{ title: '1.0', items: ['item'], highlights: ['**Important** first'] },
+			{ title: '0.9', items: ['y'] },
+		]);
+	});
+
+	test('the shipped NEWS.md parses and announces none of the AI Browser-only commands', () => {
+		const text = fs.readFileSync('NEWS.md', 'utf8');
+		const news = parseNews(text);
 		assert.ok(news.intro.length > 20, news.intro);
 		assert.ok(news.features.length >= 1, 'the shipped features');
 		assert.ok(news.entries.length >= 1 && news.entries.length <= 6);
 		assert.ok(news.entries.every(e => e.items.length > 0));
+		const shown = [news.intro, ...news.features.map(f => `${f.title} ${f.text}`), ...news.entries.flatMap(e => e.items)].join('\n');
+		assert.doesNotMatch(shown, /Connect (Claude|Codex|Gemini)|Add .* to (Claude Code|Codex)|Copy Recording Prompt/);
+	});
+
+	test('no shipped entry item starts with an icon, which only features and notices draw', () => {
+		for (const file of ['NEWS.md']) {
+			const news = parseNews(fs.readFileSync(file, 'utf8'));
+			for (const item of news.entries.flatMap(e => [...e.items, ...(e.highlights ?? [])])) {
+				assert.doesNotMatch(item, /^\$\(/, `${file}: ${item.slice(0, 60)}`);
+			}
+		}
 	});
 });
