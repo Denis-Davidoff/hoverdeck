@@ -52,7 +52,7 @@ export async function translatePage(context: vscode.ExtensionContext, browser: B
 		return;
 	}
 	if (!isBrowserApiGranted()) {
-		refuse(vscode.l10n.t("Translating a page needs the integrated browser API — see the {0} status bar item.", productName()));
+		refuse(vscode.l10n.t("Translating a page needs the integrated browser API — run \"{0}: Enable Integrated Browser API\" from the command palette.", productName()));
 		return;
 	}
 	const tab = browser.userTab ?? await pickTab();

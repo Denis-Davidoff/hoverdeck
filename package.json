@@ -2,7 +2,7 @@
 	"name": "hoverdeck",
 	"displayName": "HoverDeck🏆 for Claude, Codex and any AI agent",
 	"description": "One deck for all your AI agents: Claude Code, Codex, Gemini, OpenCode, Pi and OpenRouter in a chat with a browser, Git and terminals — in VS Code, in Chrome and from your phone.",
-	"version": "0.9.23",
+	"version": "1.0.0",
 	"enabledApiProposals": [
 		"externalUriOpener",
 		"browser"
@@ -187,6 +187,11 @@
 		"onCommand:hoverdeck.logins.import",
 		"onCommand:hoverdeck.logins.export",
 		"onCommand:hoverdeck.translatePage",
+		"onCommand:hoverdeck.favorites.add",
+		"onCommand:hoverdeck.favorites.open",
+		"onCommand:hoverdeck.favorites.manage",
+		"onCommand:hoverdeck.favorites.star",
+		"onCommand:hoverdeck.favorites.unstar",
 		"onCommand:hoverdeck.annotatePage",
 		"onCommand:hoverdeck.annotateAnywhere",
 		"onCommand:hoverdeck.repeat.annotateAnywhere",
@@ -476,6 +481,36 @@
 				"title": "%command.logins.saveFromPage.title%",
 				"category": "%category%",
 				"icon": "$(save)"
+			},
+			{
+				"command": "hoverdeck.favorites.add",
+				"title": "%command.favorites.add.title%",
+				"category": "%category%",
+				"icon": "$(star-add)"
+			},
+			{
+				"command": "hoverdeck.favorites.open",
+				"title": "%command.favorites.open.title%",
+				"category": "%category%",
+				"icon": "$(star-full)"
+			},
+			{
+				"command": "hoverdeck.favorites.manage",
+				"title": "%command.favorites.manage.title%",
+				"category": "%category%",
+				"icon": "$(settings-gear)"
+			},
+			{
+				"command": "hoverdeck.favorites.star",
+				"title": "%command.favorites.star.title%",
+				"category": "%category%",
+				"icon": "$(star-empty)"
+			},
+			{
+				"command": "hoverdeck.favorites.unstar",
+				"title": "%command.favorites.unstar.title%",
+				"category": "%category%",
+				"icon": "$(star-full)"
 			},
 			{
 				"command": "hoverdeck.pasteCookies",
@@ -801,7 +836,8 @@
 								"recording",
 								"annotations",
 								"cookies",
-								"editor"
+								"editor",
+								"skills"
 							]
 						},
 						"uniqueItems": true,
@@ -809,6 +845,12 @@
 						"scope": "application",
 						"title": "MCP: Switched-off Features",
 						"markdownDescription": "%configuration.mcp.disabledFeatures.description%"
+					},
+					"hoverdeck.favorites.showButton": {
+						"type": "boolean",
+						"default": true,
+						"title": "Favorites: Star Button",
+						"markdownDescription": "%configuration.favorites.showButton.description%"
 					},
 					"hoverdeck.logins.enabled": {
 						"type": "boolean",
@@ -879,6 +921,13 @@
 						"scope": "application",
 						"title": "Confirm Cookies an Agent Sets",
 						"markdownDescription": "%configuration.security.confirmCookies.description%"
+					},
+					"hoverdeck.security.confirmUploads": {
+						"type": "boolean",
+						"default": true,
+						"scope": "application",
+						"title": "Confirm Files an Agent Uploads",
+						"markdownDescription": "%configuration.security.confirmUploads.description%"
 					},
 					"hoverdeck.chat.connectionPermissions": {
 						"type": "object",
@@ -1156,6 +1205,13 @@
 						"title": "Open Plain Terminals from Chrome and the Website",
 						"markdownDescription": "%configuration.chat.remoteTerminalShell.description%"
 					},
+					"hoverdeck.chat.remoteWorkflowShell": {
+						"type": "boolean",
+						"default": false,
+						"scope": "application",
+						"title": "Run Workflows with Shell Steps from Chrome and the Website",
+						"markdownDescription": "%configuration.chat.remoteWorkflowShell.description%"
+					},
 					"hoverdeck.chat.remoteTerminalAgent": {
 						"type": "boolean",
 						"default": false,
@@ -1329,54 +1385,14 @@
 					"when": "activeEditor == 'workbench.editor.browser'"
 				},
 				{
-					"command": "hoverdeck.repeat.element",
+					"command": "hoverdeck.favorites.star",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'element'"
+					"when": "activeEditor == 'workbench.editor.browser' && config.hoverdeck.favorites.showButton && !hoverdeck.pageIsFavorite"
 				},
 				{
-					"command": "hoverdeck.repeat.cssPath",
+					"command": "hoverdeck.favorites.unstar",
 					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssPath'"
-				},
-				{
-					"command": "hoverdeck.repeat.cssLocation",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'cssLocation'"
-				},
-				{
-					"command": "hoverdeck.repeat.xpath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'xpath'"
-				},
-				{
-					"command": "hoverdeck.repeat.annotate",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotate'"
-				},
-				{
-					"command": "hoverdeck.repeat.annotateAnywhere",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'annotateAnywhere'"
-				},
-				{
-					"command": "hoverdeck.repeat.chat.element",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:element' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
-				},
-				{
-					"command": "hoverdeck.repeat.chat.cssPath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssPath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
-				},
-				{
-					"command": "hoverdeck.repeat.chat.cssLocation",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:cssLocation' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
-				},
-				{
-					"command": "hoverdeck.repeat.chat.xpath",
-					"group": "navigation@2",
-					"when": "activeEditor == 'workbench.editor.browser' && hoverdeck.lastElementAction == 'chat:xpath' && !hoverdeck.chatUnsupported && !hoverdeck.chatBlocked"
+					"when": "activeEditor == 'workbench.editor.browser' && config.hoverdeck.favorites.showButton && hoverdeck.pageIsFavorite"
 				},
 				{
 					"command": "hoverdeck.recording.pause",
@@ -1433,6 +1449,14 @@
 					"group": "2_translate@1"
 				},
 				{
+					"command": "hoverdeck.favorites.add",
+					"group": "2_favorites@1"
+				},
+				{
+					"submenu": "hoverdeck.favoritesMenu",
+					"group": "2_favorites@2"
+				},
+				{
 					"command": "hoverdeck.annotatePage",
 					"group": "2_annotations@1"
 				},
@@ -1479,6 +1503,14 @@
 				}
 			],
 			"commandPalette": [
+				{
+					"command": "hoverdeck.favorites.star",
+					"when": "false"
+				},
+				{
+					"command": "hoverdeck.favorites.unstar",
+					"when": "false"
+				},
 				{
 					"command": "hoverdeck.removeAiBrowserEntries"
 				},
@@ -1674,6 +1706,16 @@
 					"when": "!hoverdeck.recordingActive"
 				}
 			],
+			"hoverdeck.favoritesMenu": [
+				{
+					"command": "hoverdeck.favorites.open",
+					"group": "1_open@1"
+				},
+				{
+					"command": "hoverdeck.favorites.manage",
+					"group": "2_manage@1"
+				}
+			],
 			"hoverdeck.loginsMenu": [
 				{
 					"command": "hoverdeck.logins.fill",
@@ -1770,8 +1812,8 @@
 				"id": "hoverdeck.elementMenu",
 				"label": "%submenu.elementMenu.label%",
 				"icon": {
-					"light": "media/icons/globe-light.svg",
-					"dark": "media/icons/globe-dark.svg"
+					"light": "media/icons/hoverdeck-light.svg",
+					"dark": "media/icons/hoverdeck-dark.svg"
 				}
 			},
 			{
@@ -1781,6 +1823,10 @@
 			{
 				"id": "hoverdeck.loginsMenu",
 				"label": "%submenu.loginsMenu.label%"
+			},
+			{
+				"id": "hoverdeck.favoritesMenu",
+				"label": "%submenu.favoritesMenu.label%"
 			},
 			{
 				"id": "hoverdeck.recordingMenu",

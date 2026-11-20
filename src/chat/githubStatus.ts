@@ -24,6 +24,8 @@ export interface GithubPullRequest {
 	readonly url: string;
 	readonly author: string;
 	readonly branch: string;
+	/** The branch it merges into (`gh`'s `baseRefName`, the API's `base.ref`). */
+	readonly base?: string;
 	/** Repository containing the head branch (forks may reuse branch names). */
 	readonly headRepo?: string;
 	/** The head commit (`gh`'s `headRefOid`, the API's `head.sha`): which runs are this pull request's. */
@@ -37,7 +39,19 @@ export interface GithubPullRequest {
 	readonly checks?: GithubCheckSummary;
 	/** Its head is the working folder's branch. */
 	readonly current?: boolean;
+	/** GitHub reports a merge conflict with the base branch (`mergeable: CONFLICTING` or state `DIRTY`). */
+	readonly conflict?: true;
+	/**
+	 * GitHub says it can be merged now: mergeable, not a draft, and its merge state
+	 * is `CLEAN`, `UNSTABLE` or `HAS_HOOKS` (branch protection satisfied). Absent while
+	 * GitHub is still computing it (`UNKNOWN`), when it is blocked, behind, or conflicting.
+	 */
+	readonly mergeReady?: true;
 }
+
+/** How a pull request is merged: a merge commit, squashed, or rebased. */
+export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
+export const githubMergeMethods: readonly GithubMergeMethod[] = ['merge', 'squash', 'rebase'];
 
 export type GithubRunState = 'success' | 'failure' | 'running' | 'queued' | 'cancelled' | 'skipped' | 'other';
 
@@ -94,6 +108,11 @@ export interface GithubStatus {
 	readonly mergedPr?: GithubMergedPr;
 	/** The signed-in GitHub login (`gh api user`, or VS Code's GitHub account): its login is shown in blue on its pull requests. */
 	readonly viewer?: string;
+	/**
+	 * The merge methods the repository allows, present only when the signed-in
+	 * account may push to it: what the Merge button offers.
+	 */
+	readonly mergeMethods?: readonly GithubMergeMethod[];
 }
 
 /** A GitHub login as GitHub allows it, or undefined. */
@@ -265,7 +284,9 @@ export function parseCreatedPr(output: string): GithubCreatedPr | undefined {
 }
 
 /** What `gh pr list --json` is asked for. */
-export const ghPrFields = 'number,title,url,author,headRefName,headRefOid,headRepository,headRepositoryOwner,isDraft,updatedAt,reviewDecision,statusCheckRollup';
+export const ghPrFields = 'number,title,url,author,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isDraft,updatedAt,reviewDecision,statusCheckRollup,mergeable,mergeStateStatus';
+/** What `gh repo view --json` is asked for: the default branch, and whether and how the viewer may merge. */
+export const ghRepoFields = 'defaultBranchRef,viewerPermission,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed';
 /** What `gh run list --json` is asked for. */
 export const ghRunFields = 'databaseId,name,displayTitle,url,headBranch,headSha,event,status,conclusion,updatedAt,workflowDatabaseId';
 /** What `gh workflow list --json` is asked for: `gh run list` names a run's workflow by id only. */
@@ -299,6 +320,8 @@ export function workflowFileUrl(repo: string, run: Pick<GithubRun, 'workflowPath
 }
 
 export const githubListLimit = 30;
+/** How many open pull requests the REST path asks one by one for their mergeability (the list carries none). */
+export const githubMergeCheckLimit = 10;
 
 const text = (value: unknown, max = 300): string => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max) : '';
 const httpsUrl = (value: unknown): string => {
@@ -347,17 +370,20 @@ export function parseGhPullRequests(json: string, branch?: string): GithubPullRe
 		const url = httpsUrl(raw?.url);
 		if (!number || !url) { continue; }
 		const head = text(raw.headRefName, 250);
+		const base = text(raw.baseRefName, 250);
 		const repository = raw.headRepository as Record<string, unknown> | undefined;
 		const owner = text((raw.headRepositoryOwner as Record<string, unknown> | undefined)?.login, 100);
 		const name = text(repository?.name, 100);
 		const headRepo = text(repository?.nameWithOwner, 250) || (owner && name ? `${owner}/${name}` : '');
 		const checks = summarizeChecks(raw.statusCheckRollup);
 		const headSha = commitSha(raw.headRefOid);
+		const draft = raw.isDraft === true;
 		out.push({
 			number, url, title: text(raw.title), author: text((raw.author as Record<string, unknown> | undefined)?.login, 100),
-			branch: head, draft: raw.isDraft === true, updatedAt: text(raw.updatedAt, 40), review: text(raw.reviewDecision, 40),
-			...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
+			branch: head, draft, updatedAt: text(raw.updatedAt, 40), review: text(raw.reviewDecision, 40),
+			...(base ? { base } : {}), ...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
 			...(checks ? { checks } : {}), ...(branch && head === branch ? { current: true } : {}),
+			...mergeVerdict(raw.mergeable, raw.mergeStateStatus, draft),
 		});
 	}
 	return out;
@@ -383,6 +409,46 @@ export function parseGhRuns(json: string, branch?: string, workflows?: ReadonlyM
 	return out;
 }
 
+/**
+ * Whether a pull request conflicts with its base, and whether GitHub would merge
+ * it now. `mergeable` is `gh`'s `MERGEABLE` / `CONFLICTING` / `UNKNOWN`; the merge
+ * state is `gh`'s `mergeStateStatus` or the API's `mergeable_state`, any case.
+ * `BEHIND`, `BLOCKED`, `DRAFT` and `UNKNOWN` are neither: nothing is said.
+ */
+export function mergeVerdict(mergeable: unknown, state: unknown, draft: boolean): { conflict?: true; mergeReady?: true } {
+	const m = typeof mergeable === 'string' ? mergeable.toUpperCase() : '';
+	const s = typeof state === 'string' ? state.toUpperCase() : '';
+	if (m === 'CONFLICTING' || s === 'DIRTY') { return { conflict: true }; }
+	if (!draft && m === 'MERGEABLE' && (s === 'CLEAN' || s === 'UNSTABLE' || s === 'HAS_HOOKS')) { return { mergeReady: true }; }
+	return {};
+}
+
+/** Whether a `viewerPermission` (`gh`) lets its account merge. */
+const pushPermission = (p: unknown): boolean => typeof p === 'string' && ['WRITE', 'MAINTAIN', 'ADMIN'].includes(p.toUpperCase());
+
+/**
+ * The repository's default branch and, when the viewer may push, the merge
+ * methods it allows: `gh repo view --json ghRepoFields`, or `GET /repos/{o}/{n}`
+ * (whose `allow_*` fields are only sent to some accounts: absent counts as allowed,
+ * and GitHub refuses a method it does not allow).
+ */
+export function parseRepoMerge(json: string): { defaultBranch?: string; mergeMethods?: GithubMergeMethod[] } {
+	const raw = JSON.parse(json) as Record<string, unknown>;
+	if (!raw || typeof raw !== 'object') { return {}; }
+	const gh = 'defaultBranchRef' in raw || 'viewerPermission' in raw;
+	const defaultBranch = text(gh ? (raw.defaultBranchRef as Record<string, unknown> | undefined)?.name : raw.default_branch, 250) || undefined;
+	const canPush = gh ? pushPermission(raw.viewerPermission) : (raw.permissions as Record<string, unknown> | undefined)?.push === true;
+	if (!canPush) { return { ...(defaultBranch ? { defaultBranch } : {}) }; }
+	const allowed = (ghKey: string, apiKey: string) => (gh ? raw[ghKey] : raw[apiKey]) !== false;
+	const mergeMethods = githubMergeMethods.filter(m => m === 'merge' ? allowed('mergeCommitAllowed', 'allow_merge_commit') : m === 'squash' ? allowed('squashMergeAllowed', 'allow_squash_merge') : allowed('rebaseMergeAllowed', 'allow_rebase_merge'));
+	return { ...(defaultBranch ? { defaultBranch } : {}), ...(mergeMethods.length ? { mergeMethods } : {}) };
+}
+
+/** A merge method from the view, or undefined. */
+export function mergeMethod(value: unknown): GithubMergeMethod | undefined {
+	return githubMergeMethods.find(m => m === value);
+}
+
 /** `GET /repos/{o}/{n}/pulls?state=open`. */
 export function parseApiPullRequests(json: string, branch?: string): GithubPullRequest[] {
 	const out: GithubPullRequest[] = [];
@@ -393,11 +459,16 @@ export function parseApiPullRequests(json: string, branch?: string): GithubPullR
 		const head = text((raw.head as Record<string, unknown> | undefined)?.ref, 250);
 		const headRepo = text(((raw.head as Record<string, unknown> | undefined)?.repo as Record<string, unknown> | undefined)?.full_name, 250);
 		const headSha = commitSha((raw.head as Record<string, unknown> | undefined)?.sha);
+		const base = text((raw.base as Record<string, unknown> | undefined)?.ref, 250);
+		const draft = raw.draft === true;
+		// The list carries no `mergeable`; one pull request's own answer (`GET pulls/{n}`) does.
+		const mergeable = raw.mergeable === true ? 'MERGEABLE' : raw.mergeable === false ? 'CONFLICTING' : undefined;
 		out.push({
 			number, url, title: text(raw.title), author: text((raw.user as Record<string, unknown> | undefined)?.login, 100),
-			branch: head, draft: raw.draft === true, updatedAt: text(raw.updated_at, 40), review: '',
-			...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
+			branch: head, draft, updatedAt: text(raw.updated_at, 40), review: '',
+			...(base ? { base } : {}), ...(headRepo ? { headRepo } : {}), ...(headSha ? { headSha } : {}),
 			...(branch && head === branch ? { current: true } : {}),
+			...mergeVerdict(mergeable, raw.mergeable_state, draft),
 		});
 	}
 	return out;

@@ -22,7 +22,7 @@
  */
 
 /** The CDP binding the wrapper reports to. Removed from the page as soon as it is captured. */
-export const passkeyBinding = '__aiBrowserPasskey';
+export const passkeyBinding = '__hoverdeckPasskey';
 
 /** Where the wrapper keeps its state, for the extension to settle a request through. */
 export const passkeyStateKey = 'hoverdeck.passkey';

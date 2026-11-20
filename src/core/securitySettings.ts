@@ -20,10 +20,11 @@ export type SecurityGuard =
 	| 'hideOtherChromeTabs'
 	| 'protectSecretFields'
 	| 'markPageContent'
-	| 'confirmCookies';
+	| 'confirmCookies'
+	| 'confirmUploads';
 
 /** In the order the settings panel and the status bar list them. */
-export const securityGuards: readonly SecurityGuard[] = ['confirmNewSites', 'protectSecretFields', 'hideOtherChromeTabs', 'confirmCookies', 'markPageContent'];
+export const securityGuards: readonly SecurityGuard[] = ['confirmNewSites', 'protectSecretFields', 'hideOtherChromeTabs', 'confirmCookies', 'confirmUploads', 'markPageContent'];
 
 export function isSecurityGuard(value: unknown): value is SecurityGuard {
 	return typeof value === 'string' && (securityGuards as readonly string[]).includes(value);

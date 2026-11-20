@@ -56,14 +56,14 @@ test('typing a follow-up or attaching a file keeps Stop as the main action with 
 		f.state.attachments = file ? [{ kind: 'file', id: 'file' }] : [];
 		f.render();
 		assert.equal(f.attributes.get('aria-label'), 'Stop');
-		assert.deepEqual(Array.from(f.items(), (item: any) => item.label), ['Stop', 'Send now', 'Send later', 'Schedule…']);
+		assert.deepEqual(Array.from(f.items(), (item: any) => item.label), ['Stop', 'Send now', 'Send later', 'Schedule…', 'Save as draft']);
 		assert.equal(f.items()[1].disabled, false);
 		assert.equal(f.items()[2].disabled, false);
 	}
 	f.state.running = false;
 	f.render();
 	assert.equal(f.attributes.get('aria-label'), 'Send');
-	assert.equal(f.items().length, 3);
+	assert.equal(f.items().length, 4);
 });
 
 test('send menu actions use the same immediate and queue paths as the displayed shortcuts', () => {

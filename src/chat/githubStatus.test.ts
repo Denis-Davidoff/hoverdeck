@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual, throws } from 'node:assert';
 import { test } from 'node:test';
-import { canOfferPullRequest, mergedPullRequest, githubFieldError, parseCreatedPr, pullRequestBody, pullRequestHead, pullRequestTitle, parseApiPullRequests, parseApiRuns, parseGhPullRequests, parseGhRuns, parseGhWorkflows, pickGithubRemote, workflowFileUrl, workflowPath, runState, summarizeChecks, parseWatchedRun, runWatchKey, runInFlight, runEndedText, runsForPullRequest, githubLogin, isOwnPullRequest, isOwnRun, parseGhRunActors } from './githubStatus.ts';
+import { mergeVerdict, parseRepoMerge, mergeMethod, ghPrFields, canOfferPullRequest, mergedPullRequest, githubFieldError, parseCreatedPr, pullRequestBody, pullRequestHead, pullRequestTitle, parseApiPullRequests, parseApiRuns, parseGhPullRequests, parseGhRuns, parseGhWorkflows, pickGithubRemote, workflowFileUrl, workflowPath, runState, summarizeChecks, parseWatchedRun, runWatchKey, runInFlight, runEndedText, runsForPullRequest, githubLogin, isOwnPullRequest, isOwnRun, parseGhRunActors } from './githubStatus.ts';
 import type { GithubRun } from './githubStatus.ts';
 
 test('summarizeChecks mixes check runs and status contexts', () => {
@@ -238,4 +238,47 @@ test('a run names who started it, and your own runs are told apart', () => {
 	strictEqual(isOwnRun({ actor: 'alice' }, 'DenisDavydov'), false);
 	strictEqual(isOwnRun({}, 'DenisDavydov'), false);
 	strictEqual(isOwnRun({ actor: 'alice' }, undefined), false);
+});
+
+test('mergeVerdict: a conflict is said, a clean one is ready, everything else says nothing', () => {
+	deepStrictEqual(mergeVerdict('CONFLICTING', 'DIRTY', false), { conflict: true });
+	deepStrictEqual(mergeVerdict('UNKNOWN', 'dirty', false), { conflict: true });
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'CLEAN', false), { mergeReady: true });
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'unstable', false), { mergeReady: true });
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'HAS_HOOKS', false), { mergeReady: true });
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'CLEAN', true), {});
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'BLOCKED', false), {});
+	deepStrictEqual(mergeVerdict('MERGEABLE', 'BEHIND', false), {});
+	deepStrictEqual(mergeVerdict('UNKNOWN', 'UNKNOWN', false), {});
+	deepStrictEqual(mergeVerdict(undefined, undefined, false), {});
+	strictEqual(ghPrFields.includes('mergeable') && ghPrFields.includes('mergeStateStatus'), true);
+});
+
+test('parseGhPullRequests and parseApiPullRequests carry the merge verdict', () => {
+	const gh = parseGhPullRequests(JSON.stringify([
+		{ number: 1, title: 'a', url: 'https://github.com/o/r/pull/1', headRefName: 'a', isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' },
+		{ number: 2, title: 'b', url: 'https://github.com/o/r/pull/2', headRefName: 'b', isDraft: false, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' },
+		{ number: 3, title: 'c', url: 'https://github.com/o/r/pull/3', headRefName: 'c', isDraft: false },
+	]));
+	strictEqual(gh[0].mergeReady, true); strictEqual(gh[0].conflict, undefined);
+	strictEqual(gh[1].conflict, true); strictEqual(gh[1].mergeReady, undefined);
+	strictEqual(gh[2].conflict, undefined); strictEqual(gh[2].mergeReady, undefined);
+	const api = parseApiPullRequests(JSON.stringify([
+		{ number: 4, title: 'd', html_url: 'https://github.com/o/r/pull/4', head: { ref: 'd' }, mergeable: false, mergeable_state: 'dirty' },
+		{ number: 5, title: 'e', html_url: 'https://github.com/o/r/pull/5', head: { ref: 'e' }, mergeable: true, mergeable_state: 'clean' },
+		{ number: 6, title: 'f', html_url: 'https://github.com/o/r/pull/6', head: { ref: 'f' }, mergeable: null, mergeable_state: 'unknown' },
+	]));
+	strictEqual(api[0].conflict, true);
+	strictEqual(api[1].mergeReady, true);
+	strictEqual(api[2].conflict ?? api[2].mergeReady, undefined);
+});
+
+test('parseRepoMerge: the methods only for an account that may push', () => {
+	deepStrictEqual(parseRepoMerge(JSON.stringify({ defaultBranchRef: { name: 'main' }, viewerPermission: 'WRITE', mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: false })), { defaultBranch: 'main', mergeMethods: ['merge', 'squash'] });
+	deepStrictEqual(parseRepoMerge(JSON.stringify({ defaultBranchRef: { name: 'main' }, viewerPermission: 'READ', mergeCommitAllowed: true })), { defaultBranch: 'main' });
+	deepStrictEqual(parseRepoMerge(JSON.stringify({ default_branch: 'dev', permissions: { push: true }, allow_merge_commit: false })), { defaultBranch: 'dev', mergeMethods: ['squash', 'rebase'] });
+	deepStrictEqual(parseRepoMerge(JSON.stringify({ default_branch: 'dev', permissions: { push: false } })), { defaultBranch: 'dev' });
+	deepStrictEqual(parseRepoMerge(JSON.stringify({ default_branch: 'dev' })), { defaultBranch: 'dev' });
+	strictEqual(mergeMethod('squash'), 'squash');
+	strictEqual(mergeMethod('fast-forward'), undefined);
 });

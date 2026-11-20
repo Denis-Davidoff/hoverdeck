@@ -6,6 +6,8 @@ import { featureOfTool, mcpFeatures, readDisabledFeatures } from './mcpFeatures.
 test('tools map to their feature and the core tools to none', () => {
 	assert.equal(featureOfTool('chat_play_sound'), 'sounds');
 	assert.equal(featureOfTool('chat_alert'), 'alerts');
+	assert.equal(featureOfTool('skill_list'), 'skills');
+	assert.equal(featureOfTool('skill_get'), 'skills');
 	assert.equal(featureOfTool('browser_recording_start'), 'recording');
 	assert.equal(featureOfTool('editor_context'), 'editor');
 	assert.equal(featureOfTool('browser_click'), undefined);

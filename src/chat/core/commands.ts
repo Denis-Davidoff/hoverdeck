@@ -69,6 +69,8 @@ export const COMMANDS = {
 	pinTerminal: terminal, terminalAskAgent: terminal, setTerminalAgentControl: terminal,
 	setTerminalRemote: editor('Remote access to a terminal is granted only in VS Code.'), terminalInsert: terminal,
 	runInTerminal: editor('Commands run only in VS Code.'),
+	openComposerTerminal: editor('The composer\'s Terminal tab is available only in VS Code.'),
+	leaveComposerTerminal: editor('The composer\'s Terminal tab is available only in VS Code.'),
 	showShellOutput: editor('Shell output terminals open only in VS Code.'),
 	stopAgentProcess: editor('Agent process controls are available only in VS Code.'),
 	watchAgentProcesses: editor('The process monitor runs only in VS Code.'),
@@ -113,6 +115,8 @@ export const COMMANDS = {
 	securitySettings: editor('Security settings are changed only in VS Code.'),
 	mcpFeatures: editor('MCP features are switched only in VS Code.'),
 	remoteTerminalSettings: editor('Remote terminal access is changed only in VS Code.'),
+	logins: editor('Saved logins are managed only in VS Code.'),
+	favorites: editor('Favorites are managed only in VS Code.'),
 	setConnectionPermission: editor('Connection permissions are changed only in VS Code.'),
 	openrouter: editor('The OpenRouter key and models are edited only in VS Code.'),
 	setNewsHidden: both('chat'),
@@ -142,7 +146,7 @@ export const COMMANDS = {
 	fixGitCommit: both('git'), dismissGitCommit: both('git'), gitBranchName: both('git'), gitBranchAction: both('git'),
 	gitRemoteAction: both('git'), restoreBranchStash: both('git'),
 	// Bound by the host to the conversation's own working folder.
-	githubStatus: both('git'), githubCreatePr: both('git'),
+	githubStatus: both('git'), githubCreatePr: both('git'), githubMergePr: editor('Pull requests are merged only in VS Code.'),
 	// The bell plays and notifies on the editor's machine.
 	githubWatchRun: editor('Actions runs are watched from VS Code.'),
 	// The file on the editor's own disk; Chrome and the website open it on GitHub instead.

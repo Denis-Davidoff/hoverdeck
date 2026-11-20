@@ -1,3 +1,6 @@
+import { loginsManager, readLoginsAction } from '../logins/loginsManager';
+import { addCurrentPage, favoriteSites, favoritesButtonShown, openFavoriteSite, showButtonSetting } from '../browser/favorites';
+import { readFavoritesAction } from '../browser/favoritesData';
 import { isMcpFeature, mcpFeatures, readDisabledFeatures, type McpFeature } from '../mcp/mcpFeatures';
 import { ShellOutput } from './shellOutput';
 import { agentProcesses } from './agentProcesses';
@@ -89,7 +92,7 @@ import { gitDiffSides } from './gitDiff';
 import { assertSwitchReady, switchAndUpdate, type SwitchResult } from './gitBranchSwitch';
 import { parseGitStatus } from './gitStatus';
 import { copyName, gitMarks, hiddenNames, isInside, maxListed, resolveInside, sortEntries, type FileEntry } from './fileExplorer';
-import { canOfferPullRequest, githubLogin, ghMergedFields, mergedPullRequest, type GithubMergedPr, ghPrFields, ghRunFields, githubFieldError, githubListLimit, parseApiPullRequests, parseApiRuns, parseCreatedPr, parseGhPullRequests, parseGhRuns, parseGhRunActors, ghRunActorsJq, parseGhWorkflows, ghWorkflowFields, workflowPath, pickGithubRemote, pullRequestBody, pullRequestHead, pullRequestTitle, ghWatchedRunFields, parseWatchedRun, runEndedText, runInFlight, runWatchKey, type GithubCreatedPr, type GithubSource, type GithubStatus } from './githubStatus';
+import { canOfferPullRequest, githubLogin, ghRepoFields, mergeMethod, parseRepoMerge, ghMergedFields, mergedPullRequest, type GithubMergedPr, ghPrFields, ghRunFields, githubFieldError, githubListLimit, githubMergeCheckLimit, parseApiPullRequests, parseApiRuns, parseCreatedPr, parseGhPullRequests, parseGhRuns, parseGhRunActors, ghRunActorsJq, parseGhWorkflows, ghWorkflowFields, workflowPath, pickGithubRemote, pullRequestBody, pullRequestHead, pullRequestTitle, ghWatchedRunFields, parseWatchedRun, runEndedText, runInFlight, runWatchKey, type GithubCreatedPr, type GithubSource, type GithubStatus } from './githubStatus';
 
 /** What the GitHub tab reads from the working folder itself. */
 interface GithubLocal { readonly slug?: string; readonly branch?: string; readonly headBranch?: string; readonly published?: boolean; readonly gone?: boolean; readonly remote?: string; readonly pushRepo?: string; readonly suggestedTitle?: string; readonly headSha?: string }
@@ -125,6 +128,7 @@ import { generateUuid } from '../core/uuid';
 import { contributionId, extensionIds, hasExternalAgents, mcpServerName, productName } from '../core/flavor';
 import { runRowPrefix, ToolbarRuns, type SkillEnd } from './toolbarRun';
 import type { ChatControl } from '../mcp/chatTools';
+import { skillDocument, skillNotFound, skillOfferedTo, skillSummary } from './skillCatalog';
 import { adaptSigils, fillPrompt, notificationText, toolbarLimits, validToolbarSkill } from './toolbarText';
 import { closeAlert, closestLimit, currentLimits, mergeLimits, nextReset, readClosedAlerts, settleClosed, usageAlertFor, usageCheckDue, type ClosedAlerts, type LimitState, type TurnWeight } from './usageAlert';
 
@@ -224,6 +228,14 @@ const toolbarStepsKey = 'hoverdeck.chat.toolbarSteps';
  * An older build reads an unknown `result` as `chat` and writes it back so.
  */
 const toolbarExtrasKey = 'hoverdeck.chat.toolbarExtras';
+/**
+ * A workflow's step kinds and names, by skill id, apart for the same reason:
+ * `{ steps: [{ shell?, name?, prompt }] }`, aligned with the skill's prompts.
+ * A kind applies only while its `prompt` is still the step's text, so a step
+ * an older build edited is read as an ordinary prompt rather than its new text
+ * being run as a command.
+ */
+const toolbarWorkflowKey = 'hoverdeck.chat.toolbarWorkflow';
 /** The longest text a skill's notification shows; Open has the whole result. */
 const skillToastLimit = 1_000;
 const newsHiddenKey = 'hoverdeck.chat.newsHiddenAt';
@@ -344,6 +356,8 @@ const untrustedFoldersKey = 'hoverdeck.chat.untrustedFolders';
 const untrustedLimit = 200;
 /** A project's own configuration files, which the folder button names when it holds them back. */
 const projectConfigFiles = ['.claude/settings.json', '.claude/settings.local.json', '.mcp.json', '.gemini/settings.json'];
+/** How many conversations with nothing sent New Chat "here" may leave open before it reuses one. */
+const maxEmptyTabs = 5;
 /** A folder's listing is reused for this long: the button is opened again and again while a message is written. */
 const workdirListingMs = 15_000;
 /** Editor events come in bursts (a folder of files opened at once): one Git read for the lot. */
@@ -518,8 +532,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const blocked = () => { const view = live(); return !view || !!view._blocked() || !remoteTerminalSetting(surface); };
 		return {
 			blocked,
-			find: terminalId => { const view = live(); const terminal = blocked() ? undefined : view?._terminals.find(terminalId); return terminal && (surface === 'chrome' || terminal.remote) ? terminal : undefined; },
-			shared: () => { const view = live(); return !view || blocked() ? [] : view._terminals.tabs.filter(t => surface === 'chrome' || t.remote).map(t => t.summary()); },
+			// A conversation's composer terminal is the editor's own: never reachable from Chrome or the website.
+			find: terminalId => { const view = live(); const terminal = blocked() ? undefined : view?._terminals.find(terminalId); return terminal && view && view._composerOf(terminal.id) === undefined && (surface === 'chrome' || terminal.remote) ? terminal : undefined; },
+			shared: () => { const view = live(); return !view || blocked() ? [] : view._terminals.tabs.filter(t => view._composerOf(t.id) === undefined && (surface === 'chrome' || t.remote)).map(t => t.summary()); },
 			support: () => { const view = live(); return view ? view._terminalSupport() : { available: false, reason: 'The chat is closed.' }; },
 		};
 	}
@@ -702,9 +717,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	private readonly _chromeCommand = new AsyncLocalStorage<{ tab: ChatTab; chatId: string; remote?: boolean; reply?: (message: HostToView, chatId?: string) => void }>();
 
+	/**
+	 * A workflow with a shell step runs a command on this machine, so Chrome
+	 * and the website may run or save one only with
+	 * `hoverdeck.chat.remoteWorkflowShell` on (user settings only). Saving is
+	 * gated too: a saved workflow is then one click from the editor's own bar.
+	 */
+	private _refuseRemoteShellWorkflow(message: ViewToHost): void {
+		let shell = false;
+		if (message.type === 'runToolbarSkill') {
+			shell = !!this._toolbar().find(s => s.id === message.id)?.workflow?.some(step => step.shell);
+		} else if (message.type === 'saveToolbarSkill') {
+			const workflow = (message.skill as { workflow?: unknown } | undefined)?.workflow;
+			shell = Array.isArray(workflow) && workflow.some(step => !!step && typeof step === 'object' && (step as { shell?: unknown }).shell === true);
+		}
+		if (shell && vscode.workspace.getConfiguration('hoverdeck.chat').inspect<boolean>('remoteWorkflowShell')?.globalValue !== true) {
+			throw new Error('This workflow has a shell step, which runs a command on the computer running VS Code. Turn on "Run Workflows with Shell Steps from Chrome and the Website" (hoverdeck.chat.remoteWorkflowShell) in VS Code to allow it.');
+		}
+	}
+
 	/** Async request scope keeps folder/skill/Git actions bound to Chrome's conversation. */
 	private async _receiveChromeFooter(tab: ChatTab, message: ViewToHost, reply?: (message: HostToView, chatId?: string) => void): Promise<void> {
 		if ('tabId' in message && message.tabId !== undefined && message.tabId !== tab.id) { throw new Error('The destination conversation changed. Try again.'); }
+		this._refuseRemoteShellWorkflow(message);
 		const scope = { tab, chatId: tab.chat.id, reply, remote: true };
 		await this._chromeCommand.run(scope, async () => {
 			const target = message.type === 'runToolbarSkill' ? { ...message, tabId: tab.id } : message;
@@ -776,6 +811,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * Memory only — terminal ids die with the host. See `terminalPins.ts`.
 	 */
 	private static readonly _pins = new TerminalPins();
+	/**
+	 * Conversation tab id → the terminal its composer's Terminal tab shows. Such a terminal is one of `_terminals`
+	 * (so `terminal_*`, pins and the stream work unchanged) but stays out of the strip, the front, the saved set and
+	 * the limit, and closes with its conversation tab.
+	 */
+	private readonly _composerTerminals = new Map<string, string>();
+	private readonly _composerTerminalsStarting = new Set<string>();
+	/**
+	 * Composer terminals attached automatically by opening the Terminal tab, with the terminal's `agentWrites` at that
+	 * moment. Leaving the tab detaches such a terminal unless the chat typed into it since; any manual attach or detach
+	 * takes it out of here, so the user's own choice is never undone by a tab switch.
+	 */
+	private readonly _composerAutoPins = new Map<string, number>();
 	/**
 	 * The approvals of typing into a terminal: minted when the user (or the approval menu) answers the
 	 * card of a `terminal_send` / `terminal_key`, consumed by the tool (`src/mcp/terminalGrants.ts`).
@@ -915,6 +963,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._projectId = chatProjectId(vscode.workspace.workspaceFile?.toString(),
 			(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.toString()), _context.storageUri?.toString());
 		if (_restoredPanel) { this._surfaceNumber = _restoredPanel.number; }
+		// A conversation's composer terminal is never the one in front.
+		this._terminals.background = id => this._composerOf(id) !== undefined;
 		const shared = _transfer?.services ?? ChatViewProvider._sharedServices;
 		this._registry = shared?.registry ?? new AgentRegistry(() => this._cwd(), id => this._agentBinaries()[id], _browserServer, () => !this._untrusted(this._cwd()), this._openrouterConfig());
 		void sweepBrowserConfigs().catch(() => { /* swept with the temp directory */ });
@@ -997,6 +1047,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (terminalSettingKeys.some(key => e.affectsConfiguration(key))) { this._postTerminalSettings(); }
 			if (e.affectsConfiguration('hoverdeck.chat.sound') || e.affectsConfiguration('hoverdeck.chat.notifications')) { this._post(); }
 			if (e.affectsConfiguration('hoverdeck.security')) { this._postSecurity(); }
+			if (e.affectsConfiguration('hoverdeck.favorites.showButton') && this._favoritesWatch) { this._postFavorites(); }
 			if (e.affectsConfiguration('hoverdeck.mcp.disabledFeatures')) { this._postMcpFeatures(); }
 			if (e.affectsConfiguration('hoverdeck.chat.connectionPermissions') || e.affectsConfiguration('hoverdeck.chat.chromeTerminal')) { this._post(); }
 			if (e.affectsConfiguration('hoverdeck.chat.chromeTerminal') || e.affectsConfiguration('hoverdeck.chat.remoteTerminal') || e.affectsConfiguration('hoverdeck.chat.remoteFilesChrome') || e.affectsConfiguration('hoverdeck.chat.remoteFilesWebsite')) {
@@ -1467,7 +1518,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					...(managed?.ownerChatId === this._active.chat.id ? { owned: true, taskState: taskState ?? 'idle' } : {}) };
 			}),
 			entries: this._active.chat.entries,
-			runningShells: this._active.chat.entries.filter((e): e is ToolEntry => e.kind === 'tool' && e.tool === 'command' && e.status === 'running').map(({ output: _output, blocks: _blocks, ...e }) => e),
+			// A workflow's shell steps too, running and lately ended: they are in no conversation.
+			runningShells: [...this._active.chat.entries.filter((e): e is ToolEntry => e.kind === 'tool' && e.tool === 'command' && e.status === 'running'), ...this._runs.shellRows(this._active.chat.id)]
+				.map(({ output: _output, blocks: _blocks, ...e }) => e),
 			agentProcesses: agentProcesses.forChat(this._active.chat.id),
 			visualizations: this._active.visualizations,
 			messageCount: this._active.chat.entries.filter(entry => entry.kind === 'user' || entry.kind === 'assistant').length,
@@ -1518,6 +1571,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			hasBrowserTab: this._browser.hasOpenTabs,
 			browserApi: tabSource.available(),
 			nativeBrowser: this._nativeBrowser,
+			favorites: this._favoritesList(),
 			news: this._news,
 			newsHidden: this._newsHidden(),
 			product: productName(),
@@ -1672,6 +1726,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				return;
 			case 'remoteTerminalSettings':
 				await this._remoteTerminalSettings(message);
+				return;
+			case 'logins':
+				await this._logins(message);
+				return;
+			case 'favorites':
+				await this._favorites(message);
 				return;
 			case 'mcpFeatures':
 				await this._mcpFeatures(message);
@@ -2172,7 +2232,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				this._openChat(message.id);
 				return;
 			case 'resumeInTerminal':
-				await this._resumeInTerminal(message.id);
+				await this._resumeInTerminal(message.id, message.where === 'tab');
 				return;
 			case 'tabAccess':
 				if (typeof message.tabId === 'string') {
@@ -2209,6 +2269,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				if (this._chromeCommand.getStore()?.remote && message.folder !== this._workdir()) { throw new Error('Open GitHub for this conversation\u2019s working folder.'); }
 				if (typeof message.folder === 'string') { await this._githubCreatePr(message.folder, message.title, message.draft === true); }
 				return;
+			case 'githubMergePr':
+				if (typeof message.folder === 'string') { await this._githubMergePr(message.folder, message.number, message.method); }
+				return;
 			case 'listHistory':
 				this.showHistory(true);
 				return;
@@ -2224,7 +2287,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			case 'newTerminal':
 				await this.newTerminal(message.agent, message.pinTo);
 				return;
+			case 'openComposerTerminal':
+				await this._openComposerTerminal(message.tabId);
+				return;
+			case 'leaveComposerTerminal':
+				this._leaveComposerTerminal(message.tabId);
+				return;
 			case 'pinTerminal':
+				if (typeof message.id === 'string') { this._composerAutoPins.delete(message.id); }
 				this._pinTerminalMessage(message.id, message.tabId, message.pinned, message.mode);
 				return;
 			case 'terminalAskAgent':
@@ -2239,6 +2309,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				this._terminals.find(message.id)?.setRemote(message.remote === true);
 				return;
 			case 'selectTerminal':
+				// A composer terminal is shown by the composer's Terminal tab, never in front of the strip.
+				if (this._composerOf(message.id) !== undefined) { return; }
 				this._terminals.select(message.id);
 				this._syncTerminalOwner();
 				return;
@@ -2439,6 +2511,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const raw = this._context.globalState.get<unknown[]>(toolbarKey);
 		const steps = this._context.globalState.get<unknown>(toolbarStepsKey);
 		const extras = this._context.globalState.get<unknown>(toolbarExtrasKey);
+		const workflows = this._context.globalState.get<unknown>(toolbarWorkflowKey);
 		const byId = (store: unknown, id: unknown) => typeof id === 'string' && store && typeof store === 'object' && Object.prototype.hasOwnProperty.call(store, id)
 			? (store as Record<string, unknown>)[id] : undefined;
 		const out: ToolbarSkill[] = [];
@@ -2456,6 +2529,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					notify: record.notify ?? extra?.notify,
 					firstSend: extra?.firstSend,
 				};
+				const followUps = (merged as { followUps?: unknown }).followUps;
+				const prompts = [record as { prompt?: unknown }, ...(Array.isArray(followUps) ? followUps : [])]
+					.map(step => step && typeof step === 'object' ? (step as { prompt?: unknown }).prompt : step);
+				const stored = (byId(workflows, record.id) as { steps?: unknown } | undefined)?.steps;
+				if (Array.isArray(stored)) {
+					merged = {
+						...(merged as object),
+						workflow: prompts.map((prompt, i) => {
+							const step = stored[i] as { prompt?: unknown } | undefined;
+							if (!step || typeof step !== 'object' || typeof prompt !== 'string' || step.prompt !== prompt.trim()) {
+								return {};
+							}
+							// Every field of the step but its prompt copy: routes and choices
+							// included, or a read dropped them and the next save erased them.
+							// `validToolbarSkill` checks each again.
+							const { prompt: _, ...rest } = step as Record<string, unknown>;
+							return rest;
+						}),
+					};
+				}
 			}
 			// A stored notification this build cannot take — a longer text a newer build
 			// allowed, a hand edit — is dropped, not the skill: the next save would
@@ -2480,7 +2573,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		// skills without them, as an older build reads them.
 		const steps: Record<string, unknown> = {};
 		const extras: Record<string, unknown> = {};
+		const workflows: Record<string, unknown> = {};
 		for (const skill of list) {
+			if (skill.workflow) {
+				const prompts = [skill.prompt, ...(skill.followUps ?? []).map(step => step.prompt)];
+				workflows[skill.id] = { steps: skill.workflow.map((step, i) => ({ ...step, prompt: prompts[i] })) };
+			}
 			if (skill.followUps?.length) {
 				steps[skill.id] = skill.followUps;
 			}
@@ -2489,10 +2587,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			}
 		}
 		// `firstSend` lives in the extras too: an older build rewrites the list without fields it does not know (#424).
-		const plain = list.map(({ followUps: _, notify: __, firstSend: ___, ...skill }) => ({ ...skill, result: skill.result === 'toast' ? 'silent' : skill.result }));
+		const plain = list.map(({ followUps: _, notify: __, firstSend: ___, workflow: ____, ...skill }) => ({ ...skill, result: skill.result === 'toast' ? 'silent' : skill.result }));
 		const stored = await Promise.all([
 			this._context.globalState.update(toolbarStepsKey, steps),
 			this._context.globalState.update(toolbarExtrasKey, extras),
+			this._context.globalState.update(toolbarWorkflowKey, workflows),
 			this._context.globalState.update(toolbarKey, plain),
 		]).then(() => true, () => false);
 		this._post();
@@ -2633,7 +2732,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			return;
 		}
 		const commands = this._registry.commandsFor(tab.cwd)[agent] ?? [];
-		const steps = filled.steps.map(step => ({ ...step, text: adaptSigils(step.text, commands) }));
+		// A shell step is a command, never an agent's message: its `$name` is the
+		// shell's, not a skill to rewrite.
+		const steps = filled.steps.map(step => step.shell ? step : ({ ...step, text: adaptSigils(step.text, commands) }));
 		// The parameters as given, for the placeholders of the skill's notification.
 		const stringValues: Record<string, string> = {};
 		for (const param of skill.params) {
@@ -4313,10 +4414,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	/* ------------------------------------------------------------ history */
 
-	/** Hand the saved native session to its CLI in an editor terminal. */
-	private async _resumeInTerminal(id: string): Promise<void> {
+	/** Hand the saved native session to its CLI in an editor terminal, or (`inTab`) in one of this surface's terminal tabs. */
+	private async _resumeInTerminal(id: string, inTab = false): Promise<void> {
+		// An editor terminal already running this conversation is shown rather than starting a second CLI on it.
 		const existing = ChatViewProvider._terminalSessions.get(id);
 		if (existing) { existing.show(); return; }
+		if (inTab) {
+			const support = this._terminalSupport();
+			if (!support.available) { refuse(support.reason); return; }
+			if (this._stripTerminalCount() + this._terminalsStarting >= support.limit) {
+				refuse(vscode.l10n.t("{0} terminals are open — close one to open another.", this._stripTerminalCount()));
+				return;
+			}
+		}
 		const blocked = this._blocked();
 		if (blocked) { void vscode.window.showWarningMessage(blocked); return; }
 		const open = this._findOpenChat(id);
@@ -4347,7 +4457,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (chat.agent === 'codex') {
 			const codex = registry.backend?.('codex') as { release?(threadId: string): Promise<boolean> } | undefined;
 			if (codex?.release && !await codex.release(chat.ref)) {
-				void vscode.window.showInformationMessage(vscode.l10n.t('Another Codex conversation is still working. Wait for it to finish, then choose Continue in VS Code terminal again. This chat remains open.'));
+				void vscode.window.showInformationMessage(inTab
+					? vscode.l10n.t('Another Codex conversation is still working. Wait for it to finish, then choose Continue in terminal tab again. This chat remains open.')
+					: vscode.l10n.t('Another Codex conversation is still working. Wait for it to finish, then choose Continue in VS Code terminal again. This chat remains open.'));
 				return;
 			}
 			if (open && (open.tab.busy || open.tab.queuedCount || open.surface._runs.runningIn(id))) { return; }
@@ -4358,6 +4470,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			: chat.agent === 'opencode' ? ['-s', chat.ref]
 			: chat.agent === 'pi' ? piResumeArgs(chat.ref)
 			: ['--resume', chat.ref];
+		if (inTab) { await this._resumeInTerminalTab(chat.id, chat.agent, args, cwd, open); return; }
 		// A folder held back stays held back (OpenCode's project config, Pi's project trust).
 		if (chat.agent === 'pi' && this._untrusted(cwd)) { args.push('--no-approve'); }
 		// Preserve the chat's restriction on project hooks in untrusted managed copies.
@@ -4395,6 +4508,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (config) { fs.rm(config, { force: true }, () => undefined); }
 		});
 		terminal.show();
+	}
+
+	/**
+	 * The terminal-tab half of {@link _resumeInTerminal}: the chat tab is closed (its CLI let go first, as for an editor
+	 * terminal) and a terminal tab of this surface runs the agent's own CLI with `resume` — the starter adds the held-back
+	 * flags, the browser server and that conversation's browser tab, and a Restart resumes the same conversation again.
+	 */
+	private async _resumeInTerminalTab(chatId: string, agent: AgentId, resume: readonly string[], cwd: string, open: ReturnType<ChatViewProvider['_findOpenChat']>): Promise<void> {
+		const support = this._terminalSupport();
+		if (!support.available) { refuse(support.reason); return; }
+		if (!support.agents.includes(agent)) {
+			refuse(vscode.l10n.t("{0} is not available as a terminal. Refresh Agents and try again.", agentNames[agent]));
+			return;
+		}
+		this._terminalsStarting++;
+		try {
+			if (open) { open.surface._closeTab(open.tab.id); }
+			// Claude Code and Gemini run a process per conversation: let it exit first.
+			if (open) { await JsonLineProcess.stopped(); }
+			if (this._disposed) { return; }
+			const name = nextTerminalName(this._terminals.names(), agentNames[agent], true);
+			await this._terminals.create(generateUuid(), name, cwd, agent, this._terminalStarter(cwd, agent, { args: resume, chatId }), {});
+		} catch (error) {
+			if (!this._disposed) { void vscode.window.showWarningMessage(vscode.l10n.t("Could not start the terminal: {0}", plainInNotification(error instanceof Error ? error.message : String(error), 300))); }
+		} finally {
+			this._terminalsStarting--;
+		}
 	}
 
 	/**
@@ -4533,8 +4673,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private _saveTerminals(): void {
 		clearTimeout(this._terminalSaveTimer);
 		this._terminalSaveTimer = undefined;
-		if (this._terminalsRestoring || (!this._terminalsRestored && !this._terminals.size)) { return; }
-		const items = this._terminals.tabs.map(t => {
+		if (this._terminalsRestoring || (!this._terminalsRestored && !this._stripTerminalCount())) { return; }
+		const items = this._terminals.tabs.filter(t => this._composerOf(t.id) === undefined).map(t => {
 			let screen = t.screenSnapshot();
 			if (screen.length > terminalHistoryUnits) { screen = screen.slice(safeTailStart(screen, screen.length - terminalHistoryUnits)); }
 			return { id: t.id, name: t.name, cwd: t.cwd, ...(t.agent ? { agent: t.agent } : {}), ...(t.remote ? { remote: true } : {}), screen };
@@ -4559,7 +4699,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (this._terminalsRestored || this._disposed) { return; }
 		const saved = this._context.workspaceState.get<{ items?: unknown; front?: unknown }>(this._terminalsStorageKey);
 		const items = Array.isArray(saved?.items) ? saved.items as Array<Record<string, unknown>> : [];
-		if (!items.length || this._terminals.size) { this._terminalsRestored = true; return; }
+		if (!items.length || this._stripTerminalCount()) { this._terminalsRestored = true; return; }
 		const support = this._terminalSupport();
 		if (!support.available) { return; }
 		this._terminalsRestored = true;
@@ -4595,7 +4735,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * the host's without what only the editor and the chat should hold
 	 * (`scrubEnv`); the agent's gets the browser server's token on purpose.
 	 */
-	private _terminalStarter(cwd: string, agent: AgentId | undefined): TerminalStarter {
+	/** `resume`: the agent's CLI continues a saved conversation (its resume arguments, and that chat's browser tab). */
+	private _terminalStarter(cwd: string, agent: AgentId | undefined, resume?: { readonly args: readonly string[]; readonly chatId: string }): TerminalStarter {
 		return async (handlers, size) => {
 			let file: string;
 			let args: string[];
@@ -4605,10 +4746,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				const binary = this._registry.agents.find(a => a.id === agent)?.binary;
 				if (!binary) { throw new Error(vscode.l10n.t("The agent's CLI was not found. Refresh Agents and try again.")); }
 				file = binary;
-				args = [];
+				args = [...(resume?.args ?? [])];
 				// Like the chat's own process in a folder fetched from GitHub: its settings are held back.
 				if (agent === 'claude' && this._untrusted(cwd)) { args.push('--setting-sources=user', '--strict-mcp-config'); }
-				const launch = await this._browserCliLaunch(agent, undefined);
+				const launch = await this._browserCliLaunch(agent, resume?.chatId);
 				args.push(...launch.args);
 				extra = { ...launch.env, PATH: agent === 'pi' ? piPath(binary) : geminiPath(binary) };
 				// A folder fetched from GitHub keeps its project configuration and trust held back.
@@ -4655,8 +4796,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			refuse(vscode.l10n.t("{0} is not available as a terminal. Refresh Agents and try again.", agent in agentNames ? agentNames[agent] : String(agent)));
 			return;
 		}
-		if (this._terminals.size + this._terminalsStarting >= support.limit) {
-			refuse(vscode.l10n.t("{0} terminals are open — close one to open another.", this._terminals.size));
+		if (this._stripTerminalCount() + this._terminalsStarting >= support.limit) {
+			refuse(vscode.l10n.t("{0} terminals are open — close one to open another.", this._stripTerminalCount()));
 			return;
 		}
 		// The folder of the conversation in front (a terminal showing does not change which); the window's, then home, if that is gone.
@@ -4688,7 +4829,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (this._blocked()) { throw new Error(this._blocked()!); }
 		if (message.type !== 'newTerminal') {
 			const terminal = this._terminals.find(message.id);
-			if (!terminal || (surface !== 'chrome' && !terminal.remote)) { throw new Error('This terminal is not shared for remote access.'); }
+			if (!terminal || this._composerOf(terminal.id) !== undefined || (surface !== 'chrome' && !terminal.remote)) { throw new Error('This terminal is not shared for remote access.'); }
 			if (message.type === 'closeTerminal') { this._closeTerminal(message.id); }
 			else if (message.type === 'restartTerminal') { await this._restartTerminal(message.id); }
 			else if (terminal.rename(terminalName(message.name))) { this._post(); }
@@ -4700,7 +4841,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		if (agent === undefined && !remoteTerminalOpenSetting('shell', surface)) { throw new Error(remoteOpenHint('shell', surface)); }
 		if (agent !== undefined && !remoteTerminalOpenSetting('agent', surface)) { throw new Error(remoteOpenHint('agent', surface)); }
 		if (agent !== undefined && !support.agents.includes(agent)) { throw new Error('That agent is not available as a terminal.'); }
-		if (this._terminals.size + this._terminalsStarting >= support.limit) { throw new Error(`${this._terminals.size} terminals are open — close one to open another.`); }
+		if (this._stripTerminalCount() + this._terminalsStarting >= support.limit) { throw new Error(`${this._stripTerminalCount()} terminals are open — close one to open another.`); }
 		const cwd = chooseTerminalCwd([tab.cwd, this._windowCwd(), os.homedir()], isDirectory);
 		if (!cwd) { throw new Error("The terminal's folder no longer exists."); }
 		const name = agent ? nextTerminalName(this._terminals.names(), agentNames[agent], true) : nextTerminalName(this._terminals.names(), vscode.l10n.t("Terminal"));
@@ -4749,6 +4890,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (tab) { return { surface, tab }; }
 		}
 		return undefined;
+	}
+
+	/**
+	 * What `browser_upload_file` follows for a chat agent: the conversation's
+	 * folder and the approval menu's modes for files inside and outside it (a key
+	 * not set asks). Undefined for a chat this extension host does not hold.
+	 */
+	public static uploadPolicy(chatId: string): { projectRoot?: string; inside: ApprovalMode; outside: ApprovalMode } | undefined {
+		const found = ChatViewProvider._tabOfChat(chatId);
+		if (!found) { return undefined; }
+		const policy = found.surface._approvalPolicy();
+		return { projectRoot: found.tab.projectRoot, inside: policy.edit ?? 'ask', outside: policy.outside ?? 'ask' };
 	}
 
 	private static _pinInfo(terminal: TerminalTab): PinInfo {
@@ -4800,7 +4953,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	/** A terminal's strip entry with its owner: who may drive it, and whether the user stopped that. */
 	private _terminalSummary(terminal: TerminalTab): TerminalTabSummary {
-		const summary = terminal.summary();
+		const composerOf = this._composerOf(terminal.id);
+		const summary: TerminalTabSummary = composerOf !== undefined ? { ...terminal.summary(), composerOf } : terminal.summary();
 		const owner = ChatViewProvider._pins.owner(terminal.id);
 		const held = owner !== undefined ? ChatViewProvider._tabAcross(owner)?.tab : undefined;
 		if (!held) { return summary; }
@@ -4865,10 +5019,85 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 	}
 
+	/** The conversation tab whose composer shows terminal `id`, if any. */
+	private _composerOf(id: string): string | undefined {
+		for (const [tabId, terminalId] of this._composerTerminals) { if (terminalId === id) { return tabId; } }
+		return undefined;
+	}
+
+	/** Terminals in the strip: the composer's own are not, and do not count against the limit. */
+	private _stripTerminalCount(): number {
+		// Every entry names an open terminal: `_closeTerminal` drops the entry with its terminal.
+		return this._terminals.size - this._composerTerminals.size;
+	}
+
+	/**
+	 * `openComposerTerminal`: the composer's Terminal tab was opened for a conversation tab with no terminal of its own.
+	 * A shell starts in the conversation's folder, in the background (never in front), pinned to that conversation so its
+	 * agent may drive it through `terminal_*` (each input still asks). The pin can be removed and given back from the
+	 * Terminal tab's menu; the terminal stays the conversation's either way.
+	 */
+	private async _openComposerTerminal(tabId: unknown): Promise<void> {
+		if (typeof tabId !== 'string') { return; }
+		const tab = this._tabs.find(t => t.id === tabId);
+		if (!tab) { return; }
+		const existing = this._composerTerminals.get(tab.id);
+		const current = existing !== undefined ? this._terminals.find(existing) : undefined;
+		if (current) {
+			// Opening the tab again attaches it again (asked for): detached by leaving, or by hand.
+			if (!ChatViewProvider._pins.has(tab.id, current.id)) { this._autoPinComposer(current, tab); }
+			return;
+		}
+		this._composerTerminals.delete(tab.id);
+		if (this._composerTerminalsStarting.has(tab.id)) { return; }
+		const support = this._terminalSupport();
+		if (!support.available) { refuse(support.reason); ChatViewProvider._postAll(); return; }
+		const cwd = chooseTerminalCwd([tab.cwd, this._windowCwd(), os.homedir()], isDirectory);
+		if (!cwd) { refuse(vscode.l10n.t("The terminal's folder no longer exists.")); return; }
+		const name = nextTerminalName(this._terminals.names(), vscode.l10n.t("Own terminal"), true);
+		this._composerTerminalsStarting.add(tab.id);
+		try {
+			const terminal = await this._terminals.create(generateUuid(), name, cwd, undefined, this._terminalStarter(cwd, undefined), { background: true });
+			// The conversation may have closed, or moved to another surface, while the shell started.
+			if (!this._tabs.includes(tab) || this._composerTerminals.has(tab.id)) { this._closeTerminal(terminal.id); return; }
+			this._composerTerminals.set(tab.id, terminal.id);
+			this._autoPinComposer(terminal, tab);
+			ChatViewProvider._postAll();
+		} catch (error) {
+			if (!this._disposed) { refuse(vscode.l10n.t("Could not start the terminal: {0}", plainInLabel(error instanceof Error ? error.message : String(error)))); }
+		} finally {
+			this._composerTerminalsStarting.delete(tab.id);
+		}
+	}
+
+	/** Attaches a composer terminal because its tab was opened; leaving the tab may detach it (`_leaveComposerTerminal`). */
+	private _autoPinComposer(terminal: TerminalTab, tab: ChatTab): void {
+		if (this._pinTerminalTo(terminal.id, tab)) { this._composerAutoPins.set(terminal.id, terminal.agentWrites); }
+	}
+
+	/**
+	 * `leaveComposerTerminal`: the Terminal tab was left. A terminal attached only because the tab was opened is detached
+	 * again — the view still offers it as a suggestion — unless the chat has typed into it since; then it stays attached
+	 * until the user detaches it.
+	 */
+	private _leaveComposerTerminal(tabId: unknown): void {
+		if (typeof tabId !== 'string') { return; }
+		const id = this._composerTerminals.get(tabId);
+		if (id === undefined) { return; }
+		const writes = this._composerAutoPins.get(id);
+		this._composerAutoPins.delete(id);
+		const terminal = this._terminals.find(id);
+		if (writes === undefined || !terminal || terminal.agentWrites !== writes) { return; }
+		if (ChatViewProvider._pins.unpin(tabId, id)) { ChatViewProvider._postAll(); }
+	}
+
 	private _closeTerminal(id: unknown): void {
 		const terminal = this._terminals.find(id);
 		if (!terminal) { return; }
 		const name = terminal.name;
+		const composerOf = this._composerOf(terminal.id);
+		if (composerOf !== undefined) { this._composerTerminals.delete(composerOf); }
+		this._composerAutoPins.delete(terminal.id);
 		this._terminals.close(id);
 		this._terminalGone(terminal.id, name);
 		ChatViewProvider._postAll();
@@ -5096,7 +5325,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	private _showShellOutput(chatId: unknown, id: unknown): void {
 		if (typeof chatId !== 'string' || typeof id !== 'string') { return; }
 		const tab = this._tabs.find(t => t.chat.id === chatId);
-		const find = () => tab?.chat.id === chatId ? tab.chat.entries.find((e): e is ToolEntry => e.kind === 'tool' && e.tool === 'command' && e.id === id) : undefined;
+		const find = () => (tab?.chat.id === chatId ? tab.chat.entries.find((e): e is ToolEntry => e.kind === 'tool' && e.tool === 'command' && e.id === id) : undefined)
+			?? (this._runs.shellRow(id)?.chatId === chatId ? this._runs.shellRow(id)?.row : undefined);
 		const entry = find();
 		if (!entry) { return; }
 		const key = JSON.stringify([chatId, id]);
@@ -5309,6 +5539,98 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			}
 		}
 		this._post();
+	}
+
+	/**
+	 * Chat Settings → Logins. The view gets origins, usernames and titles and
+	 * never a password: copying or changing one is done here, through the host
+	 * clipboard and an input box (loginsManager.ts). While the section is open
+	 * it is reposted on every vault or setting change.
+	 */
+	private async _logins(message: Extract<ViewToHost, { type: 'logins' }>): Promise<void> {
+		const manager = loginsManager();
+		if (!manager) {
+			this._postMessage({ type: 'logins', unavailable: vscode.l10n.t('Saved logins are not running in this window.') });
+			return;
+		}
+		if (message.action === 'load') {
+			this._loginsWatch ??= manager.onDidChange(() => void this._postLogins());
+		} else {
+			const action = readLoginsAction(message);
+			if (action) { await manager.act(action); }
+		}
+		await this._postLogins();
+	}
+
+	private _loginsWatch: { dispose(): void } | undefined;
+
+	/** The favorites as the view sees them; the browser button's menu reads this from the state. */
+	private _favoritesList(): { id: string; title: string; url: string }[] {
+		return (favoriteSites()?.list() ?? []).map(({ id, title, url }) => ({ id, title, url }));
+	}
+
+	/**
+	 * Chat Settings → Favorites, and the browser button's Open from Favorites. The view names a
+	 * favorite by id, never by address: what is opened is what the store holds.
+	 */
+	private async _favorites(message: Extract<ViewToHost, { type: 'favorites' }>): Promise<void> {
+		const store = favoriteSites();
+		if (!store) {
+			this._postMessage({ type: 'favorites', items: [], error: vscode.l10n.t('Favorites are not running in this window.') });
+			return;
+		}
+		this._favoritesWatch ??= store.onDidChange(() => { this._postFavorites(); this._post(); });
+		const action = readFavoritesAction(message);
+		let error: string | undefined;
+		if (!action) {
+			error = vscode.l10n.t('Unknown request.');
+		} else {
+			switch (action.action) {
+				case 'load': break;
+				case 'setButton':
+					try {
+						await vscode.workspace.getConfiguration('hoverdeck').update(showButtonSetting, action.show, vscode.ConfigurationTarget.Global);
+					} catch (cause) {
+						error = vscode.l10n.t('The setting was not changed: {0}', cause instanceof Error ? cause.message : String(cause));
+					}
+					break;
+				case 'add': error = await store.add(action.url, action.title); break;
+				case 'addCurrent': error = await addCurrentPage(this._browser, false); break;
+				case 'remove': error = await store.edit({ kind: 'remove', id: action.id }); break;
+				case 'rename': error = await store.edit({ kind: 'rename', id: action.id, title: action.title }); break;
+				case 'setUrl': error = await store.setUrl(action.id, action.url); break;
+				case 'move': error = await store.edit({ kind: 'move', id: action.id, by: action.by }); break;
+				case 'open': {
+					const site = store.find(action.id);
+					if (!site) { error = vscode.l10n.t('That favorite no longer exists.'); break; }
+					const chat = this._active;
+					if (action.where === 'vscode') { this._awaitOpenedPage(chat); }
+					else { this._pendingOpen?.dispose(); this._pendingOpen = undefined; }
+					try {
+						const page = await openFavoriteSite(site, action.where);
+						if (page && this._tabs.includes(chat) && tabSource.all.includes(page)) { this._pinCurrentBrowser(chat, page); }
+					} catch (cause) {
+						error = cause instanceof Error ? cause.message : String(cause);
+					}
+					if (error) { refuse(error); }
+					return;
+				}
+			}
+		}
+		this._postFavorites(error);
+	}
+
+	private _favoritesWatch: { dispose(): void } | undefined;
+
+	private _postFavorites(error?: string): void {
+		if (!this._view) { return; }
+		this._postMessage({ type: 'favorites', items: this._favoritesList(), hasPage: !!this._browser.userTab, showButton: favoritesButtonShown(), ...(error ? { error } : {}) });
+	}
+
+	private async _postLogins(): Promise<void> {
+		const manager = loginsManager();
+		if (!manager || !this._view) { return; }
+		this._postMessage({ type: 'logins', view: await manager.view() });
 	}
 
 	/** The Remote terminals section of Chat Settings: reads and writes the three user settings. */
@@ -5633,7 +5955,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/** The title bar's gear opens settings inside the chat view. */
-	public showSettings(tab?: 'security'): void {
+	public showSettings(tab?: 'security' | 'logins' | 'favorites'): void {
 		this._postMessage(tab ? { type: 'openSettings', tab } : { type: 'openSettings' });
 	}
 
@@ -6004,7 +6326,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	 * public repository. `gh` is run outside the folder with `--repo`, so it
 	 * reads none of the repository's own Git configuration (#208).
 	 */
-	private async _githubStatus(folder: string, signIn: boolean, extra?: { created?: GithubCreatedPr; createError?: string }, refresh = false): Promise<void> {
+	private async _githubStatus(folder: string, signIn: boolean, extra?: { created?: GithubCreatedPr; createError?: string; merged?: number; mergeError?: { number: number; text: string } }, refresh = false): Promise<void> {
 		const answer = (rest: Omit<Extract<HostToView, { type: 'githubStatus' }>, 'type' | 'folder'>) => this._postMessage({ type: 'githubStatus', folder, ...rest, ...extra });
 		if (this._blocked()) { answer({ error: 'GitHub is unavailable in this window.' }); return; }
 		let local: GithubLocal;
@@ -6047,28 +6369,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 					runs = parseGhRuns(list, branch, workflows, actors);
 				}
 				catch (error) { runsError = error instanceof Error ? error.message : String(error); }
-				const defaultBranch = (await run(['repo', 'view', slug, '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name']).catch(() => '')).trim();
+				// The default branch, and whether (and how) the signed-in account may merge.
+				let repoInfo: ReturnType<typeof parseRepoMerge> = {};
+				try { repoInfo = parseRepoMerge(await run(['repo', 'view', slug, '--json', ghRepoFields])); } catch { /* left out: no Create or Merge button */ }
+				const defaultBranch = repoInfo.defaultBranch ?? '';
 				// Who is signed in to gh, once per window: its pull requests are marked as yours.
 				this._ghViewer ??= run(['api', 'user', '--jq', '.login']).then(githubLogin, () => undefined);
 				const viewer = await this._ghViewer;
-				return await done({ repo: slug, source: 'gh', prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) });
+				return await done({ repo: slug, source: 'gh', prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}), ...(repoInfo.mergeMethods ? { mergeMethods: repoInfo.mergeMethods } : {}) });
 			} catch (error) {
-				failures.push(`gh: ${error instanceof Error ? error.message : String(error)}`);
+				failures.push(`gh:${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 		token = await this._githubToken(signIn, failures);
 		const source: GithubSource = token ? 'vscode' : 'public';
 		try {
 			const api = (route: string) => this._githubApi(slug, route, token);
-			const prs = parseApiPullRequests(await api(`pulls?state=open&per_page=${githubListLimit}`), branch);
+			let prs = parseApiPullRequests(await api(`pulls?state=open&per_page=${githubListLimit}`), branch);
 			let runs: GithubStatus['runs'] = [];
 			let runsError: string | undefined;
 			try { runs = parseApiRuns(await api(`actions/runs?per_page=${githubListLimit}`), branch); }
 			catch (error) { runsError = error instanceof Error ? error.message : String(error); }
-			let defaultBranch = '';
-			try { const repo = JSON.parse(await api('')) as { default_branch?: unknown }; defaultBranch = typeof repo.default_branch === 'string' ? repo.default_branch : ''; } catch { /* left out: no button */ }
+			let repoInfo: ReturnType<typeof parseRepoMerge> = {};
+			try { repoInfo = parseRepoMerge(await api('')); } catch { /* left out: no Create or Merge button */ }
+			const defaultBranch = repoInfo.defaultBranch ?? '';
+			// The list carries no mergeability; each pull request's own answer does. Asked only
+			// with a sign-in (the public API's 60 requests an hour would not last), for the newest few.
+			if (token) {
+				const detailed = await Promise.all(prs.slice(0, githubMergeCheckLimit).map(pr => api(`pulls/${pr.number}`).then(json => parseApiPullRequests(`[${json}]`, branch)[0], () => undefined)));
+				prs = prs.map((pr, i) => {
+					const d = detailed[i];
+					return d && d.number === pr.number ? { ...pr, ...(d.conflict ? { conflict: d.conflict } : {}), ...(d.mergeReady ? { mergeReady: d.mergeReady } : {}) } : pr;
+				});
+			}
 			const viewer = token ? this._githubAccount : undefined;
-			await done({ repo: slug, source, prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}) }, !token);
+			const mergeMethods = token ? repoInfo.mergeMethods : undefined;
+			await done({ repo: slug, source, prs, runs, ...(viewer ? { viewer } : {}), ...(runsError ? { runsError } : {}), ...(validBranch(defaultBranch) ? { defaultBranch } : {}), ...(mergeMethods ? { mergeMethods } : {}) }, !token);
 		} catch (error) {
 			failures.push(error instanceof Error ? error.message : String(error));
 			answer({ error: `${slug}: ${failures.join(' · ')}`, signIn: !token });
@@ -6241,9 +6577,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 	}
 
-	private async _githubApi(slug: string, route: string, token: string | undefined, post?: unknown): Promise<string> {
+	private async _githubApi(slug: string, route: string, token: string | undefined, post?: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<string> {
 		const response = await fetch(`https://api.github.com/repos/${slug}${route ? `/${route}` : ''}`, {
-			method: post ? 'POST' : 'GET',
+			method: post ? method : 'GET',
 			headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ai-browser', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(post ? { 'Content-Type': 'application/json' } : {}) },
 			...(post ? { body: JSON.stringify(post) } : {}),
 			signal: AbortSignal.timeout(15_000),
@@ -6316,6 +6652,62 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			fail(error instanceof Error ? error.message : String(error));
 		} finally {
 			this._githubCreating.delete(folder);
+		}
+	}
+
+	/** One merge per folder at a time: a second press while one runs is ignored. */
+	private readonly _githubMerging = new Set<string>();
+
+	/**
+	 * Merges pull request `number` of `folder`'s repository with `method`. The
+	 * repository is read from the folder's remotes, and the pull request must be
+	 * one the last listing of that repository called ready to merge, with the
+	 * method among those it allows; the merge is pinned to the head commit that
+	 * listing saw (`--match-head-commit`, the API's `sha`), so a push since makes
+	 * GitHub refuse rather than merge commits nobody looked at. `gh` first, else
+	 * VS Code's GitHub sign-in.
+	 */
+	private async _githubMergePr(folder: string, number: unknown, rawMethod: unknown): Promise<void> {
+		const n = typeof number === 'number' && Number.isSafeInteger(number) && number > 0 ? number : 0;
+		const fail = (text: string) => this._postMessage({ type: 'githubStatus', folder, mergeError: { number: n, text } });
+		if (!n) { return; }
+		if (this._blocked()) { fail('GitHub is unavailable in this window.'); return; }
+		const method = mergeMethod(rawMethod);
+		if (!method) { fail('Pick how to merge it.'); return; }
+		if (this._githubMerging.has(folder)) { return; }
+		this._githubMerging.add(folder);
+		try {
+			const { slug } = await this._githubLocal(folder);
+			if (!slug) { throw new Error('This folder has no GitHub remote.'); }
+			const status = this._githubCache.get(slug)?.status;
+			const pr = status?.prs.find(p => p.number === n);
+			if (!status || !pr) { throw new Error(`#${n} is not in the list any more. Refresh and try again.`); }
+			if (pr.conflict) { throw new Error(`#${n} has a merge conflict. Resolve it first.`); }
+			if (!pr.mergeReady) { throw new Error(`GitHub does not say #${n} can be merged now. Refresh and try again.`); }
+			if (!status.mergeMethods?.includes(method)) { throw new Error('This merge method is not allowed in the repository.'); }
+			if (!pr.headSha) { throw new Error(`The head commit of #${n} is not known. Refresh and try again.`); }
+			const failures: string[] = [];
+			let merged = false;
+			const gh = status.source === 'gh' ? await this._ghBinary() : undefined;
+			if (gh) {
+				try {
+					await this._runGh(gh, ['pr', 'merge', String(n), '--repo', slug, `--${method}`, '--match-head-commit', pr.headSha]);
+					merged = true;
+				} catch (error) { failures.push(`gh: ${error instanceof Error ? error.message : String(error)}`); }
+			}
+			if (!merged) {
+				const token = await this._githubToken(false, failures);
+				if (!token) { throw new Error(failures.join(' · ') || 'Sign in to GitHub to merge.'); }
+				try { await this._githubApi(slug, `pulls/${n}/merge`, token, { merge_method: method, sha: pr.headSha }, 'PUT'); }
+				catch (error) { failures.push(error instanceof Error ? error.message : String(error)); throw new Error(failures.join(' · ')); }
+			}
+			this._githubCache.delete(slug);
+			confirm(vscode.l10n.t('Pull request #{0} merged.', n));
+			await this._githubStatus(folder, false, { merged: n });
+		} catch (error) {
+			fail(plainInLabel(error instanceof Error ? error.message : String(error)).slice(0, 500));
+		} finally {
+			this._githubMerging.delete(folder);
 		}
 	}
 
@@ -8213,7 +8605,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		const terminal = this._terminals.release(id);
 		if (!terminal) { return false; }
 		destination._terminals.adopt(terminal);
-		const closeSource = closesEmptyPanel(this._tabs.length, this._terminals.size, !!this._panelIdentity);
+		const closeSource = closesEmptyPanel(this._tabs.length, this._stripTerminalCount(), !!this._panelIdentity);
 		destination._post();
 		destination._scheduleTerminalSave();
 		if (closeSource) { this._closeEmptyPanel(); } else { this._post(); this._scheduleTerminalSave(); }
@@ -8258,7 +8650,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			destination._terminals.adopt(taken);
 			destination._post();
 			destination._scheduleTerminalSave();
-			if (closesEmptyPanel(this._tabs.length, this._terminals.size, !!this._panelIdentity)) { this._closeEmptyPanel(); }
+			if (closesEmptyPanel(this._tabs.length, this._stripTerminalCount(), !!this._panelIdentity)) { this._closeEmptyPanel(); }
 			else { this._post(); this._scheduleTerminalSave(); }
 			ChatViewProvider._postAll();
 		} catch (error) {
@@ -8321,10 +8713,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			if (page) { destination._livePages.set(attachment.chip.id, page); this._livePages.delete(attachment.chip.id); }
 		}
 		if (destination._livePages.size) { destination._watchLivePages(); }
+		// Its composer terminal moves with it, process and screen included; it is never in front.
+		const composerTerminal = this._composerTerminals.get(tab.id);
+		this._composerTerminals.delete(tab.id);
+		const movedTerminal = composerTerminal !== undefined ? this._terminals.release(composerTerminal) : undefined;
+		if (movedTerminal) {
+			destination._terminals.adopt(movedTerminal, false);
+			destination._composerTerminals.set(tab.id, movedTerminal.id);
+		}
 		const at = this._tabs.indexOf(tab);
 		this._tabs.splice(at, 1);
 		// A panel that still owns terminals is not empty: closing it would end their shells, which nobody asked for.
-		const closeSource = closesEmptyPanel(this._tabs.length, this._terminals.size, !!this._panelIdentity);
+		const closeSource = closesEmptyPanel(this._tabs.length, this._stripTerminalCount(), !!this._panelIdentity);
 		if (!this._tabs.length && !closeSource) { this._tabs.push(new ChatTab(this._tabHost, newChat(this._preferredAgent() ?? 'claude'))); }
 		if (!closeSource && this._active === tab) { this._active = this._tabs[Math.min(at, this._tabs.length - 1)]; this._switchTo = undefined; }
 		this._savedDrafts.delete(tab.chat.id);
@@ -8375,6 +8775,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._dropAnnotationsOf(tab);
 		// A closed conversation's terminals are not its any more; they stay open, unowned.
 		if (ChatViewProvider._pins.dropTab(tab.id).length) { ChatViewProvider._postAll(); }
+		// Its composer terminal goes with it: nothing else shows it (the pin was dropped above, so no notice).
+		const composerTerminal = this._composerTerminals.get(tab.id);
+		this._composerTerminals.delete(tab.id);
+		if (composerTerminal !== undefined) { this._closeTerminal(composerTerminal); }
 		for (const [folder, job] of this._gitCommits) {
 			if (job.tab === tab) { job.controller.abort(); this._gitCommits.delete(folder); }
 		}
@@ -8558,18 +8962,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		}
 		const agent = requestedAgent ?? this._preferredAgent() ?? this._selection().agent ?? 'claude';
 		if (location === 'here') {
-			// Reuse a conversation with no sent messages instead of accumulating empty
-			// tabs — one per project: the new tab would open in the project of the tab
-			// beside it, so only an empty tab of that project stands in for it.
+			// Up to `maxEmptyTabs` conversations with no sent message may be open at
+			// once; past that an empty one is reused instead of piling up more. Only an
+			// empty tab of the project the new one would open in (the tab beside it)
+			// stands in for it, the newest first.
+			// A request for one agent (Connect, Open Chrome for an agent) still goes
+			// to that agent's empty chat when there is one.
+			const empties = this._tabs.filter(tab => !tab.started);
 			const beside = this._chromeCommand?.getStore()?.tab ?? this._active;
 			const where = this._tabProjectId(beside);
-			const empty = this._tabs.find(tab => !tab.started && (!requestedAgent || tab.chat.agent === requestedAgent) && this._tabProjectId(tab) === where);
+			const ofProject = [...empties].reverse().filter(tab => this._tabProjectId(tab) === where);
+			const forAgent = requestedAgent ? ofProject.find(tab => tab.chat.agent === requestedAgent) : undefined;
+			if (!forAgent && empties.length < maxEmptyTabs) {
+				this._addTab(agent);
+				return;
+			}
+			const empty = forAgent ?? (requestedAgent ? undefined : ofProject[0]);
 			if (empty) {
 				this._selectTab(empty.id);
 				this._postMessage({ type: 'flashTab', id: empty.id });
 				this._focusInput();
 			} else {
-				this._addTab(agent);
+				refuse(vscode.l10n.t("{0} empty chats are already open. Write in one of them or close one first.", maxEmptyTabs));
 			}
 			return;
 		}
@@ -8836,8 +9250,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			...(tab.paused ? { paused: { by: tab.paused.by, since: iso(tab.paused.at) } } : {}),
 		});
 		const terminal = ChatViewProvider._terminalApi();
+		/** The toolbar's skills for a caller: every surface reads the same `globalState`, and a chat agent sees those its agent is offered. */
+		const skillsFor = (ownTab: string | undefined) => {
+			const own = ownTab ? find(ownTab) : undefined;
+			const surface = own?.surface ?? surfaces()[0];
+			if (!surface) { throw new Error('The chat has not been opened in this window yet, so its skills cannot be read.'); }
+			const agent = own?.tab.chat.agent;
+			return surface._toolbar().filter(s => skillOfferedTo(s, agent));
+		};
 		return {
 			terminal,
+			skills: ownTab => {
+				const list = skillsFor(ownTab);
+				return {
+					skills: list.map(skillSummary),
+					...(list.length ? { next: 'Call skill_get with the name of the one that fits the request, then follow it.' } : { note: 'The user has saved no toolbar skills for this agent.' }),
+				};
+			},
+			skill: (ownTab, name) => {
+				const list = skillsFor(ownTab);
+				const wanted = name.toLowerCase();
+				const found = list.find(s => s.name === wanted);
+				if (!found) { throw new Error(skillNotFound(name, list.map(s => s.name))); }
+				return skillDocument(found);
+			},
 			linkedChats: (caller, tool, args) => {
 				if (!chatConnectionsEnabled) { return Promise.reject(new Error('Chat-to-chat connections are temporarily disabled.')); }
 				const run = () => {
@@ -9016,6 +9452,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
 	public dispose(): void {
 		if (this._disposed) { return; }
+		this._loginsWatch?.dispose();
+		this._favoritesWatch?.dispose();
 		this._stateSurfaces.dispose();
 		if (this._tabs.length) { this._saveTabs(); }
 		this._shuttingDown = !this._panelIdentity;

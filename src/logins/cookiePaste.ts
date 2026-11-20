@@ -18,6 +18,7 @@
 import * as vscode from 'vscode';
 import type { BrowserController } from '../browser/browserController';
 import { tabs as tabSource } from '../browser/tabSource';
+import { productName } from '../core/flavor';
 import { confirm, refuse } from '../core/notify';
 import { plainInLabel } from '../core/notifyText';
 import { formatNames, parseCookies, toCookieParams, type CookieParse } from './cookieParse';
@@ -28,7 +29,7 @@ export function registerCookiePaste(context: vscode.ExtensionContext, browser: B
 
 async function pasteCookies(browser: BrowserController): Promise<void> {
 	if (!tabSource.available()) {
-		refuse(vscode.l10n.t('Browser API not enabled — use Enable Browser API in the status bar to paste cookies into a page.'));
+		refuse(vscode.l10n.t('Browser API not enabled — run "{0}: Enable Integrated Browser API" from the command palette to paste cookies into a page.', productName()));
 		return;
 	}
 	const tab = browser.userTab;

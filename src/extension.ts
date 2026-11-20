@@ -23,10 +23,9 @@ import { BrowserController } from './browser/browserController';
 import { BrowserRecording, recordingErrorReported } from './browser/recording';
 import { recordingQualityKey, readRecordingQuality } from './browser/recordingQuality';
 import { ChatViewProvider, chatBlocked, chatBlockedContextKey, chatUnsupportedContextKey, chatViewId, supportsSecondarySidebar } from './chat/chatView';
-import { McpLifecycle, type McpState } from './mcp/mcpLifecycle';
-import type { McpServer } from './mcp/mcpServer';
+import { McpLifecycle } from './mcp/mcpLifecycle';
 import { ChatControlPort } from './mcp/chatTools';
-import { chatConnectionPrompt, connectClaudeCode, connectCodex, connectGemini, connectOpenCode, connectOtherAgent, openGeminiHere, findOurConfigEntries, removeOurConfigEntries, type SharedPage } from './mcp/mcpSetup';
+import { chatConnectionPrompt, connectClaudeCode, connectCodex, connectGemini, connectOpenCode, connectOtherAgent, openGeminiHere, removeOurConfigEntries, type SharedPage } from './mcp/mcpSetup';
 import { everyone, forKind, isShareTarget, targetName, type ShareTarget } from './browser/shareRegistry';
 import { checkConnection } from './mcp/mcpCheck';
 import { copyScreenshot } from './browser/screenshot';
@@ -44,6 +43,7 @@ import { handToChat } from './chat/promptHandOff';
 import { migrateFromAiBrowser } from './setup/migration';
 import { registerUpdateCheck } from './setup/updateCheck';
 import { registerLogins } from './logins/logins';
+import { registerFavorites, setFavoritesManagerOpener } from './browser/favorites';
 import { registerCookiePaste } from './logins/cookiePaste';
 import { translatePage, translatePageCommand } from './translate/translate';
 
@@ -435,31 +435,11 @@ function activateBuild(context: vscode.ExtensionContext): void {
 			connectOpenCode(server, await giveFocusedTab(forKind('opencode'))))));
 	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.connectOtherAgent',
 		() => mcp.withServer(server => connectOtherAgent(server))));
-	// Entries AI Browser's Connect left in this workspace give the
-	// agents the browser tools twice (`ai-browser` beside `hoverdeck`). Offered
-	// in the status bar, never a toast, once the server is up and while any is left.
-	let cleanupItem: vscode.StatusBarItem | undefined;
-	const offerCleanup = async (server: McpServer) => {
-		const found = await findOurConfigEntries(server).catch(() => [] as string[]);
-		if (!found.length) { cleanupItem?.hide(); return; }
-		if (!cleanupItem) {
-			cleanupItem = vscode.window.createStatusBarItem('hoverdeck.oldEntries', vscode.StatusBarAlignment.Left, 99);
-			cleanupItem.name = 'HoverDeck: AI Browser entries';
-			cleanupItem.text = '$(tools) Remove old AI Browser entries';
-			cleanupItem.command = 'hoverdeck.removeAiBrowserEntries';
-			context.subscriptions.push(cleanupItem);
-		}
-		cleanupItem.tooltip = `AI Browser's Connect left entries in ${found.join(', ')}. Agents started from those files see the browser tools twice. Click to remove them; HoverDeck's chat and terminals do not need them.`;
-		cleanupItem.show();
-	};
-	{
-		const onState = (state: McpState) => { if (state.kind === 'running') { void offerCleanup(state.server); } };
-		onState(mcp.state);
-		context.subscriptions.push(mcp.onDidChangeState(onState));
-	}
+	// Entries AI Browser's Connect left in this workspace give the agents the
+	// browser tools twice (`ai-browser` beside `hoverdeck`). Removed from the
+	// palette only: HoverDeck puts nothing in the status bar.
 	context.subscriptions.push(vscode.commands.registerCommand('hoverdeck.removeAiBrowserEntries', () => mcp.withServer(async server => {
 		const result = await removeOurConfigEntries(server);
-		void offerCleanup(server);
 		if (result.failed.length) {
 			refuse(`Could not clean ${result.failed.join(', ')}: unreadable, locked, or a link out of the workspace. Removed: ${result.removed.join(', ') || 'nothing'}.`);
 		} else {
@@ -752,7 +732,8 @@ function activateBuild(context: vscode.ExtensionContext): void {
 	// Saved logins and passkeys. Independent of the MCP controller on purpose:
 	// it holds CDP sessions of its own, and nothing an assistant can call
 	// reaches the vault.
-	registerLogins(context);
+	const logins = registerLogins(context);
+	registerFavorites(context, browser);
 
 	// The AI Browser chat, beside Claude Code's and Codex's own. No CLI starts
 	// until the view is first shown: detection runs when its webview says it is
@@ -766,6 +747,19 @@ function activateBuild(context: vscode.ExtensionContext): void {
 		const url = state.kind === 'running' ? state.server.url : undefined;
 		return state.kind === 'running' && url ? { url, token: state.server.token } : undefined;
 	}, recording);
+	// Manage Saved Logins opens Chat Settings → Logins where the chat can open.
+	logins.setManagerOpener(async () => {
+		if (!supportsSecondarySidebar(vscode.version) || chatBlocked() !== undefined) { return false; }
+		await revealChat();
+		chat.showSettings('logins');
+		return true;
+	});
+	setFavoritesManagerOpener(async () => {
+		if (!supportsSecondarySidebar(vscode.version) || chatBlocked() !== undefined) { return false; }
+		await revealChat();
+		chat.showSettings('favorites');
+		return true;
+	});
 	if (!supportsSecondarySidebar(vscode.version)) {
 		void vscode.commands.executeCommand('setContext', chatUnsupportedContextKey, true);
 	}
@@ -779,6 +773,7 @@ function activateBuild(context: vscode.ExtensionContext): void {
 	registerChromeChat(context);
 	registerExchangeChat(context, browser);
 	chatPort.target = ChatViewProvider.mcpControl();
+	browser.uploadPolicy = chatId => ChatViewProvider.uploadPolicy(chatId);
 	recording.destination = chatId => chat.recordingDestination(chatId);
 	recording.project = chatId => chat.recordingProject(chatId);
 	recording.createEncoder = id => chat.createRecordingEncoder(id);

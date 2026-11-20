@@ -1853,6 +1853,9 @@ button {
 	justify-content: flex-end;
 }
 .composer.height-transition > * { flex-shrink: 0; }
+/* While a composer tab's panel slides in from the side (`slideComposerPanel`), clip sideways only:
+   popups hang above the composer and must not be cut. */
+.composer.panel-sliding { overflow-x: clip; }
 .composer.height-transition.height-moving {
 	transition: height 200ms linear, border-color .15s, box-shadow .15s;
 }
@@ -3050,8 +3053,9 @@ button {
 .tab {
 	/* Width never follows the content: every tab is the same, the one in front 35% wider (--tab-ratio). */
 	flex: 1 1 0;
-	min-width: 56px;
-	max-width: 140px;
+	/* Chat tabs, raised 40% on request; terminal tabs keep the earlier widths (`.terminal-tab` below). */
+	min-width: 78px;
+	max-width: 196px;
 	display: flex;
 	align-items: center;
 	border-radius: 6px 6px 0 0;
@@ -3070,8 +3074,8 @@ button {
 
 .tab.active {
 	flex-grow: 1.35;
-	min-width: 76px;
-	max-width: 189px;
+	min-width: 106px;
+	max-width: 264px;
 	color: var(--fg);
 	/* A dark grey fill besides the underline; a mix of the text colour, so every theme gets one. */
 	background: color-mix(in srgb, var(--vscode-foreground) 13%, transparent);
@@ -3277,16 +3281,48 @@ button {
 	margin-left: 2px;
 }
 
-/* The narrow strip's overflow (`layoutTabOverflow`): hidden tabs are listed behind "+N". */
-.tab.overflowed { display: none; }
-.tab-row.measuring .tab { flex: 0 0 140px; }
-.tab-row.measuring .tab.active { flex-basis: 189px; }
-/* Tabs overflow: the ones shown share the width left of "+", the terminal button and the dropdown. */
-.tab-row.stretched .tab:not(.overflowed) { max-width: none; }
+/* The narrow strip (`layoutTabOverflow`): every tab in order, in one row. When they do not fit at
+   these widths they keep them and the row scrolls sideways, left of the buttons' own area
+   (`.tab-tail`); "+N" counts the tabs out of view. */
+.tab-row.measuring .tab,
+.tab-row.scrolling .tab { flex: 0 0 157px; max-width: none; }
+.tab-row.measuring .tab.active,
+.tab-row.scrolling .tab.active { flex-basis: 211px; }
+/* Terminal tabs keep the widths chat tabs had before they were raised; narrow strip only, so the
+   wide drawer's own `.tab` rules still win there. */
+@media (max-width: 999.98px) {
+	.tab.terminal-tab { min-width: 56px; max-width: 140px; }
+	.tab.terminal-tab.active { min-width: 76px; max-width: 189px; }
+	.tab-row.measuring .tab.terminal-tab,
+	.tab-row.scrolling .tab.terminal-tab { flex-basis: 112px; max-width: none; }
+	.tab-row.measuring .tab.terminal-tab.active,
+	.tab-row.scrolling .tab.terminal-tab.active { flex-basis: 151px; }
+}
+/* The buttons' own area, right of the scrolling row: the tabs never pass under them. */
+.tab-lane {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+.tab-lane > .tab-row {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.tab-tail {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 6px 0 2px;
+}
+.tab-tail:empty { display: none; }
+/* Edges fade where more tabs lie beyond them. */
+.tab-row.scrolling.more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
+.tab-row.scrolling.more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 22px), transparent); }
+.tab-row.scrolling.more-left.more-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent); }
 .tab-overflow-button {
 	flex: none;
-	/* Always at the right end of the strip, after "+" and the terminal button. */
-	margin-left: auto;
+	/* Last in the buttons' area (`.tab-tail`), after "+" and the terminal button. */
 	display: inline-flex;
 	align-items: center;
 	gap: 2px;
@@ -4016,6 +4052,11 @@ button {
 	opacity: 0.5;
 	cursor: default;
 	background: var(--vscode-button-background, var(--accent));
+}
+
+/* every question answered: lit whatever has the focus — an own answer keeps it in the text row */
+.qd-actions .approval-allow.ready {
+	box-shadow: 0 0 0 2px var(--vscode-focusBorder, var(--accent));
 }
 
 .qd-actions {
@@ -5700,6 +5741,9 @@ body.vscode-light .pending-badge,
 		font-size: 12px;
 	}
 
+	.tab-lane { display: contents; }
+	.tab-tail { display: none; }
+
 	.tab-row {
 		flex: 1;
 		min-height: 0;
@@ -7172,6 +7216,11 @@ body.vv-locked {
 	   and during a swipe it is painted part of the way (see paintIndicator in chat.ts). */
 	transition: transform .3s cubic-bezier(.2, .7, .2, 1), width .3s cubic-bezier(.2, .7, .2, 1);
 }
+/* A slow drag paints the bar elastically (paintIndicator): it follows the fingers closely, just
+   enough easing to smooth discrete wheel deltas. */
+.composer-tab-indicator.following { transition: transform 70ms ease-out, width 70ms ease-out; }
+/* A step from a swipe lands with a slight overshoot on the position, none on the width. */
+.composer-tab-indicator.snapping { transition: transform .34s cubic-bezier(.3, 1.25, .5, 1), width .28s cubic-bezier(.2, .7, .2, 1); }
 
 .composer-tab:hover, .composer-tab.pull-target { color: var(--vscode-foreground); }
 /* The first letter is the Alt shortcut's hint. */
@@ -8559,6 +8608,110 @@ details[open] > summary.json-line > .codicon-chevron-right { transform: rotate(9
 	font-weight: 700;
 }
 
+/* Workflow steps: kind, name, and the values a step leaves for later ones. */
+.skill-editor .step-kind {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.skill-editor .step-kind select.form-input { width: auto; }
+.skill-editor .step-kind input.step-name {
+	width: 9em;
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 0.92em;
+}
+
+.skill-editor .prompt-row .step-head { display: flex; align-items: center; gap: 8px; }
+
+.skill-editor .shell-step .step-badge {
+	background: color-mix(in srgb, var(--vscode-charts-green) 70%, transparent);
+	color: var(--vscode-editor-background);
+}
+
+.skill-editor .shell-step textarea.md-field {
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.step-outputs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 6px;
+}
+
+.step-outputs .var-chip {
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--soft-2, var(--soft));
+	color: var(--fg-2, var(--fg));
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 11px;
+	cursor: copy;
+}
+
+.step-outputs .var-chip:hover { background: color-mix(in srgb, var(--vscode-focusBorder) 22%, var(--soft)); }
+.step-outputs .var-chip.copied { background: color-mix(in srgb, var(--vscode-charts-green) 30%, var(--soft)); }
+
+/* Where a workflow step goes next: on success and on failure. */
+.step-routes {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.step-routes .route-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 6px;
+	font-size: 11px;
+}
+
+.step-routes .route-label {
+	min-width: 56px;
+	padding: 1px 7px;
+	border-radius: 999px;
+	text-align: center;
+	font-size: 11px;
+}
+
+.step-routes .route-label.success { background: color-mix(in srgb, var(--vscode-charts-green) 22%, transparent); }
+.step-routes .route-label.failure { background: color-mix(in srgb, var(--vscode-charts-red) 22%, transparent); }
+.step-routes .codicon { opacity: .6; font-size: 12px; }
+
+/* A decision step's options: an editable label each, with its own route. */
+.step-routes .route-label.choice {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 0 2px 0 0;
+	background: color-mix(in srgb, var(--vscode-charts-purple) 22%, transparent);
+}
+.skill-editor .step-routes input.form-input.choice-label {
+	width: 110px;
+	min-width: 0;
+	padding: 1px 7px;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	font-size: 11px;
+}
+.step-routes .choice-remove { width: 18px; height: 18px; }
+.step-routes .choice-remove .codicon { font-size: 11px; }
+.step-routes .choice-add { align-self: flex-start; gap: 4px; padding: 1px 8px; font-size: 11px; }
+
+.skill-editor select.form-input.route-pick {
+	width: auto;
+	min-width: 0;
+	max-width: 100%;
+	padding: 1px 4px;
+	font-size: 11px;
+}
+
+.route-hint { color: var(--vscode-charts-orange); }
+
 .skill-editor textarea.form-check {
 	resize: none;
 	min-height: 0;
@@ -9178,3 +9331,96 @@ details[open] > summary.json-line > .codicon-chevron-right { transform: rotate(9
 .security-guard.settings-card-head:hover { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
 .security-guard.settings-card-head strong { font-size: 13px; }
 .remote-terminal-settings > .settings-card-title { margin-top: 18px; }
+
+/* Merge, beside a pull request GitHub would merge now: a sibling of the row (a button cannot hold
+   a button), and under the row the question with one button per method the repository allows. */
+.composer-github .gh-pr-item { position: relative; min-width: 0; }
+.composer-github .gh-merge-slot { flex: none; width: 24px; height: 24px; }
+.composer-github .gh-pr-item:hover > .cl-row { background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent); }
+.composer-github .gh-pr-item:hover .cl-chevron, .composer-github .gh-pr-item:focus-within .cl-chevron { opacity: 1; }
+.composer-github .gh-pr-item .gh-merge { position: absolute; top: 50%; right: 29px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; border-radius: 6px; background: color-mix(in srgb, var(--vscode-charts-purple) 12%, transparent); color: var(--vscode-charts-purple); cursor: pointer; transition: background .12s, color .12s; }
+.composer-github .gh-pr-item .gh-merge .codicon { font-size: 14px; }
+.composer-github .gh-pr-item .gh-merge:hover:not(:disabled), .composer-github .gh-pr-item .gh-merge.active { background: color-mix(in srgb, var(--vscode-charts-purple) 24%, transparent); }
+.composer-github .gh-pr-item .gh-merge:active:not(:disabled) { background: color-mix(in srgb, var(--vscode-charts-purple) 32%, transparent); }
+.composer-github .gh-pr-item .gh-merge:disabled { cursor: default; }
+.composer-github .gh-pr-item .gh-merge:disabled:not(.busy) { opacity: .5; }
+.composer-github .gh-pr-item .gh-merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.composer-github .gh-merge-ask { margin: 2px 0 6px 28px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--vscode-charts-purple) 35%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--vscode-charts-purple) 6%, transparent); display: flex; flex-direction: column; gap: 8px; }
+.composer-github .gh-merge-ask-text { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.composer-github .gh-merge-ask-text .codicon { color: var(--vscode-charts-purple); margin-right: 2px; }
+.composer-github .gh-merge-ask-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.composer-github .gh-merge-method, .composer-github .gh-merge-cancel { height: 24px; padding: 0 10px; border-radius: 6px; font: inherit; font-size: 11px; cursor: pointer; border: 1px solid color-mix(in srgb, var(--vscode-foreground) 18%, transparent); background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent); color: var(--vscode-foreground); }
+.composer-github .gh-merge-method.primary { border-color: transparent; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.composer-github .gh-merge-method.primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+.composer-github .gh-merge-method:not(.primary):hover:not(:disabled), .composer-github .gh-merge-cancel:hover:not(:disabled) { background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent); }
+.composer-github .gh-merge-method:disabled, .composer-github .gh-merge-cancel:disabled { opacity: .6; cursor: default; }
+.composer-github .gh-merge-method:focus-visible, .composer-github .gh-merge-cancel:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.composer-github .gh-merge-error { margin: 2px 0 6px 28px; display: flex; gap: 6px; align-items: flex-start; color: var(--vscode-errorForeground); font-size: 11px; }
+.composer-github .cl-chip.gh-conflict .codicon { font-size: 11px; margin-right: 2px; }
+
+/* Chat Settings → Logins & passkeys. */
+.logins-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.logins-actions .soft-button { display: inline-flex; align-items: center; gap: 5px; }
+.logins-settings .inline-search { margin: 4px 0 8px; }
+.logins-list {
+	display: flex; flex-direction: column; margin: 4px 0 12px;
+	border-radius: 9px; overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--vscode-foreground) 11%, transparent);
+	background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+}
+.logins-list:has(> .security-sites-empty:only-child) { border: 0; background: none; }
+.logins-list > .security-sites-empty, .logins-list > .feature-settings-note { padding: 8px 14px; margin: 0; }
+.logins-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; min-width: 0; }
+.logins-item + .logins-item { border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 9%, transparent); }
+.logins-item:hover { background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent); }
+.logins-item-icon { flex: none; color: var(--vscode-charts-yellow); display: inline-flex; }
+.logins-item-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.logins-item-text strong, .logins-item-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logins-item-meta { font-size: 11px; color: var(--vscode-descriptionForeground); }
+.logins-item-actions { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+
+/* The composer's Terminal tab: the conversation's own terminal in the message box's place, no toolbar
+   (asked for: "just a terminal"). Its `.terminal-main` lives inside the panel, so the rules that hide
+   the main terminal column while a conversation is in front do not apply to it. */
+.composer-terminal-panel { height: 40vh; min-height: 160px; max-height: none; padding: 0 !important; overflow: hidden; display: flex; flex-direction: column;
+	/* The panel is the composer's top: its square terminal painted over the wrapper's rounded corners.
+	   The inner radius is the wrapper's minus its 1px border; overflow: hidden clips xterm to it. */
+	border-radius: calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px) 0 0; }
+#app .composer-terminal-panel > .terminal-main.composer-terminal { border-radius: inherit; overflow: hidden; }
+.composer-terminal-panel[hidden] { display: none; }
+#app .composer-terminal-panel > .terminal-main.composer-terminal { position: relative; inset: auto; visibility: visible; pointer-events: auto; flex: 1; }
+.composer-terminal-panel:not(.has-terminal) > .terminal-main.composer-terminal { display: none; }
+.composer-terminal-empty { margin: auto; padding: 12px; color: var(--fg-3); font-size: 12px; text-align: center; }
+.composer-terminal-panel.has-terminal > .composer-terminal-empty { display: none; }
+
+/* A workflow drawn read-only under its steps (`workflowGraphSvg`). */
+.workflow-graph-details { margin-top: 4px; }
+.workflow-graph-details > summary { cursor: pointer; font-size: 11px; color: var(--vscode-descriptionForeground); user-select: none; }
+.workflow-graph-box { margin-top: 6px; overflow-x: auto; }
+.workflow-graph { display: block; max-width: 100%; height: auto; font-family: var(--vscode-font-family); }
+.workflow-graph .wf-node rect {
+	fill: var(--vscode-editor-background);
+	stroke: color-mix(in srgb, var(--vscode-foreground) 28%, transparent);
+	stroke-width: 1;
+}
+.workflow-graph .wf-node.shell rect { stroke: color-mix(in srgb, var(--vscode-charts-blue) 70%, transparent); }
+.workflow-graph .wf-node.decide rect { stroke: color-mix(in srgb, var(--vscode-charts-purple) 75%, transparent); }
+.workflow-graph .wf-title { fill: var(--vscode-foreground); font-size: 12px; font-weight: 600; }
+.workflow-graph .wf-sub { fill: var(--vscode-descriptionForeground); font-size: 10px; }
+.workflow-graph .wf-edge { fill: none; stroke-width: 1.3; stroke-linejoin: round; }
+.workflow-graph .wf-edge.success { stroke: var(--vscode-charts-green); }
+.workflow-graph .wf-edge.failure { stroke: var(--vscode-charts-red); }
+.workflow-graph .wf-edge.choice { stroke: var(--vscode-charts-purple); }
+.workflow-graph .wf-edge.back { stroke-dasharray: 4 3; }
+.workflow-graph .wf-arrow.success { fill: var(--vscode-charts-green); }
+.workflow-graph .wf-arrow.failure { fill: var(--vscode-charts-red); }
+.workflow-graph .wf-arrow.choice { fill: var(--vscode-charts-purple); }
+.workflow-graph .wf-label { font-size: 10px; fill: var(--vscode-descriptionForeground); }
+
+/* Chat Settings → Favorites */
+.favorites-add { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.favorites-add .favorites-input { flex: 1 1 160px; }
+.favorites-add .soft-button { display: inline-flex; align-items: center; gap: 5px; }
+.favorites-input { min-width: 0; box-sizing: border-box; padding: 4px 8px; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent)); border-radius: 4px; }
+.favorites-input:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.favorites-item.editing .logins-item-text .favorites-input { width: 100%; }

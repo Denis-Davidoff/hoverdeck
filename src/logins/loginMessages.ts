@@ -56,7 +56,27 @@ export interface OutcomeMessage {
 	readonly result: 'gone' | 'remained';
 }
 
-export type FormMessage = FieldsMessage | SubmitMessage | OutcomeMessage;
+/** A saved login chosen in the list under a field. The id is one the host gave out. */
+export interface SuggestPickMessage {
+	readonly type: 'suggestPick';
+	readonly id: string;
+}
+
+/** A footer row of that list. */
+export interface SuggestActionMessage {
+	readonly type: 'suggestAction';
+	readonly action: 'other' | 'manage';
+}
+
+/** A button of the save offer's card, naming the offer it answers by its token. */
+export interface OfferAnswerMessage {
+	readonly type: 'offerAnswer';
+	readonly token: string;
+	readonly action: 'save' | 'update' | 'later' | 'never' | 'more';
+}
+
+export type FormMessage = FieldsMessage | SubmitMessage | OutcomeMessage
+	| SuggestPickMessage | SuggestActionMessage | OfferAnswerMessage;
 
 /** What a fill managed. `reason` says why nothing was filled. */
 export interface FillResult {
@@ -78,6 +98,8 @@ const valueLimit = 4096;
 
 const isBool = (value: unknown): value is boolean => typeof value === 'boolean';
 const isValue = (value: unknown): value is string => typeof value === 'string' && value.length <= valueLimit;
+/** An id or token the host minted; anything else is not ours to look up. */
+const isToken = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(value);
 
 /** A report from the page, or `undefined` when it is not a well-formed one. */
 export function readFormMessage(payload: string): FormMessage | undefined {
@@ -106,6 +128,16 @@ export function readFormMessage(payload: string): FormMessage | undefined {
 	}
 	if (raw?.type === 'outcome') {
 		return ['gone', 'remained'].includes(raw.result) ? { type: 'outcome', result: raw.result } : undefined;
+	}
+	if (raw?.type === 'suggestPick') {
+		return isToken(raw.id) ? { type: 'suggestPick', id: raw.id } : undefined;
+	}
+	if (raw?.type === 'suggestAction') {
+		return ['other', 'manage'].includes(raw.action) ? { type: 'suggestAction', action: raw.action } : undefined;
+	}
+	if (raw?.type === 'offerAnswer') {
+		return isToken(raw.token) && ['save', 'update', 'later', 'never', 'more'].includes(raw.action)
+			? { type: 'offerAnswer', token: raw.token, action: raw.action } : undefined;
 	}
 	return undefined;
 }

@@ -81,6 +81,7 @@ function rig() {
 			},
 		},
 		_terminalsStarting: 0,
+		_composerTerminals: new Map(), _composerAutoPins: new Map(),
 		_active: tabs[0],
 		_remembered: { agent: 'claude' },
 		_preferredAgent(this: any) { return this._remembered.agent; },
@@ -111,7 +112,7 @@ function rig() {
 		ChatViewProvider[name] = lift(source, name, context);
 	}
 	// A provider instance: `this` for the lifted methods.
-	for (const name of ['_pinTerminalTo', '_pinTerminalMessage', '_terminalGone', '_closeTerminal', '_terminalAskAgent', 'newTerminal', '_pinChips', '_pinnedSummary', '_terminalSummary', '_syncTerminalOwner']) {
+	for (const name of ['_pinTerminalTo', '_pinTerminalMessage', '_terminalGone', '_closeTerminal', '_terminalAskAgent', 'newTerminal', '_pinChips', '_pinnedSummary', '_terminalSummary', '_syncTerminalOwner', '_composerOf', '_stripTerminalCount']) {
 		surface[name] = lift(source, name, context);
 	}
 	const add = (id: string, over: Partial<FakeTerminal> = {}): FakeTerminal => {

@@ -96,7 +96,7 @@ async function run() {
 				const listButton = doc.querySelector<HTMLButtonElement>('.tab-overflow-button');
 				if (width < 1000) {
 					check(listButton && !listButton.hidden, `${surface}/${width}: tab list button missing`);
-					const strip = doc.querySelector<HTMLElement>('.tab-row')!.getBoundingClientRect();
+					const strip = doc.querySelector<HTMLElement>(".tab-lane")!.getBoundingClientRect();
 					check(strip.right - listButton!.getBoundingClientRect().right < 16, `${surface}/${width}: tab list button not at the right end`);
 					listButton!.click(); await wait();
 					const rows = [...doc.querySelectorAll<HTMLElement>('.tab-overflow.open .tab-overflow-row')];

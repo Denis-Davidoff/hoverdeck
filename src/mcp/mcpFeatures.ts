@@ -9,7 +9,7 @@
  * for the webview; `mcpFeatures.test.ts` holds the two equal.
  */
 
-export const mcpFeatures = ['sounds', 'alerts', 'cards', 'keepAwake', 'chatControl', 'recording', 'annotations', 'cookies', 'editor'] as const;
+export const mcpFeatures = ['sounds', 'alerts', 'cards', 'keepAwake', 'chatControl', 'recording', 'annotations', 'cookies', 'editor', 'skills'] as const;
 export type McpFeature = typeof mcpFeatures[number];
 
 /** Which tools each feature covers: whole names, or a prefix ending in `_`. */
@@ -23,6 +23,7 @@ const featureTools: Readonly<Record<McpFeature, readonly string[]>> = {
 	annotations: ['browser_annotations_'],
 	cookies: ['browser_get_cookies', 'browser_set_cookies'],
 	editor: ['editor_'],
+	skills: ['skill_'],
 };
 
 export function isMcpFeature(value: unknown): value is McpFeature {

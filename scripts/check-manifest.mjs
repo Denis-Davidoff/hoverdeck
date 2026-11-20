@@ -173,14 +173,17 @@ if (new Set(dots.map(([, dot]) => dot)).size !== dots.length) {
 	problems.push(`two kinds share a centre dot: ${dots.map(([k, d]) => `${k}=${d}`).join(', ')}`);
 }
 
-/* exactly one primary button may match at a time */
-const primaries = (contributes.menus['editor/title'] ?? []).filter(m => m.group === 'navigation@2');
-const actions = primaries.map(m => /lastElementAction == '([^']+)'/.exec(m.when ?? '')?.[1]);
-if (actions.some(a => !a)) {
-	problems.push('a navigation@2 button has no lastElementAction condition');
-}
-if (new Set(actions).size !== actions.length) {
-	problems.push('two primary buttons share a lastElementAction value');
+/*
+ * HoverDeck puts exactly one button on the browser tab: the dropdown. The repeat
+ * button beside it (navigation@2) was removed so that, with AI Browser installed
+ * too, the tab carries one button per extension. The last action still repeats
+ * on the chord, through the `repeat.*` delegates below. The favorites star is the
+ * one exception: it is off unless `hoverdeck.favorites.showButton` is on.
+ */
+const browserButtons = (contributes.menus['editor/title'] ?? [])
+	.filter(m => (m.when ?? '').includes("activeEditor == 'workbench.editor.browser'") && !String(m.command ?? '').startsWith('hoverdeck.recording.') && !String(m.command ?? '').startsWith('hoverdeck.favorites.'));
+if (browserButtons.length !== 1 || browserButtons[0].submenu !== 'hoverdeck.elementMenu') {
+	problems.push(`the browser tab must carry exactly one HoverDeck button (the dropdown); found ${browserButtons.map(m => m.submenu ?? m.command).join(', ')}`);
 }
 
 /*
@@ -219,10 +222,12 @@ if (repeatBindings.length) {
 		problems.push(`repeat keybindings use ${keys.size} different chords; expected one`);
 	}
 	repeatChord = platformChords(repeatBindings[0]);
-	const boundWhens = repeatBindings.map(k => k.when).sort();
-	const buttonWhens = primaries.map(m => m.when).sort();
-	if (JSON.stringify(boundWhens) !== JSON.stringify(buttonWhens)) {
-		problems.push('keybinding conditions do not match the navigation@2 buttons');
+	const boundActions = repeatBindings.map(k => /lastElementAction == '([^']+)'/.exec(k.when ?? '')?.[1]);
+	if (boundActions.some(a => !a)) {
+		problems.push('a repeat keybinding has no lastElementAction condition');
+	}
+	if (new Set(boundActions).size !== boundActions.length) {
+		problems.push('two repeat keybindings share a lastElementAction value');
 	}
 }
 for (const binding of keybindings) {
@@ -230,7 +235,7 @@ for (const binding of keybindings) {
 		problems.push(`keybinding for unknown command ${binding.command}`);
 	}
 	if (!binding.command.startsWith('hoverdeck.repeat.') && sharesChord(binding, repeatChord)) {
-		problems.push(`${binding.command} takes the repeat chord on some platform, which belongs to the toolbar's primary button`);
+		problems.push(`${binding.command} takes the repeat chord on some platform, which repeats the last element action`);
 	}
 }
 
@@ -309,5 +314,5 @@ if (problems.length) {
 }
 
 console.log(`check-manifest: ok — ${commands.size} commands, ${submenus.size} submenu(s), `
-	+ `${referenced.size} icon files, ${actions.length} primary buttons, `
+	+ `${referenced.size} icon files, ${repeatBindings.length} repeat chords, `
 	+ `${keybindings.length} keybindings, ${Object.keys(twins).length} repeat delegates`);

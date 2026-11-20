@@ -47,4 +47,15 @@ suite('readFormMessage', () => {
 		const payload = JSON.stringify({ type: 'submit', kind: 'login', username: 'u', password: 'x'.repeat(5000), newPassword: '' });
 		assert.strictEqual(readFormMessage(payload), undefined);
 	});
+	test('the in-page list and offer card report only ids the host minted', () => {
+		assert.deepStrictEqual(readFormMessage('{"type":"suggestPick","id":"a1_B-2"}'), { type: 'suggestPick', id: 'a1_B-2' });
+		assert.strictEqual(readFormMessage('{"type":"suggestPick","id":"a b"}'), undefined);
+		assert.strictEqual(readFormMessage(JSON.stringify({ type: 'suggestPick', id: 'x'.repeat(41) })), undefined);
+		assert.deepStrictEqual(readFormMessage('{"type":"suggestAction","action":"manage"}'), { type: 'suggestAction', action: 'manage' });
+		assert.strictEqual(readFormMessage('{"type":"suggestAction","action":"fill"}'), undefined);
+		assert.deepStrictEqual(readFormMessage('{"type":"offerAnswer","token":"t1","action":"never"}'),
+			{ type: 'offerAnswer', token: 't1', action: 'never' });
+		assert.strictEqual(readFormMessage('{"type":"offerAnswer","token":"t1","action":"delete"}'), undefined);
+		assert.strictEqual(readFormMessage('{"type":"offerAnswer","action":"save"}'), undefined);
+	});
 });

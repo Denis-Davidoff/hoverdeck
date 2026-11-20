@@ -4,18 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { productName } from '../core/flavor';
+import { randomBytes } from 'crypto';
 import * as vscode from 'vscode';
 import { loginsFromCsv, loginsToCsv } from './loginCsv';
+import type { FillResult } from './loginMessages';
+import { setLoginsManager, type LoginOperation, type LoginsAction, type LoginsManager, type LoginsView } from './loginsManager';
 import { LoginVault } from './loginVault';
 import {
-	LoginWatcher, type FrameFields, type PasskeyDecision, type PasskeyRequest, type SuccessfulSubmit,
-	type WatchedTab, type WatcherHandlers,
+	LoginWatcher, type FrameFields, type OfferCard, type PageFrame, type PasskeyDecision, type PasskeyRequest,
+	type SuccessfulSubmit, type SuggestChoice, type WatchedTab, type WatcherHandlers,
 } from './loginWatcher';
 import { confirm, refuse } from '../core/notify';
-import { plainInLabel, plainInMarkdown, plainInNotification } from '../core/notifyText';
+import { plainInLabel, plainInNotification } from '../core/notifyText';
 import { isBrowserApiGranted } from '../setup/proposedApi';
 import { writeFileAtomic } from '../core/safeFiles';
-import { pulse } from '../setup/statusBar';
 import {
 	countConflicts, decideSave, hostOf, matchLogins, mergeVault, newId, originOf, parseVault, passkeysFor,
 	putLogin, putPasskey, removeLogin, removePasskey, rpIdMatchesHost, sameUsername, serializeVault,
@@ -24,21 +26,23 @@ import {
 import { isSealed, seal, SealError, unseal } from './vaultSeal';
 
 /*
- * Saved logins and passkeys: the commands, the status bar item, the pickers.
+ * Saved logins and passkeys: the commands, the list under a sign-in field, the
+ * save offer, the pickers.
  *
- * Nothing here draws inside a page. A password manager's usual surface — a
- * dropdown under the field, a bar across the top of the page — would be page
- * content to every screenshot and to `browser_html`, which is the rule the share
- * marker was removed under. The page is not ours to annotate; the status bar
- * and the QuickPick are.
+ * HoverDeck draws two things inside a page, and only these: the list of saved
+ * logins under a focused sign-in field (`loginSuggestScript.ts`) and the card
+ * that offers to save a password after a sign-in that worked. Both live in a
+ * closed shadow root in the logins' isolated world, carry usernames and titles
+ * only — a password never enters the page until a pick is filled — and answer
+ * by ids and tokens the host minted. There is no status bar item: with AI
+ * Browser installed beside it, two key items in one status bar was the noise
+ * the split had to remove.
  *
- * Confirmations and offers are never notifications, for the reason recorded at
- * length in `notify.ts`: a toast pauses the very page the user is signing in to.
- * A save offer is a status bar item that pulses, and every answer is a
- * QuickPick the user opened. The notifications that remain are failures the
- * user has to act on — a file that could not be written, a passkey that could
- * not be stored, a vault that was lost — and the last of those waits until no
- * browser page is in front.
+ * Confirmations are never notifications, for the reason recorded at length in
+ * `notify.ts`: a toast pauses the very page the user is signing in to. The
+ * notifications that remain are failures the user has to act on — a file that
+ * could not be written, a passkey that could not be stored, a vault that was
+ * lost — and the last of those waits until no browser page is in front.
  */
 
 const fillCommand = 'hoverdeck.logins.fill';
@@ -46,8 +50,6 @@ const saveFromPageCommand = 'hoverdeck.logins.saveFromPage';
 const manageCommand = 'hoverdeck.logins.manage';
 const importCommand = 'hoverdeck.logins.import';
 const exportCommand = 'hoverdeck.logins.export';
-/** Not contributed: it exists for the status bar item, which is shown only while there is an offer. */
-const offerCommand = 'hoverdeck.logins.offer';
 
 /** How long an unanswered save offer stays. The password is held in memory until then, and no longer. */
 const offerLifetimeMs = 5 * 60_000;
@@ -79,6 +81,10 @@ function settings(): LoginSettings {
 
 interface Offer {
 	readonly submit: SuccessfulSubmit;
+	/** The tab the sign-in happened in: its page shows the card. */
+	readonly browserTab: vscode.BrowserTab;
+	/** Names this offer to the card's buttons; an answer naming another is ignored. */
+	readonly token: string;
 	readonly decision: Exclude<SaveDecision, { kind: 'none' }>;
 	readonly timer: ReturnType<typeof setTimeout>;
 	/** When the sign-in was judged a success: the watcher can take that back for a while after. */
@@ -115,36 +121,68 @@ const day = (ms: number) => new Date(ms).toLocaleDateString();
 
 const shownUsername = (username: string) => username ? plainInLabel(username) : vscode.l10n.t("(no username)");
 
-export function registerLogins(context: vscode.ExtensionContext): void {
+/**
+ * Starts saved logins. `openManager` is set once the chat exists: Manage then
+ * opens Chat Settings → Logins, and falls back to the QuickPick where the chat
+ * cannot open.
+ */
+export function registerLogins(context: vscode.ExtensionContext): { setManagerOpener(open: () => Promise<boolean>): void } {
 	const feature = new LoginsFeature(context);
 	context.subscriptions.push(feature);
+	setLoginsManager(feature.manager);
+	context.subscriptions.push({ dispose: () => setLoginsManager(undefined) });
+	return { setManagerOpener: open => { feature.openManager = open; } };
 }
+
+/** Each manager switch and the setting it writes. All five are `application`-scoped. */
+const settingIds: Record<keyof LoginsView['settings'], string> = {
+	enabled: 'logins.enabled',
+	offerToSave: 'logins.offerToSave',
+	showSuggestions: 'logins.showSuggestions',
+	autofillOnPageLoad: 'logins.autofillOnPageLoad',
+	passkeys: 'passkeys.enabled',
+};
 
 class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 
 	private readonly _vault: LoginVault;
 	private readonly _watcher: LoginWatcher;
-	private readonly _item: vscode.StatusBarItem;
 	private readonly _disposables: vscode.Disposable[] = [];
 	private _offer: Offer | undefined;
-	private _pulse: vscode.Disposable | undefined;
-	/** The blink that announces a suggestion, and the page it was for — one blink per page. */
-	private _hintPulse: vscode.Disposable | undefined;
-	private _hinted: string | undefined;
+	/**
+	 * What each list under a field stands for: per watched tab and frame
+	 * context, the ids handed to the page and the saved login each names. Ids
+	 * are minted afresh with every push, so one from an older list finds nothing.
+	 */
+	private readonly _choices = new WeakMap<WatchedTab, Map<number, Map<string, string>>>();
 	/** Offers made recently, open picker or not: a withdrawal reaches all of them. */
 	private readonly _recentOffers = new Set<Offer>();
 	/** The last change an offer made, and how to undo it if its sign-in is withdrawn. */
 	private _lastCommit: { readonly origin: string; readonly until: number; readonly undo: (vault: Vault) => Vault | undefined } | undefined;
 	/** The vault was found lost and the user has not been told yet: a toast waits for no browser page to be in front. */
 	private _lossPending = false;
-	private _refreshing = 0;
+	/** Opens Chat Settings → Logins; false where the chat cannot open. */
+	public openManager: (() => Promise<boolean>) | undefined;
+
+	/** What Chat Settings → Logins reads and asks for. No password in either direction. */
+	public readonly manager: LoginsManager = {
+		view: () => this._managerView(),
+		act: action => this._managerAct(action),
+		onDidChange: listener => {
+			const subs = [
+				this._vault.onDidChange(listener),
+				vscode.workspace.onDidChangeConfiguration(e => {
+					if (e.affectsConfiguration('hoverdeck.logins') || e.affectsConfiguration('hoverdeck.passkeys')) { listener(); }
+				}),
+			];
+			return { dispose: () => subs.forEach(sub => sub.dispose()) };
+		},
+	};
 
 	constructor(context: vscode.ExtensionContext) {
 		this._vault = new LoginVault(context.secrets, context.globalStorageUri, context.globalState);
 		this._watcher = new LoginWatcher(this, () => settings());
-		this._item = vscode.window.createStatusBarItem('hoverdeck.logins', vscode.StatusBarAlignment.Left, 998);
-		this._item.name = vscode.l10n.t("{0}: saved logins", productName());
-		this._disposables.push(this._vault, this._watcher, this._item);
+		this._disposables.push(this._vault, this._watcher);
 
 		const register = (id: string, run: (...args: any[]) => unknown) =>
 			this._disposables.push(vscode.commands.registerCommand(id, run));
@@ -153,7 +191,6 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		register(manageCommand, () => this._manage());
 		register(importCommand, () => this._import());
 		register(exportCommand, () => this._export());
-		register(offerCommand, () => this._answerOffer());
 
 		this._disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('hoverdeck.logins.enabled') || e.affectsConfiguration('hoverdeck.passkeys.enabled')) {
@@ -168,119 +205,118 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 				this._clearOffer();
 			}
 			if (e.affectsConfiguration('hoverdeck.logins')) {
-				void this._refreshItem();
+				void this._refreshSuggestions();
 			}
 		}));
-		this._disposables.push(this._vault.onDidChange(() => void this._refreshItem()));
+		this._disposables.push(this._vault.onDidChange(() => void this._refreshSuggestions()));
 		this._disposables.push(this._vault.onDidLose(() => {
 			this._lossPending = true;
 			this._reportLoss();
 		}));
 		if (isBrowserApiGranted()) {
-			this._disposables.push(vscode.window.onDidChangeActiveBrowserTab(() => void this._refreshItem()));
-			this._disposables.push(vscode.window.onDidChangeBrowserTabState(() => void this._refreshItem()));
-			// Which editors are on screen decides whether a browser tab is "in
-			// front" with the focus elsewhere — and switching the visible tab of a
-			// group is a tab change, not a group change (breaks-silently #128).
-			this._disposables.push(vscode.window.tabGroups.onDidChangeTabs(() => { void this._refreshItem(); this._reportLoss(); }));
-			this._disposables.push(vscode.window.tabGroups.onDidChangeTabGroups(() => { void this._refreshItem(); this._reportLoss(); }));
+			// A lost vault is reported once no browser page is in front, and
+			// switching the visible tab of a group is a tab change, not a group
+			// change (breaks-silently #128).
+			this._disposables.push(vscode.window.tabGroups.onDidChangeTabs(() => this._reportLoss()));
+			this._disposables.push(vscode.window.tabGroups.onDidChangeTabGroups(() => this._reportLoss()));
 		}
 		this._watcher.start();
 	}
 
-	// --- the status bar item ------------------------------------------------
+	// --- the list under a field, and the offer card -----------------------
 
 	/**
-	 * Shows the offer if there is one, otherwise a suggestion while the page in
-	 * front of the user has a sign-in form and something is saved for it,
-	 * otherwise nothing.
-	 *
-	 * The suggestion is the convenient half — one click, or `Cmd+Shift+L`, from
-	 * a sign-in form to a filled one — and it costs the page nothing. It blinks
-	 * once for each page it appears on, then sits there plain: an item that only
-	 * ever appears quietly in a status bar is, as reported, an offer nobody saw.
+	 * Pushes the saved logins for `frame` into the list under its fields — or
+	 * takes the list away. Usernames and titles go into the page; a pick comes
+	 * back as an id that is looked up here.
 	 */
-	private async _refreshItem(): Promise<void> {
-		const run = ++this._refreshing;
-		const item = this._item;
-		const offer = this._offer;
-		if (offer) {
-			const { submit, decision } = offer;
-			item.text = decision.kind === 'save'
-				? vscode.l10n.t("$(key) Save login?")
-				: vscode.l10n.t("$(key) Update password?");
-			item.tooltip = new vscode.MarkdownString(decision.kind === 'save'
-				? vscode.l10n.t("**Save the password you just used?**\n\n{0} on {1}",
-					plainInMarkdown(submit.username || vscode.l10n.t("(no username)")), plainInMarkdown(submit.origin))
-				: vscode.l10n.t("**Update the saved password?**\n\n{0} on {1} — the password you just used differs from the saved one",
-					plainInMarkdown(decision.entry.username || vscode.l10n.t("(no username)")), plainInMarkdown(submit.origin)));
-			item.command = offerCommand;
-			item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-			item.show();
-			return;
-		}
+	private async _suggest(tab: WatchedTab, frame: FrameFields, vault?: Vault): Promise<void> {
 		const config = settings();
-		const tab = config.enabled && config.suggest ? this._watcher.tabInFront() : undefined;
-		const watched = tab ? await this._watcher.existing(tab) : undefined;
-		if (run !== this._refreshing) {
-			return;
+		let choices: SuggestChoice[] = [];
+		const ids = new Map<string, string>();
+		if (config.enabled && config.suggest && (frame.login || frame.usernameOnly)) {
+			try {
+				vault ??= await this._vault.read();
+			} catch {
+				vault = undefined;
+			}
+			for (const match of vault ? matchLogins(vault, frame.origin) : []) {
+				const id = randomBytes(9).toString('base64url');
+				ids.set(id, match.entry.id);
+				choices.push({
+					id,
+					username: match.entry.username || vscode.l10n.t("(no username)"),
+					detail: match.kind === 'sameHost' ? match.entry.origin : match.entry.title ?? '',
+				});
+			}
+			choices = choices.slice(0, 20);
 		}
-		if (!watched || !watched.showsLoginForm || !watched.pageOrigin) {
-			this._stopHint();
-			item.backgroundColor = undefined;
-			item.hide();
-			return;
+		let frames = this._choices.get(tab);
+		if (!frames) {
+			frames = new Map();
+			this._choices.set(tab, frames);
 		}
-		let matches: number;
+		frames.set(frame.contextId, ids);
+		await tab.suggest(frame, choices, {
+			title: vscode.l10n.t("Saved logins for {0}", hostOf(frame.origin) ?? frame.origin),
+			other: vault && vault.logins.length > choices.length ? vscode.l10n.t("Use a login saved for another site…") : '',
+			manage: vscode.l10n.t("Manage saved logins…"),
+		}).catch(() => undefined);
+	}
+
+	/** Every list on every watched page again: the vault or the settings changed. */
+	private async _refreshSuggestions(): Promise<void> {
+		let vault: Vault | undefined;
 		try {
-			matches = matchLogins(await this._vault.read(), watched.pageOrigin).length;
+			vault = await this._vault.read();
 		} catch {
-			matches = 0;
+			vault = undefined;
 		}
-		if (run !== this._refreshing || this._offer) {
-			return;
+		for (const tab of await this._watcher.watched()) {
+			for (const frame of tab.frames) {
+				await this._suggest(tab, frame, vault);
+			}
 		}
-		if (matches === 0) {
-			this._stopHint();
-			item.backgroundColor = undefined;
-			item.hide();
-			return;
-		}
-		item.text = matches === 1
-			? vscode.l10n.t("$(key) Fill login")
-			: vscode.l10n.t("$(key) Fill login ({0})", matches);
-		item.tooltip = vscode.l10n.t("Fill a login saved for {0}", plainInLabel(watched.pageOrigin));
-		item.command = fillCommand;
-		const page = `${watched.documentKey}|${watched.pageOrigin}`;
-		if (this._hinted !== page) {
-			this._hinted = page;
-			this._stopHint();
-			this._hintPulse = pulse(item, false);
-		} else if (!this._hintPulse) {
-			item.backgroundColor = undefined;
-		}
-		item.show();
 	}
 
-	private _stopHint(): void {
-		this._hintPulse?.dispose();
-		this._hintPulse = undefined;
+	/** The card for `offer`, as the page shows it. Text only. */
+	private _card(offer: Offer): OfferCard {
+		const { submit, decision } = offer;
+		const site = hostOf(submit.origin) ?? submit.origin;
+		return {
+			token: offer.token,
+			kind: decision.kind,
+			title: decision.kind === 'save'
+				? vscode.l10n.t("Save the password for {0}?", site)
+				: vscode.l10n.t("Update the saved password for {0}?", site),
+			who: (decision.kind === 'save' ? submit.username : decision.entry.username) || vscode.l10n.t("(no username)"),
+			primary: decision.kind === 'save' ? vscode.l10n.t("Save") : vscode.l10n.t("Update"),
+			later: vscode.l10n.t("Not now"),
+			never: vscode.l10n.t("Never"),
+			neverTitle: vscode.l10n.t("Never for this site"),
+			more: vscode.l10n.t("More options"),
+			close: vscode.l10n.t("Close"),
+		};
 	}
 
-	private _setOffer(offer: Omit<Offer, 'timer' | 'at'>): void {
+	/** Shows or takes down the card on the offer's tab, if that tab is watched. */
+	private async _showCard(offer: Offer, show: boolean): Promise<void> {
+		const watched = await this._watcher.existing(offer.browserTab);
+		await watched?.offer(show ? this._card(offer) : undefined).catch(() => undefined);
+	}
+
+	private _setOffer(offer: Omit<Offer, 'timer' | 'at' | 'token'>): void {
 		this._clearOffer();
-		this._stopHint();
 		const timer = setTimeout(() => {
 			if (this._offer?.timer === timer) {
 				this._clearOffer();
 			}
 		}, offerLifetimeMs);
-		const made: Offer = { ...offer, timer, at: Date.now() };
+		const made: Offer = { ...offer, timer, at: Date.now(), token: randomBytes(12).toString('base64url') };
 		this._offer = made;
 		this._recentOffers.add(made);
 		setTimeout(() => this._recentOffers.delete(made), revertWindowMs).unref?.();
-		void this._refreshItem();
-		this._pulse = pulse(this._item);
+		void this._showCard(made, true);
 	}
 
 	/**
@@ -303,13 +339,12 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	}
 
 	private _clearOffer(): void {
-		if (this._offer) {
-			clearTimeout(this._offer.timer);
+		const offer = this._offer;
+		if (offer) {
+			clearTimeout(offer.timer);
 			this._offer = undefined;
+			void this._showCard(offer, false);
 		}
-		this._pulse?.dispose();
-		this._pulse = undefined;
-		void this._refreshItem();
 	}
 
 	// --- reading the vault, reporting failures --------------------------------
@@ -351,7 +386,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			return undefined;
 		}
 		if (!isBrowserApiGranted()) {
-			refuse(vscode.l10n.t("Browser API not enabled — click \"Enable Browser API\" in the status bar."));
+			refuse(vscode.l10n.t("Browser API not enabled — run \"{0}: Enable Integrated Browser API\" from the command palette.", productName()));
 			return undefined;
 		}
 		// Not `activeBrowserTab`: see `LoginWatcher.userTab` for the bug that was.
@@ -475,7 +510,10 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		// Frames of the page's own origin, plus frames of the login's own
 		// origin — never a third one. A frame on another origin is another
 		// site, whatever page it is embedded in.
-		const result = await watched.fill(entry.username, entry.password, new Set([page, entry.origin]));
+		this._reportFill(entry, await watched.fill(entry.username, entry.password, new Set([page, entry.origin])));
+	}
+
+	private _reportFill(entry: LoginEntry, result: FillResult): void {
 		if (!result.username && !result.password) {
 			refuse(result.reason === 'newPasswordOnly'
 				? vscode.l10n.t("This looks like a sign-up or password-change form, so nothing was filled.")
@@ -493,7 +531,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	// --- saving ---------------------------------------------------------------
 
 	/** A sign-in that went through: offer to save or update, or note the use. */
-	public async onSubmitted(_tab: WatchedTab, submit: SuccessfulSubmit): Promise<void> {
+	public async onSubmitted(tab: WatchedTab, submit: SuccessfulSubmit): Promise<void> {
 		const config = settings();
 		if (!config.enabled) {
 			return;
@@ -514,7 +552,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			return;
 		}
 		if (config.offerToSave) {
-			this._setOffer({ submit, decision });
+			this._setOffer({ submit, decision, browserTab: tab.tab });
 		}
 	}
 
@@ -585,12 +623,21 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		this._lastCommit = { origin: offer.submit.origin, until: offer.at + revertWindowMs, undo };
 	}
 
-	private async _answerOffer(): Promise<void> {
-		const offer = this._offer;
+	/** A button of the card in the page. `token` must name an offer made lately. */
+	public onOfferAnswer(_tab: WatchedTab, token: string, action: 'save' | 'update' | 'later' | 'never' | 'more'): void {
+		const offer = this._offer?.token === token ? this._offer : [...this._recentOffers].find(o => o.token === token);
 		if (!offer) {
 			refuse(vscode.l10n.t("There is nothing to save — the offer has expired."));
 			return;
 		}
+		if ((action === 'save' && offer.decision.kind !== 'save') || (action === 'update' && offer.decision.kind !== 'update')) {
+			return;
+		}
+		void this._answerOffer(offer, action === 'more' ? undefined : action).catch(err => refuse(errorText(err)));
+	}
+
+	/** Acts on `offer`: with `given`, the page's answer; without, a picker of every answer. */
+	private async _answerOffer(offer: Offer, given?: 'save' | 'update' | 'later' | 'never'): Promise<void> {
 		const { submit, decision } = offer;
 		type Answer = 'save' | 'update' | 'saveNew' | 'editSave' | 'later' | 'never';
 		const items: Item<Answer>[] = [];
@@ -612,7 +659,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		items.push({ label: vscode.l10n.t("$(close) Not now"), value: 'later' });
 		items.push({ label: vscode.l10n.t("$(circle-slash) Never for this site"), description: plainInLabel(submit.origin), value: 'never' });
 
-		const picked = await vscode.window.showQuickPick(items, {
+		const picked: { value?: Answer } | undefined = given ? { value: given } : await vscode.window.showQuickPick(items, {
 			title: decision.kind === 'save'
 				? vscode.l10n.t("Save the password for {0}?", plainInLabel(submit.origin))
 				: vscode.l10n.t("Update the password for {0}?", plainInLabel(submit.origin)),
@@ -818,7 +865,13 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	// --- autofill and suggestions ---------------------------------------------
 
 	public async onFields(tab: WatchedTab, frame: FrameFields): Promise<void> {
-		void this._refreshItem();
+		void this._suggest(tab, frame);
+		// A sign-in that navigated: the card was in the page that went. The
+		// new document's settled report puts it back while the offer stands.
+		const offer = this._offer;
+		if (offer && frame.settled && offer.browserTab === tab.tab && frame.origin === tab.pageOrigin) {
+			void this._showCard(offer, true);
+		}
 		const config = settings();
 		if (!config.enabled || !config.autofill || !frame.login || tab.autofilled.has(frame.contextId)
 			|| frame.origin !== tab.pageOrigin) {
@@ -843,6 +896,33 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		if (result.password || result.username) {
 			this._markUsed(entry.id);
 			confirm(vscode.l10n.t("Filled {0}", shownUsername(entry.username)));
+		}
+	}
+
+	/** A saved login picked in the list under a field: filled into that frame only. */
+	public async onSuggestPick(tab: WatchedTab, frame: PageFrame, id: string): Promise<void> {
+		const entryId = this._choices.get(tab)?.get(frame.contextId)?.get(id);
+		const vault = entryId ? await this._read() : undefined;
+		const entry = vault?.logins.find(e => e.id === entryId);
+		if (!entry) {
+			refuse(vscode.l10n.t("That login is no longer saved."));
+			return;
+		}
+		// The list offered it for this frame's origin: its own, or the same host
+		// on another port or scheme — the frame's origin and the login's own.
+		this._reportFill(entry, await tab.fillFrame(frame, entry.username, entry.password, new Set([frame.origin, entry.origin])));
+	}
+
+	/** A footer row of the list. */
+	public async onSuggestAction(tab: WatchedTab, frame: PageFrame, action: 'other' | 'manage'): Promise<void> {
+		if (action === 'manage') {
+			await vscode.commands.executeCommand(manageCommand);
+			return;
+		}
+		const vault = await this._read();
+		const entry = vault && await this._pickOtherSite(vault, frame.origin);
+		if (entry) {
+			this._reportFill(entry, await tab.fillFrame(frame, entry.username, entry.password, new Set([frame.origin, entry.origin])));
 		}
 	}
 
@@ -970,7 +1050,64 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 
 	// --- managing -------------------------------------------------------------
 
+	private async _managerView(): Promise<LoginsView> {
+		const config = settings();
+		const shownSettings = {
+			enabled: config.enabled, offerToSave: config.offerToSave, showSuggestions: config.suggest,
+			autofillOnPageLoad: config.autofill, passkeys: config.passkeys,
+		};
+		let vault: Vault;
+		try {
+			vault = await this._vault.read();
+		} catch (err) {
+			return { logins: [], passkeys: [], neverSave: [], unreadable: 0, settings: shownSettings, error: errorText(err) };
+		}
+		return {
+			logins: vault.logins.map(e => ({
+				id: e.id, origin: e.origin, username: e.username, updated: e.updated,
+				...(e.title ? { title: e.title } : {}), ...(e.lastUsed ? { lastUsed: e.lastUsed } : {}),
+			})),
+			passkeys: vault.passkeys.map(e => ({ id: e.id, rpId: e.rpId, userName: e.userName || e.userDisplayName || '', created: e.created })),
+			neverSave: [...vault.neverSave],
+			unreadable: (vault.unreadable?.logins.length ?? 0) + (vault.unreadable?.passkeys.length ?? 0),
+			settings: shownSettings,
+		};
+	}
+
+	private async _managerAct(action: LoginsAction): Promise<void> {
+		switch (action.action) {
+			case 'import': return this._import();
+			case 'export': return this._export();
+			case 'saveFromPage': return this._saveFromPage();
+			case 'set':
+				try {
+					await vscode.workspace.getConfiguration('hoverdeck').update(settingIds[action.key], action.value, vscode.ConfigurationTarget.Global);
+				} catch (err) {
+					refuse(vscode.l10n.t("The setting was not changed: {0}", errorText(err)));
+				}
+				return;
+			case 'offerAgain':
+				if (await this._write(vault => vault.neverSave.includes(action.origin) ? { vault: setNeverSave(vault, action.origin, false), result: true } : undefined)) {
+					confirm(vscode.l10n.t("Saving will be offered on {0} again", plainInLabel(action.origin)));
+				}
+				return;
+		}
+		const vault = await this._read();
+		if (!vault) {
+			return;
+		}
+		if (action.action === 'deletePasskey') {
+			const entry = vault.passkeys.find(e => e.id === action.id);
+			return entry ? this._deletePasskey(entry) : refuse(vscode.l10n.t("That passkey was deleted in the meantime."));
+		}
+		const entry = vault.logins.find(e => e.id === action.id);
+		return entry ? this._loginOperation(entry, action.op) : refuse(vscode.l10n.t("That login was deleted in the meantime."));
+	}
+
 	private async _manage(): Promise<void> {
+		if (await this.openManager?.().catch(() => false)) {
+			return;
+		}
 		const vault = await this._read();
 		if (!vault) {
 			return;
@@ -1043,7 +1180,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 	}
 
 	private async _manageLogin(entry: LoginEntry): Promise<void> {
-		type Action = 'copyUser' | 'copyPassword' | 'password' | 'username' | 'title' | 'open' | 'delete';
+		type Action = LoginOperation;
 		const picked = await vscode.window.showQuickPick<Item<Action>>([
 			{ label: vscode.l10n.t("$(copy) Copy username"), value: 'copyUser' },
 			{ label: vscode.l10n.t("$(copy) Copy password"), detail: vscode.l10n.t("Cleared from the clipboard after {0} seconds", clipboardClearMs / 1000), value: 'copyPassword' },
@@ -1053,6 +1190,13 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			{ label: vscode.l10n.t("$(globe) Open {0}", plainInLabel(entry.origin)), value: 'open' },
 			{ label: vscode.l10n.t("$(trash) Delete…"), value: 'delete' },
 		], { title: `${shownUsername(entry.username)} · ${plainInLabel(entry.origin)}` });
+		if (picked?.value) {
+			await this._loginOperation(entry, picked.value);
+		}
+	}
+
+	/** One action on one saved login: the QuickPick's and Chat Settings' alike. */
+	private async _loginOperation(entry: LoginEntry, op: LoginOperation): Promise<void> {
 		const now = Date.now();
 		// An edit of a login another window deleted meanwhile says so, instead of
 		// doing nothing and saying nothing.
@@ -1078,7 +1222,7 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 			}
 			return done;
 		};
-		switch (picked?.value) {
+		switch (op) {
 			case 'copyUser':
 				await vscode.env.clipboard.writeText(entry.username);
 				confirm(vscode.l10n.t("Username copied"));
@@ -1150,9 +1294,12 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 		const picked = await vscode.window.showQuickPick([remove], {
 			title: `${plainInLabel(entry.userName || entry.userDisplayName || '')} · ${plainInLabel(entry.rpId)}`,
 		});
-		if (picked !== remove) {
-			return;
+		if (picked === remove) {
+			await this._deletePasskey(entry);
 		}
+	}
+
+	private async _deletePasskey(entry: PasskeyEntry): Promise<void> {
 		const button = vscode.l10n.t("Delete");
 		const answer = await vscode.window.showWarningMessage(
 			vscode.l10n.t("Delete the passkey for {0}?", entry.rpId),
@@ -1432,7 +1579,6 @@ class LoginsFeature implements WatcherHandlers, vscode.Disposable {
 
 	public dispose(): void {
 		this._clearOffer();
-		this._stopHint();
 		for (const disposable of this._disposables) {
 			disposable.dispose();
 		}

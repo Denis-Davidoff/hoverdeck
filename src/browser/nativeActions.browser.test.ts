@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -105,6 +105,19 @@ test('native actions in Chromium: trusted events, shadow DOM, frames, coverage a
 		assert.equal(await evaluate('readClosed()'), 'changed');
 		await actions.onElement('#closed >>> #nested-host >>> #nested-edit', undefined, `function(value){Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(this,value);return 'filled';}`, ['filled closed']);
 		assert.equal(await evaluate('readNested()'), 'filled closed');
+	});
+	await t.test('a hidden file input takes files and fires a trusted change, and a non-file input is refused', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'native-upload-'));
+		try {
+			const a = join(dir, 'a.txt'), b = join(dir, 'b.txt');
+			await writeFile(a, 'hello'); await writeFile(b, 'world!!');
+			await evaluate(`window.uploadEvents=[];const up=document.createElement('input');up.type='file';up.id='up';up.multiple=true;up.style.display='none';up.addEventListener('change',e=>uploadEvents.push(e.isTrusted));document.body.append(up);const one=document.createElement('input');one.type='file';one.id='one';document.body.append(one);`);
+			const result = await actions.setFiles('#up', undefined, [a, b]);
+			assert.deepEqual(result.files, [{ name: 'a.txt', size: 5 }, { name: 'b.txt', size: 7 }]);
+			assert.deepEqual(await evaluate('uploadEvents'), [true]);
+			await assert.rejects(actions.setFiles('#one', undefined, [a, b]), /takes one file/);
+			await assert.rejects(actions.setFiles('#field', undefined, [a]), /not <input type="file">/);
+		} finally { await rm(dir, { recursive: true, force: true }); }
 	});
 	await t.test('covered and disabled targets refuse input, while native editing preserves text outside selection', async () => {
 		await actions.keyboardAction('#field', undefined, { text: 'hello' });

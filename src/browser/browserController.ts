@@ -28,6 +28,11 @@ import { translatorSource } from '../translate/translateScript';
 import { isLanguageCode, maxSingleSegment, pageTitle, type Replacement } from '../translate/translateText';
 import { plainInLabel } from '../core/notifyText';
 import { guardEnabled } from '../core/securitySettings';
+import { formatBytes, isSensitiveFile, maxUploadBytes, uploadPathsArgument, uploadVerdict, type UploadPolicy } from './fileUpload';
+import { outsideProject } from '../chat/agentProtocol';
+import * as nodeFs from 'fs';
+import * as nodePath from 'path';
+import * as nodeOs from 'os';
 import { confirm, refuse } from '../core/notify';
 import { addressForQuestion, isKnownSite, siteOf } from './siteApproval';
 import { chromeAnnotationSessions } from './chromeAnnotationSessions';
@@ -81,6 +86,29 @@ function cutLine(text: string): string {
 interface FrameScope {
 	readonly sessionId: string;
 	readonly contextId: number;
+}
+
+function hostOfAddress(address: string): string {
+	try { return new URL(address).hostname || address; } catch { return address; }
+}
+
+/**
+ * The site an upload goes to, as the question names it: the page's host, or
+ * for a named frame the frame's own, with the page beside it when they differ.
+ * Asking about the page while the file went into a frame from another site
+ * would have the user approve a recipient they never saw.
+ */
+async function uploadSite(session: { frames(wanted?: string): Promise<FrameInfo[]> }, tab: vscode.BrowserTab, frameId: string | undefined): Promise<string> {
+	const page = hostOfAddress(tab.url ?? '');
+	if (frameId === undefined) {
+		return page;
+	}
+	const frame = (await session.frames(frameId)).find(f => f.id === frameId);
+	if (!frame) {
+		throw new Error(`No frame has the id "${frameId}". Call browser_frames for the current list.`);
+	}
+	const site = hostOfAddress(frame.origin ?? frame.url);
+	return site && site !== page ? `${site} (a frame inside ${page})` : page;
 }
 
 /** One frame of a tab, as `browser_frames` reports it. */
@@ -149,7 +177,7 @@ function shareLostMessage(target: ShareTarget): string {
 		: `The browser tab the user shared with ${targetName(target)}`;
 	return `${whose} has been closed, so the browser tools are paused for you. They will not fall back to whichever `
 		+ 'page the user happens to be looking at. Ask the user to open the page you should work with and share it — '
-		+ `"${productName()}: Share Tab with…", from the status bar menu or the toolbar menu on the browser tab.`;
+		+ `"${productName()}: Share Tab with…", from the toolbar menu on the browser tab or the command palette.`;
 }
 
 /**
@@ -1539,7 +1567,7 @@ export class BrowserController implements vscode.Disposable {
 		if (tab && !this._chatOwners.has(tab) && tabSource.isUsersOwnChrome(tab)) {
 			return new Error(`Browser tab ${id} is one of the user's own Chrome tabs, which agents do not see unless the user `
 				+ 'shares it. Do not act on it. Open the page you need with `browser_navigate` and `newTab: true`, or ask '
-				+ `the user to share that tab from the ${productName()} status bar menu.`);
+				+ `the user to share that tab from the toolbar menu on the browser tab.`);
 		}
 		return new Error(`Browser tab ${id} belongs to another ${productName()} chat, and only that chat's agent may use it. `
 			+ 'Do not act on it. Ask the user to share it with this chat from the chat\'s Access tab, or open a page of your own '
@@ -2521,7 +2549,7 @@ export class BrowserController implements vscode.Disposable {
 			throw new Error(
 				`The user has given you one browser tab (${this._idOf(assignment.tab)}), and your tools act on that `
 				+ 'tab only — a selection made here could never take effect. Ask the user to give you a different '
-				+ `tab, or to stop sharing, from the ${productName()} status bar menu.`);
+				+ `tab, or to stop sharing, from the toolbar menu on the browser tab.`);
 		}
 
 		const open = tabSource.all ?? [];
@@ -3238,8 +3266,8 @@ export class BrowserController implements vscode.Disposable {
 		}
 		if (target && own && own !== tab) {
 			throw new Error(`The user has given you browser tab ${this._idOf(own)}, and your tools act on that tab only, `
-				+ `not on ${tabId}. Tell the user: they can give you ${tabId}, or stop sharing, from the ${productName()} `
-				+ 'status bar menu.');
+				+ `not on ${tabId}. Tell the user: they can give you ${tabId}, or stop sharing, from the toolbar menu `
+				+ 'on the browser tab.');
 		}
 		this._noteTabUse(tab, caller);
 		// Held before the open, for the reason given in `_withSession`.
@@ -3275,6 +3303,13 @@ export class BrowserController implements vscode.Disposable {
 
 	/** One confirmation at a time: a page looping an agent must not stack dialogs. */
 	private _cookieQuestion = false;
+	private _uploadQuestion = false;
+	/**
+	 * The chat's answer for an upload: the conversation's folder and its approval
+	 * modes for files inside and outside it. Set from `extension.ts`; undefined
+	 * for a caller outside the chat.
+	 */
+	public uploadPolicy?: (chatId: string) => (UploadPolicy & { projectRoot?: string }) | undefined;
 
 	/** Sites each caller may open without asking, by `callerKey`. In memory: a reload asks again. */
 	private readonly _siteApprovals = new Map<string, { kind: ClientKind; chatId?: string; sites: Set<string>; all: boolean }>();
@@ -3467,6 +3502,100 @@ export class BrowserController implements vscode.Disposable {
 				skipped: [...parsed.skipped, ...plan.skipped].length ? [...parsed.skipped, ...plan.skipped] : undefined,
 				reloaded: reload && result.set > 0,
 			};
+		});
+	}
+
+	/**
+	 * `browser_upload_file`: local files into a page's `<input type=file>`.
+	 *
+	 * Every path is resolved (relative to the conversation's folder, or the
+	 * window's), followed to its real file, and must be a regular file under
+	 * `maxUploadBytes`. Then `uploadVerdict` decides: the chat's approval menu
+	 * for a chat agent, our own modal for anyone else and for anything that
+	 * looks like a secret. The modal is ours, so no CLI rule or hook answers it.
+	 * As with cookies, the tab is resolved, asked about, then resolved again, and
+	 * a change of tab or site in between refuses.
+	 */
+	public async uploadFiles(selector: string, pathsInput: unknown, frameId: string | undefined, caller: CallerIdentity, signal?: AbortSignal): Promise<unknown> {
+		refuseValueProbe(selector);
+		requireFrameId(frameId);
+		const paths = uploadPathsArgument(pathsInput);
+		const chat = caller.chatId ? this.uploadPolicy?.(caller.chatId) : undefined;
+		const base = chat?.projectRoot ?? vscode.workspace.workspaceFolders?.find(f => f.uri.scheme === 'file')?.uri.fsPath;
+		const files = await Promise.all(paths.map(async raw => {
+			const expanded = raw === '~' || raw.startsWith('~/') ? nodePath.join(nodeOs.homedir(), raw.slice(1)) : raw;
+			if (!nodePath.isAbsolute(expanded) && !base) {
+				throw new Error(`"${raw}" is relative and no folder is open; pass an absolute path.`);
+			}
+			const absolute = nodePath.resolve(base ?? '/', expanded);
+			let real: string;
+			let size: number;
+			try {
+				real = await nodeFs.promises.realpath(absolute);
+				const stat = await nodeFs.promises.stat(real);
+				if (!stat.isFile()) { throw new Error(`"${raw}" is not a file.`); }
+				size = stat.size;
+			} catch (error) {
+				if (error instanceof Error && /is not a file/.test(error.message)) { throw error; }
+				throw new Error(`"${raw}" was not found (resolved to ${absolute}).`);
+			}
+			if (size > maxUploadBytes) {
+				throw new Error(`"${raw}" is ${formatBytes(size)}; at most ${formatBytes(maxUploadBytes)} a file.`);
+			}
+			return { path: real, size, outside: outsideProject(chat ? chat.projectRoot : base, real) };
+		}));
+		// The site the files go to: the frame's when a frame is named, since a
+		// frame from another site receives them, not the page around it.
+		const { tab, host } = await this._withSession(caller, async (session, tab) => ({ tab, host: await uploadSite(session, tab, frameId) }));
+		const verdict = uploadVerdict(files, chat, guardEnabled('confirmUploads'));
+		const who = assistantName(caller.kind);
+		if (verdict.kind === 'deny') {
+			refuse(vscode.l10n.t('$(shield) Blocked: {0} wanted to upload files to {1}', who, plainInLabel(host)));
+			throw new Error(verdict.category === 'outside'
+				? 'Uploading files outside the project is set to Deny in the chat\'s approval menu ("Files outside the project"). Ask the user to upload the file or to change that setting.'
+				: 'Uploading project files is set to Deny in the chat\'s approval menu ("Files in the project"). Ask the user to upload the file or to change that setting.');
+		}
+		if (verdict.kind === 'ask') {
+			if (this._uploadQuestion) {
+				throw new Error('The user is already being asked about an upload. Wait for that answer.');
+			}
+			this._uploadQuestion = true;
+			let answer: string | undefined;
+			try {
+				const lines = files.map(f => `${f.path}  (${formatBytes(f.size)})${isSensitiveFile(f.path) ? ' — ' + vscode.l10n.t('looks like a secret') : f.outside ? ' — ' + vscode.l10n.t('outside the project') : ''}`);
+				answer = await vscode.window.showWarningMessage(
+					files.length === 1
+						? vscode.l10n.t("Let {0} upload a file to {1}?", who, plainInLabel(host))
+						: vscode.l10n.t("Let {0} upload {1} files to {2}?", who, files.length, plainInLabel(host)),
+					{
+						modal: true,
+						detail: [
+							vscode.l10n.t("The page receives these files and can send them anywhere. Allow this only if you asked for this upload."),
+							'',
+							...lines,
+							'',
+							verdict.reason === 'policy'
+								? vscode.l10n.t("Asked because the chat's approval menu is set to Ask for these files.")
+								: vscode.l10n.t("This question can be turned off in Chat Settings → Security."),
+						].join('\n'),
+					},
+					vscode.l10n.t("Upload"),
+				);
+			} finally {
+				this._uploadQuestion = false;
+			}
+			if (answer !== vscode.l10n.t("Upload")) {
+				refuse(vscode.l10n.t('$(shield) Blocked: {0} wanted to upload files to {1}', who, plainInLabel(host)));
+				throw new Error('The user declined this upload. Do not ask again unless they say so.');
+			}
+		}
+		return this._withSession(caller, async (session, now) => {
+			const nowHost = now === tab ? await uploadSite(session, now, frameId) : '';
+			if (now !== tab || nowHost !== host) {
+				throw new Error('The tab or its site changed while the user was asked; nothing was uploaded.');
+			}
+			const result = await this._onScrollGate(now, () => session.actions.setFiles(selector, frameId, files.map(f => f.path), signal));
+			return { uploaded: result.files, site: host };
 		});
 	}
 

@@ -49,15 +49,16 @@ poll that old repository for updates and see no later release.
     `workspaceState` and `SecretStorage`) are copied to `hoverdeck.*` where absent.
   - **AI Browser's state** (chat history, toolbar skills, saved logins, MCP tokens) belongs to
     AI Browser's extension id and can only be handed over by AI Browser itself, through an
-    `exportState` on its `activate` result. **No released AI Browser has one** (0.9.23, the
+    `exportState` on its `activate` result. **No released AI Browser has one** (1.0.0, the
     last, does not), so today only settings move. The reader is kept for a release that adds it.
   - **Webview `localStorage`** (`aiBrowser.chat.*`, `aiBrowser.terminal.*`, per device) is
     copied to `hoverdeck.*` where unset in the first statements of `preview-src/chat.ts`.
-- **With AI Browser installed beside it** both run: two globe dropdowns, two status items, two
-  MCP servers (the port walk falls through), and of the two `Cmd+Alt+C` bindings only one fires.
-  `hoverdeck.removeAiBrowserEntries` (status bar `$(tools) Remove old AI Browser entries`, item
-  `hoverdeck.oldEntries`) takes AI Browser's Connect entries out of `.mcp.json` /
-  `.codex/config.toml`, or agents started from them see the browser tools twice.
+- **With AI Browser installed beside it** both run: two toolbar dropdowns (HoverDeck's has its
+  own icon), AI Browser's status items (HoverDeck has none), two MCP servers (the port walk falls
+  through), and of the two `Cmd+Alt+C` bindings only one fires.
+  `hoverdeck.removeAiBrowserEntries` (palette only) takes AI Browser's Connect entries out of
+  `.mcp.json` / `.codex/config.toml`, or agents started from them see the browser tools twice.
+  See [HoverDeck beside AI Browser](#hoverdeck-beside-ai-browser-one-toolbar-button-no-status-bar-at-all-a-manager-in-chat-settings).
 - **`npm run package`** writes `hoverdeck.vsix`; `npm run publish:ovsx` packages and publishes
   it; `check-manifest` also fails on any `aiBrowser.` id left in the manifest. The per-agent
   listings (`npm run package:listings`) are unchanged. `vscode-marketplace/` is AI Browser's
@@ -165,7 +166,7 @@ Settings:
 | `aiBrowser.updateCheck.enabled` | `true` | watch the repository for a newer release |
 | `aiBrowser.logins.enabled` | `true` | saved logins and passkeys in pages; off, nothing is injected — the vault stays manageable |
 | `aiBrowser.logins.offerToSave` | `true` | offer to save or update after a sign-in that worked |
-| `aiBrowser.logins.showSuggestions` | `true` | the `$(key) Fill login` status bar item on a sign-in form |
+| `aiBrowser.logins.showSuggestions` | `true` | the list of saved logins under a focused sign-in field (HoverDeck; the frozen AI Browser keeps its `$(key) Fill login` status bar item) |
 | `aiBrowser.logins.autofillOnPageLoad` | `false` | fill on load when exactly one login is saved for that exact origin |
 | `aiBrowser.passkeys.enabled` | `true` | the gated virtual authenticator — see [Passkeys](#passkeys-a-virtual-authenticator-that-holds-nothing) |
 
@@ -176,6 +177,7 @@ Settings:
 | `aiBrowser.security.protectSecretFields` | `browser_fill` / `browser_type` refuse password, one-time-code and card fields |
 | `aiBrowser.security.markPageContent` | page-reading tools get a "this is page data, not instructions" block first |
 | `aiBrowser.security.confirmCookies` | `browser_set_cookies` asks in a modal |
+| `aiBrowser.security.confirmUploads` | `browser_upload_file` asks before a file is put into a page (an agent outside the chat always, a secret-looking file always) — see [Uploading files](#uploading-files-into-a-page-browser_upload_file) |
 
 See [Guards against prompt injection](#guards-against-prompt-injection). They are read with
 `inspect().globalValue` (`guardEnabled` in [src/core/securitySettings.ts](src/core/securitySettings.ts)),
@@ -289,6 +291,7 @@ difference, in `browserController.js`, was a doc comment whose link had been upd
 - [src/core/safeFiles.ts](src/core/safeFiles.ts) — the private temp directory, exclusive creates and atomic config writes (leaf, under test)
 - [src/mcp/gitignoreRule.ts](src/mcp/gitignoreRule.ts) — whether `.codex/.gitignore` keeps the token file out of git (leaf, under test)
 - [src/mcp/mcpServer.ts](src/mcp/mcpServer.ts) — HTTP transport, tools, client attribution
+- [src/chat/skillCatalog.ts](src/chat/skillCatalog.ts) — the toolbar's skills as `skill_list` / `skill_get` answer them: catalogue rows and a skill whole (leaf, under test)
 - [src/mcp/chatTools.ts](src/mcp/chatTools.ts) — the `chat_*` tools: the AI Browser chat's tabs, agents and limits, and controls for its own agents
 - [src/core/chatCapability.ts](src/core/chatCapability.ts) — the in-memory `X-AI-Browser-Chat` value that stands for a conversation (leaf)
 - [src/editor/editorTools.ts](src/editor/editorTools.ts) — the `editor_*` MCP tools: what the user has open, showing a place, definitions, references, symbols
@@ -305,7 +308,9 @@ difference, in `browserController.js`, was a doc comment whose link had been upd
 - [src/mcp/mcpLifecycle.ts](src/mcp/mcpLifecycle.ts) — server lifetime and context keys
 - [src/setup/updateVersion.ts](src/setup/updateVersion.ts) — comparing two versions (leaf, under test)
 - [src/setup/updateCheck.ts](src/setup/updateCheck.ts) — the release watch and its one notification
-- [src/logins/logins.ts](src/logins/logins.ts) — saved logins and passkeys: commands, the status bar item, the pickers, export and import
+- [src/logins/logins.ts](src/logins/logins.ts) — saved logins and passkeys: commands, the in-page list and save card, the pickers, the Chat Settings manager, export and import
+- [src/logins/loginSuggestScript.ts](src/logins/loginSuggestScript.ts) — the page-side list under a sign-in field and the save offer card (MIT, beside the MPL form script)
+- [src/logins/loginsManager.ts](src/logins/loginsManager.ts) — what Chat Settings → Logins & passkeys is shown and may ask for, with no password either way (leaf, under test)
 - [src/logins/loginWatcher.ts](src/logins/loginWatcher.ts) — the CDP half: one session per recent tab, sign-in outcomes, the passkey ceremony
 - [src/logins/loginVault.ts](src/logins/loginVault.ts) — the vault in SecretStorage, written under a cross-process lock
 - [src/logins/loginFormScript.ts](src/logins/loginFormScript.ts) — the page-side script, ported from Firefox — **MPL-2.0, the one non-MIT file**
@@ -316,6 +321,8 @@ difference, in `browserController.js`, was a doc comment whose link had been upd
 - [src/logins/vaultSeal.ts](src/logins/vaultSeal.ts) — the encrypted export: scrypt and AES-256-GCM (leaf, under test)
 - [src/logins/cookieParse.ts](src/logins/cookieParse.ts) — pasted cookies in every common format, and their CDP parameters (leaf, under test)
 - [src/logins/cookiePaste.ts](src/logins/cookiePaste.ts) — the Paste Cookies into Page… command
+- [src/browser/favorites.ts](src/browser/favorites.ts) — favorite sites: the store, Add to Favorites…, Open Favorite…, Manage Favorites
+- [src/browser/favoritesData.ts](src/browser/favoritesData.ts) — their shape, the stored list read entry by entry, the settings tab's actions and edits (leaf, under test)
 - [src/browser/cookieAccess.ts](src/browser/cookieAccess.ts) — setting and listing a tab's cookies, and the agent's site rule (leaf, under test)
 - [src/browser/siteApproval.ts](src/browser/siteApproval.ts) — which sites an agent may open without asking (leaf, under test)
 - [src/core/securitySettings.ts](src/core/securitySettings.ts) — the `aiBrowser.security.*` switches, read from the user's settings only
@@ -3333,6 +3340,7 @@ pass"). Seven tools in [src/mcp/chatTools.ts](src/mcp/chatTools.ts), answered by
 | `chat_stop_agent` | the chat's own agents | one running agent or background skill run **of their own tab** |
 | `chat_play_sound` | the chat's own agents | one of the 50 chat sounds (or the user's own), 1–5 times, in **their own** tab's surface |
 | `chat_alert` | the chat's own agents | calls the user: a system notification (asked, so even with VS Code focused), a warning card in the conversation and a sound |
+| `skill_list` / `skill_get` | anyone with the token | the toolbar's skills and workflows: names and one-line descriptions, then one skill whole (every step, parameters, routes) for the agent to follow itself — see below |
 
 Decisions, each with its reason:
 
@@ -3378,11 +3386,19 @@ Decisions, each with its reason:
   no-card read list in `agentProtocol.ts` — the user's own Sound settings and Chat Settings → MCP
   govern them, not an approval. `chatToolSounds` repeats `chatSounds` (chatTools.ts may not value-
   import the protocol), held equal by `chatToolSounds.test.ts`, which reads the source as text.
+- **`skill_list` / `skill_get` give the toolbar's skills to an agent** (asked for, modelled on VS Code Copilot's
+  `skill` tool behind `chat.skillTool.enabled`, 1.147: names and descriptions to choose from, then the chosen skill's
+  instructions loaded before the task). [src/chat/skillCatalog.ts](src/chat/skillCatalog.ts) (leaf, under test) shapes
+  both answers; `mcpControl().skills` / `.skill` read `_toolbar()` (one `globalState`, every surface alike). **Read-only
+  on purpose**: the agent follows the steps itself, in its conversation, so every command and edit meets its own
+  approvals — a tool that *ran* a workflow would run its shell steps with no card. A chat agent sees only the skills
+  offered to its agent (`skillOfferedTo`); a caller outside the chat sees them all. An unknown name answers with the
+  names there are. Both are reads in `browserServerTools` (no card), and the `skills` group switches them off.
 - **Chat Settings → MCP switches parts of the server off** (asked for: "not all, only some, like
-  these alerts and sounds"). `src/mcp/mcpFeatures.ts` (leaf, under test) maps nine groups to tools
+  these alerts and sounds"). `src/mcp/mcpFeatures.ts` (leaf, under test) maps ten groups to tools
   — sounds, alerts, cards (`chat_notify`, `chat_progress`, `chat_update_plan`,
   `chat_present_result`, `chat_present_json`, `chat_cite`), keep-awake, chat control, recording,
-  annotations, cookies, editor; the browser, terminals and the chat's reads are not offered. The
+  annotations, cookies, editor, skills; the browser, terminals and the chat's reads are not offered. The
   choice is `aiBrowser.mcp.disabledFeatures` (`application`, read with `inspect().globalValue`,
   the guards' rule: a workspace must not change what agents are offered), and
   `DispatchContext.toolOff` applies it at every request: `tools/list` leaves the tools out, and a
@@ -4163,7 +4179,7 @@ shadow roots are not reached. Text in images and canvas is not text.
 ## Saved logins and passkeys
 
 The browser saves usernames and passwords, fills them back, and holds passkeys. Everything is in
-VS Code's SecretStorage; nothing is drawn into a page; no MCP tool returns a password value — see
+VS Code's SecretStorage; in HoverDeck only usernames are drawn into a page (the list under a field, below); no MCP tool returns a password value — see
 [Keeping password values from the assistants](#keeping-password-values-from-the-assistants) for
 exactly what that covers and what it cannot.
 
@@ -4185,10 +4201,75 @@ page (main world)                passkeyGate.ts — asks before navigator.creden
    ▼                                 │
 LoginWatcher / WatchedTab        loginWatcher.ts — one CDP session per recent tab, a virtual authenticator
    ▼
-LoginsFeature                    logins.ts — status bar item, pickers, offers, export/import
+LoginsFeature                    logins.ts — in-page list and card, pickers, offers, manager, export/import
    ▼
 LoginVault → SecretStorage       loginVault.ts, rules in vaultData.ts
 ```
+
+### HoverDeck beside AI Browser: one toolbar button, no status bar at all, a manager in Chat Settings
+
+Asked for, so the two do not double their interface when both are installed. AI Browser is frozen
+and keeps its own toolbar, status bar item and QuickPicks; HoverDeck alone changed:
+
+- **Nothing of HoverDeck's in the status bar** (asked for: "полностью"). The `$(globe)` item,
+  `Enable Browser API` / `Restart to finish` and `Remove old AI Browser entries` are gone;
+  `registerStatusBar` in [src/setup/statusBar.ts](src/setup/statusBar.ts) registers only the menu,
+  reachable as the palette command **HoverDeck: Menu** (`hoverdeck.statusMenu`). The share state
+  is in that menu; the grant is `HoverDeck: Enable Integrated Browser API`; the cleanup is
+  `hoverdeck.removeAiBrowserEntries` from the palette. Sentences that said "the status bar menu"
+  in `browserController.ts` now say "the toolbar menu on the browser tab". Confirmations still go
+  through `confirm()` / `refuse()` (`setStatusBarMessage`, transient, not an item). The sections
+  below describing the status bar items are AI Browser's; read them as such.
+- **One button on the browser tab.** The repeat buttons (`navigation@2`, the `hoverdeck.repeat.*`
+  entries) are gone from `editor/title`; only the dropdown stays, under an icon of its own
+  (`media/icons/hoverdeck-{light,dark}.svg`): a globe with a blue dot in its lower right corner
+  (the globe cut away under the dot by a mask), so it reads as a browser and apart from AI
+  Browser's plain globe. The first design, a ring through the globe, read as Internet Explorer's
+  logo. The delegates and the `Cmd+Alt+C` chord remain. `check-manifest` no longer requires the
+  repeat buttons in the toolbar.
+- **The page-side names are HoverDeck's own, and they must stay apart from AI Browser's.** The
+  form script's isolated world and binding (`hoverdeckLogins`), its registry
+  (`__hoverdeckLoginsRegistry`), the passkey binding (`__hoverdeckPasskey`) and state key
+  (`hoverdeck.passkey`). One isolated world per name is shared by every CDP session, and each
+  install uninstalls whatever the registry lists — so with both extensions on the old shared
+  names, each one's attach switched the other's script off, and the sign-in was never captured:
+  reported as "it did not ask to save the password" (hestore.hu, a plain POST form). Measured
+  after the split with the compiled scripts in headless Chrome against a copy of that form:
+  `submit` captured, the next document reports no password field, the card shows.
+- **No status bar item for logins.** A saved login is offered **in the page, under the field the
+  user is in** ([src/logins/loginSuggestScript.ts](src/logins/loginSuggestScript.ts)): usernames
+  only, in a closed shadow root in the form script's isolated world, styled by a constructed
+  stylesheet (a `<style>` element would meet the page's CSP). A pick reports the host-minted id
+  (`suggestPick`), and the host fills through the form script with the password only it holds; the
+  footer rows (`suggestAction`: another site's login, manage) run the host's own pickers. The save
+  offer is a small card at the top right of the page (`offerAnswer` with its token), its
+  buttons on one line: Save or Update, Not now, Never (tooltip "Never for this site") and "…"
+  (every answer in a picker); an × in its corner answers like Not now. The card takes itself down
+  after 30 s (`cardLifetimeMs`) without answering — the host's offer keeps its own timer — so
+  nothing is sent on the timeout. **Trusted input only**: a page dispatching clicks cannot pick a
+  login or answer the offer. `genuine()` also re-pins the host's style at the click, refuses any
+  ancestor with a transform, zoom or clip-path, and requires the clicked row at its own size under
+  the pointer. After a pick the list stays closed for 1.5 s (`pickQuietMs`): the fill's own focus
+  moves (trusted `focusin`) would otherwise reopen it over the field just filled. Pressing in the list keeps the focus in the field. `isToken` in
+  `loginMessages.ts` refuses any id or token the host could not have minted.
+- **The manager is a Chat Settings tab, "Logins & passkeys"** (`createLoginsSettings` in
+  `chat.ts`; host `_logins` in `chatView.ts`; contract
+  [src/logins/loginsManager.ts](src/logins/loginsManager.ts)). The five switches (applied at once,
+  written to user settings), Save login from page, Import, Export, a searchable list of logins with
+  Copy username, Copy password, Open and a menu (change password, change username, rename,
+  delete), passkeys with delete, and the never-save sites with Offer again. **No password crosses
+  the webview boundary in either direction**: the view gets origins, usernames, titles and dates;
+  copying a password goes to the host clipboard (cleared after 45 s) and a new password is typed
+  in a VS Code input box. `readLoginsAction` validates everything the view sends; an action on an
+  entry deleted meanwhile is refused. Editor-only (`logins: editor(…)` in `commands.ts`). The
+  chat and the logins feature are joined through the leaf's registry (`setLoginsManager`), so
+  `chatView.ts` never imports `logins.ts`. "Manage Saved Logins and Passkeys" opens this tab
+  (`setManagerOpener` in `extension.ts`) and falls back to the old QuickPick where the chat cannot
+  run (below 1.106, Restricted Mode, a remote window). The list redraws only when its entries or
+  the search change (#365).
+
+Verified: typecheck, the build, `npm test` (`loginsManager.test.ts`, `loginMessages.test.ts`).
+**Not run inside VS Code yet**: the in-page list and card, and the settings tab.
 
 ### Where the code came from, and the one MPL file
 
@@ -4785,6 +4866,46 @@ page script applies it any more.
 button and takes a `browser_screenshot` sees the password on screen. Sharing a tab with an
 assistant is sharing what that tab can show.
 
+### Favorite sites
+
+Asked for: favorites for sites, from the browser tab's HoverDeck button and from the chat. The store
+is [src/browser/favorites.ts](src/browser/favorites.ts), the rules the leaf
+[src/browser/favoritesData.ts](src/browser/favoritesData.ts) (under test).
+
+- **Where**: the browser tab's dropdown has **Add to Favorites…** (`hoverdeck.favorites.add`: the
+  page `browser.userTab` names, its title asked in an input box) and a **Favorites ▸** submenu with
+  **Open Favorite…** and **Manage Favorites**. The chat's globe menu has **Open from Favorites**: a
+  menu of the sites, then VS Code Browser or Google Chrome. Chat Settings → **Favorites** adds (typed
+  or the current page), renames, changes the address (inline, never `window.prompt`), reorders,
+  removes and opens.
+- **A contributed submenu is static**, so the sites cannot be rows of it: the submenu holds Open
+  Favorite…, a QuickPick (Enter opens in VS Code, the globe button in Chrome, the trash removes).
+  Manage Favorites opens the chat's tab (`setFavoritesManagerOpener` → `showSettings('favorites')`),
+  falling back to that QuickPick where the chat cannot run.
+- **Stored** in `globalState` `hoverdeck.favorites` (every window and project), at most 200, read
+  entry by entry (`readFavorites`): a malformed or repeated entry is dropped. http(s) only, no
+  credentials, 2 048 characters; titles one line, 120 code points. One address once
+  (`sameFavoriteUrl` ignores a trailing slash). Edits are chained, so two quick clicks cannot write
+  over each other.
+- **The view never sends an address to open**, only an id; the host looks the site up
+  (`favorites` message, `readFavoritesAction`). `favorites` is `editor()` in `commands.ts` and an
+  `editor` field in `viewFields`, so Chrome and the website have neither the row nor the tab — the
+  globe menu tests for `state.favorites`, not `gate()`, because tests lift `browserMenuItems` alone.
+- **Opened from the chat, the page is pinned to that conversation**: VS Code through
+  `_awaitOpenedPage`, Chrome by pinning the tab `hoverdeck.openInChrome` returns.
+- The settings tab redraws only when the list, the search or the edit in progress changes (#365)
+  and guards its first draw (#573). Its local fields are not named `input`: the composer tests
+  lift the *last* `input.addEventListener('keydown'` from `chat.ts` by text.
+- **The optional star beside the HoverDeck button** (`hoverdeck.favorites.showButton`, default on, switched in Chat
+  Settings → Favorites, `setButton` action written at Global): outlined when the page in front is not a favorite, filled
+  when it is. A toolbar icon is static, so it is two commands, `hoverdeck.favorites.star` (`$(star-empty)`, adds at once
+  with the page's title, no name prompt) and `hoverdeck.favorites.unstar` (`$(star-full)`, removes), both
+  `navigation@2`, swapped by the `hoverdeck.pageIsFavorite` context key, republished on a store change, on
+  `onDidChangeActiveBrowserTab` and `onDidChangeBrowserTabState`. The page is `focusedTab ?? userTab`. It is the one
+  exception to "one button on the browser tab": `check-manifest` skips `hoverdeck.favorites.*` in that rule. The view's
+  switch is reposted on a configuration change only once the Favorites tab has loaded (`_favoritesWatch`).
+- **Not run inside VS Code yet.**
+
 ### Cookies pasted into a page
 
 Asked for: some services refuse to sign in inside the editor's browser or a Chrome started for
@@ -4835,7 +4956,7 @@ against a real Chrome.
 
 ### Guards against prompt injection
 
-Asked for: an agent reads pages, and a page can carry instructions. Five guards, each with a
+Asked for: an agent reads pages, and a page can carry instructions. Six guards, each with a
 switch under `aiBrowser.security.*` (asked for — "some people will find this protection in the
 way"), all on by default:
 
@@ -4871,6 +4992,7 @@ way"), all on by default:
   the JSON, so the result still parses. This is a hint to the model, not a boundary.
 - **Cookies are asked about** (`confirmCookies`): the `browser_set_cookies` modal. Off, the site
   rule (`agentCookieRefusal`) still holds.
+- **Uploads are asked about** (`confirmUploads`): see [Uploading files into a page](#uploading-files-into-a-page-browser_upload_file).
 
 **Where they are switched: Chat Settings → Security** (asked for: "ideal UX, convenient and clear"),
 `createSecuritySettings` in `chat.ts`, `_securitySettings` / `_postSecurity` in `chatView.ts`, one
@@ -4887,7 +5009,7 @@ menu has a **Security** row before Settings (`$(shield)`, or `$(warning)` with "
 off") that runs the internal `aiBrowser.securitySettings`: the chat's Security tab (`openSettings`
 with `tab: 'security'`), or VS Code's settings filtered to `aiBrowser.security` where the chat
 cannot open. The refusals and modals name "Chat Settings → Security" as where to change them.
-`SecurityGuardId` in `chatProtocol.ts` repeats the five names, since the webview may not import
+`SecurityGuardId` in `chatProtocol.ts` repeats the six names, since the webview may not import
 `securitySettings.ts` (it imports `vscode`). Not run inside VS Code yet.
 
 **Appearance, Sound & notifications and Connections & permissions use the same card** (asked for): `settingsRow(icon, title, control, note?)` and `settingsCard(title, …rows)` in `chat.ts` build the Security tab's rows — a tinted icon, title and note, the control at the right; a lone checkbox becomes the switch and the whole row its label, selects and the volume slider sit in `.settings-row-control`. A row whose control is disabled is dimmed with `.muted` by its section ("Only when the window is not focused").
@@ -6894,7 +7016,31 @@ leaf is [src/chat/githubStatus.ts](src/chat/githubStatus.ts) (under test), the h
   current set goes to the view as `githubRunWatches` on change and on `ready`. In memory, per
   chat surface: a reload forgets them. Let go after 6 hours or 20 failed polls in a row (said in
   the status bar); at most 20 at once. Both settings sit in Chat Settings → Sound, editor only.
-- **Not built:** other hosts (GitLab, Bitbucket), merging or re-running from the tab, live
+- **A pull request with a merge conflict carries a red "merge conflict" chip; one without says nothing**
+  (asked for). One that can be merged now gets a **Merge** button (`git-merge`, purple, always shown) inside its
+  row, left of the open-in-browser icon — the Actions bell's shape: the row keeps a 24 px slot (`gh-merge-slot`)
+  and the button, a sibling since a button cannot hold a button, is laid over it (`right: 29px`). A click opens a
+  strip under the row:
+  "Merge #N into <base>?", one button per method the repository allows (the last one used first, kept per device
+  in `localStorage` `aiBrowser.github.mergeMethod`), and Cancel; Escape closes it. Never a modal (#10). Rules:
+  - **The verdict is `mergeVerdict`** (leaf, under test): a conflict is `CONFLICTING` or `DIRTY`; "can be merged"
+    is a non-draft `MERGEABLE` whose state is `CLEAN`, `UNSTABLE` or `HAS_HOOKS` — `BLOCKED` (required reviews or
+    checks), `BEHIND` and `UNKNOWN` get neither. GitHub computes mergeability lazily, so a first answer of
+    `UNKNOWN` is normal and the next refresh fills it in.
+  - **Where it comes from**: `gh pr list` with `mergeable,mergeStateStatus`. The REST list has no mergeability,
+    so with VS Code's GitHub sign-in the first `githubMergeCheckLimit` (10) pull requests are each read with
+    `GET pulls/N`, in parallel; the public API (no token) shows neither chip nor button.
+  - **The button shows only to an account that may push**, with the methods the repository allows
+    (`parseRepoMerge`: gh `viewerPermission` WRITE/MAINTAIN/ADMIN and `*MergeAllowed`, the API's
+    `permissions.push` and `allow_*`; a flag that is absent counts as allowed) — `GithubStatus.mergeMethods`.
+  - **The host decides, not the view** (`_githubMergePr`): the pull request must be in its cached answer for that
+    folder's repository, still `mergeReady` and the method allowed. The merge is **pinned to the head commit
+    that was shown** — `gh pr merge --match-head-commit`, or the API's `sha` — so a push that lands meanwhile makes
+    GitHub refuse instead of merging code nobody saw. One merge per folder at a time; refused where `_blocked()`.
+    Success is the status bar (`confirm`) and a refresh; a refusal is a line under the row with GitHub's words.
+  - **Editor only** (`githubMergePr: editor(…)` in `commands.ts`): Chrome and the website see the chip, not the
+    button. The branch itself is left alone after a merge (no delete), and nothing is pulled.
+- **Not built:** other hosts (GitLab, Bitbucket), re-running from the tab, live
   updates while it is open. Not run inside VS Code yet.
 
 - **"Continue in …" in a picked folder writes there**, and the view sweeps the `.ai-browser/` of
@@ -6920,6 +7066,87 @@ and **parameters** — name, type (text, number or a choice of values), maximum 
 each is required. Kept in `globalState` (`aiBrowser.chat.toolbar`), so every project has the same
 toolbar; at most 30, prompts up to 20 000 characters.
 
+- **The tab is labelled Workflows** (renamed from Skills, 2026-11-17; the id stays `skills`, so
+  saved order and visibility survive). Its key is **Alt+K** — Alt+W closes a tab — with Alt+S
+  kept as an alias; `composerTabLabel(text, key)` underlines that letter and the tooltip reads it.
+- **A workflow is a toolbar skill whose steps can be shell commands** (asked for, 2026-11-17;
+  all four phases: shell steps, routes, decisions, a read-only graph). "Workflow" names our feature; "skill" stays the CLIs' own.
+  - **Storage**: `ToolbarSkill.workflow` — one `{ shell?: true, name?: string }` per step, index 0
+    the first prompt, `i + 1` `followUps[i]` — under its own key `hoverdeck.chat.toolbarWorkflow`
+    (#424's rule). Validated by `validWorkflow` in `toolbarText.ts`: a shell workflow cannot put its
+    result in the chat (it runs in the background), a step after a shell step has no check (its exit
+    code decides: non-zero stops the run, failed), step names are `[a-z0-9_]`, unique, never `prev`.
+  - **Every step is a new session** (`ToolbarRuns`): an AI step a fresh agent session, a shell step a
+    `ShellStepSession` ([src/chat/shellStep.ts](src/chat/shellStep.ts)) — `spawn(shell: true)` in the
+    chat's folder, `scrubEnv`'s environment, a process group of its own, 10 minutes at most, SIGTERM
+    then SIGKILL after 3 s, the stream tails (1 MB) kept for later steps.
+  - **Variables** ([src/chat/workflowVars.ts](src/chat/workflowVars.ts), leaf, under test): a prompt
+    reads `{{steps.<name|number|prev>.<field>}}` and `{{params.<name>}}` (`fillVars`; plain `{{name}}`
+    is still `fillPrompt`'s); fields are `stdout`, `stderr`, `exitCode`, `output` for a command and
+    `reply`, `output` for an agent. **A command is never filled in**: values reach it only as
+    environment variables (`shellEnv`: `PARAM_<NAME>`, `STEP_<N|NAME|PREV>_<FIELD>`, each cut to 16k,
+    tail kept), which the command quotes itself (`"$STEP_TEST_STDOUT"`). Filling text into a command
+    would make a model's reply or a page's words shell syntax.
+  - **The editor** (`openSkillEditor`): each step has a kind (AI task / Shell command) and an optional
+    name; the Markdown bar's `{}` button lists every parameter and every field of each step *above*
+    the one being edited, written the way that step reads it (`{{…}}` in a prompt, `"$…"` in a
+    command); under each step its own outputs are chips that copy their `{{steps.…}}` token.
+  - **Shell output reaches the Bash tab and Activity**: the runner's rows (`shellRows`/`shellRow`)
+    join `runningShells` and `_showShellOutput`, marked `shell.workflow` with the run's row id, and a
+    click on such a Bash row opens the run's agent card. Stopping or disposing the run stops its
+    command (`_end`).
+  - **Chrome and the website** may run or save a workflow with a shell step only with
+    `hoverdeck.chat.remoteWorkflowShell` on (`application`, `inspect().globalValue`, default off):
+    `_refuseRemoteShellWorkflow` at the top of `_receiveChromeFooter`, which both surfaces reach. Like
+    every toolbar run, it is refused where `_blocked()` is (Restricted Mode, a remote window).
+  - **Routes between steps** (phase 2; `ToolbarWorkflowStep.onSuccess` / `onFailure`, a
+    `ToolbarRoute`): next (the default on success), done, fail (the default on failure), or a step.
+    A step's failure is a command's non-zero exit or an AI turn's error — **never the user's Stop**,
+    which ends the run. **A route back** (to the same step or an earlier one) carries `times`, 1 to 3
+    (`workflowMaxBack`), and `whenSpent` (`fail`, the default, or `next`), so every workflow ends:
+    `executionBound` in [src/chat/workflowGraph.ts](src/chat/workflowGraph.ts) (leaf, under test)
+    is the most steps a run can take, and the runner refuses a step past it. `nextStep` decides; a
+    route's counter is per run. The rules are written twice, `validRoute` in `toolbarText.ts` and the
+    graph module (leaves may not import each other). The editor keeps its own positions (0 = the
+    first prompt) and maps them past empty steps on save; the host maps raw positions again
+    A decide step's `onFailure` (a reply with no valid choice) is one of its routes in `routesOf`, so a
+    route back there needs its times and counts towards the bound like a choice's.
+    (`indexes.indexOf`) and refuses a route into an empty step, a back route without 1–3 times, and
+    routes on a skill whose result is the chat. A check between two AI steps applies only when the
+    run reaches the next step in order. The result markers go on every step whose success can end
+    the run (`ends`). The editor draws "Done / Exit 0 → …" and "Error / Exit ≠ 0 → …" under each step,
+    with the times and "then …" selects on a route back and the bound in orange under the steps.
+  - **Decision steps** (phase 3; `ToolbarWorkflowStep.choices`, 2–5 `{ label, route }`): an AI step
+    whose agent picks one of the user's options. `withChoices` appends the numbered options to its
+    prompt and asks for a last line `<<<CHOICE:n>>>`; `chosenOption` reads the last such line
+    (backticks and emphasis stripped, range-checked). Each choice routes like a success route (back
+    routes with times and "then" included); a reply with no valid choice is a **failure** and takes
+    `onFailure`, and a decide step has no `onSuccess`. Labels are one line, at most 40 characters,
+    no `<` or `>`, unique without case (`validChoices`). A shell step cannot decide, a step after a
+    decide step has no check, and a decide workflow cannot put its result in the chat. The choice
+    is a variable: `{{steps.<x>.choice}}` in a prompt, `STEP_<X>_CHOICE` for a command
+    (`decideFields`); the agents list's row says which option was taken. The editor's kind select
+    has *AI decision*, with an option row per choice (label, route, ×) and *Add option*.
+  - **A step's check is asked only of a step whose success leads to the next step in order**
+    (`successLeads`, which peeks without counting), and the gate is read only from that step
+    (`askedCheck`); result markers go on a step whose success route can end the run
+    (`routeCanEnd`). Every step's output is recorded and every prompt filled with `fillVars`, so
+    `{{steps.N.reply}}` works in a plain background skill too; a skill whose result is the chat
+    fills nothing, so its editor offers no step outputs.
+  - **The graph** (phase 4): a collapsible "Graph" section under Next steps, shown from two steps on,
+    redrawn on every change of a step's kind, name, route or choice (`paintRouteHint`). Read-only: it
+    is edited through the selects above it. The layout is the leaf
+    [src/chat/workflowLayout.ts](src/chat/workflowLayout.ts) (under test): steps in one column, the
+    main flow (success or a choice going to the next step) a straight line, routes back in lanes on
+    the left (dashed, with their ×times), skips forward and error→next in lanes on the right, a lane
+    per overlapping span, shortest spans innermost; ports spread over a node's side so a route back to
+    the step itself has two ends. An end the user chose ("No → finish", "exit 0 → stop") is written
+    inside the step; the default ends (the last step finishing, an error stopping) are not drawn.
+    `workflowGraphSvg` in `chat.ts` draws it, **styled by classes only** (`.wf-*` in `chat.css`) —
+    the chat's CSP refuses `style` attributes. Not checked inside VS Code yet.
+  - **Known and left**: an older build reads `toolbar` and `toolbarSteps` without `toolbarWorkflow`,
+    so it would send a shell step's command to an agent as a prompt (the agent then asks before
+    running it). Not run inside VS Code yet.
 - **The bar lives in the Skills tab above the composer** (asked for): `composerTabs` — **Chat**
   (the message box, no skills) and **Skills** (every skill, wrapped, in the box's place; the
   composer's agent/model toolbar stays under both, since a skill runs on them). The skill bar is
@@ -6927,8 +7154,9 @@ toolbar; at most 30, prompts up to 20 000 characters.
   `setState`, so every `vscode.setState` call must carry it (a test sandbox defines it too).
 - **A thread at its end stays at its end when the composer tab changes** (asked for): the other tabs make the composer taller and the thread shorter, so `setComposerTab` measures "at the end" (under 60 px, the thread's own rule) before the switch and, if so, keeps `scrollTop` at the bottom for the length of the height animation (`pinThreadToEnd`, 320 ms; a wheel, press or touch on the thread ends it). A thread scrolled up is left where it was.
 - **The message box stays under every composer tab, whole** (asked for): Skills, Activity, Prompts, Bash, GitHub and Files are panels above the full composer — chips, suggestions and every button, as on the Chat tab. It used to be cut to one line there, chips hidden.
+- **A tab switch slides the new panel in from the side its tab is on** (asked for; `slideComposerPanel` in `chat.ts`): the direction comes from where the two tab buttons stand (the row can be reordered), and only `transform` and `opacity` move, through `element.animate`, so the compositor runs it with no layout per frame; a newer switch cancels the running one. The outgoing panel is not animated (it would need to overlay the incoming one during the height animation). While it runs the composer gets `panel-sliding` (`overflow-x: clip`) — never a permanent `overflow` on `.composer`, since the inline palette and popups hang out of it. Switching to Chat slides nothing (Chat has no panel); reduced motion and `save = false` skip it.
 - **The message part is darker than the composer tabs' panels** (asked for): `.input-area` is the surface with 18 % black mixed in, `.composer` (so Skills, Activity and the other panels, and `.cl-head`) 8 %, the button row (`.toolbar`) none. On the Chat tab the input area is the composer's top and takes its rounded corners; under a panel it is square.
-- **Scrolling down over the composer tab row does nothing** — it used to switch to Chat, and was removed on request after it kept firing inside sideways swipes; the row is `overflow-y: hidden`, or the active underline's 1 px overflow made it jump on a wheel. **The row has no bottom border** (removed on request): only the active tab's underline, drawn at `bottom: 2px` (raised 2 px off the row's foot, on request) so the row's `overflow-y: hidden` does not clip it. **A sideways swipe over it, or over the composer below it, walks the tabs** (asked for): fingers moving right go to the tab on the right (with natural scrolling that is a negative `deltaX`), left to the left, in the row's own order, stopping at the first or last; over the composer an element inside that can still scroll sideways in that direction (`scrollsSideways`: a long code line, a diff) keeps the gesture. The decisions are a leaf under test, [preview-src/composerSwipe.ts](preview-src/composerSwipe.ts); a gesture ends after 200 ms without events (`swipeGapMs`). **A fast flick moves exactly one tab** (asked for): a delta of 24 px or more, or 0.6 px/ms over the last 80 ms, steps at 28 px and then swallows the rest of the gesture and its momentum tail (a lockout of 350 ms, extended while events keep coming, covers a tail that resumes after a short gap) — the first version (one event's size, counted per gesture) either stepped twice or never. **But the lock must not outlive the tail**, which the second version did: extended by every event, it held as long as wheel events kept coming, so a second flick made before the tail went quiet was swallowed whole, and slow mode never came back. A tail only fades, so inside the lock a delta of 24 px or more that is over twice the previous one, or that turns the other way, is a new flick (120 ms after the step at the earliest) and steps again; and once the tail falls to 2 px the lock ends, so a slow drag can follow at once. **For 1.5 s after a consumed swipe event the next gesture is claimed wherever the pointer is** (`composerSwipedAt`): a step changes the composer's height and leaves the pointer over the thread, and the next flick then went nowhere until the pointer was moved back. Only a sideways gesture is consumed, so a vertical scroll of the thread still scrolls. **A slow drag works like a magnet** (asked for): the one underline (`composerIndicator`, below) is pulled part of the way towards the next tab — a smoothstep fraction of the whole distance, growing with the drag (`paintIndicator`'s `pull`; none under reduced motion) — the tab snaps at 44 px, and holds 220 ms before the next step can arm, so a slow drag walks on tab by tab without skipping. **The axis is decided on the first 6 px of movement**, sideways only if |dx| ≥ |dy| summed over them, never from one event: a vertical scroll drifting sideways does not walk the tabs, and a diagonal start of a sideways swipe no longer reads as "scroll down". **The gesture is claimed where it starts and followed on `document`** (capture listener): a step animates the composer's height, so the rest of the gesture landed on the thread and was lost. It takes the default (`preventDefault`), and the new tab is scrolled into view. Wheel only — a touch drag still scrolls the row.
+- **Scrolling down over the composer tab row does nothing** — it used to switch to Chat, and was removed on request after it kept firing inside sideways swipes; the row is `overflow-y: hidden`, or the active underline's 1 px overflow made it jump on a wheel. **The row has no bottom border** (removed on request): only the active tab's underline, drawn at `bottom: 2px` (raised 2 px off the row's foot, on request) so the row's `overflow-y: hidden` does not clip it. **A sideways swipe over it, over the composer below it, or over the conversation (`thread`) walks the tabs** (asked for): **inverted on request (2026-11-17)** — fingers moving left (with natural scrolling a positive `deltaX`) go to the tab on the right, as a horizontal list scrolls, in the row's own order, stopping at the first or last. **Content that scrolls sideways comes first** (`sidewaysScroller`: a long code line, a table, a diff): while it can still scroll that way the whole gesture is its own (its momentum tail included, so reaching its end never flips the tab); a gesture that starts with it already at its edge goes to the tabs with **resistance** (`feed(…, resist)`): no flick step, a slow drag needs three times the distance (`resistFactor`, 132 px), and the gesture moves one tab at most. A gesture whose first events carry no sideways delta is decided again on its first sideways one (`composerSwipeUndecided`), since the content's direction is not known before. The decisions are a leaf under test, [preview-src/composerSwipe.ts](preview-src/composerSwipe.ts); a gesture ends after 200 ms without events (`swipeGapMs`). **A fast flick moves exactly one tab** (asked for): a delta of 24 px or more, or 0.6 px/ms over the last 80 ms, steps at 28 px and then swallows the rest of the gesture and its momentum tail (a lockout of 350 ms, extended while events keep coming, covers a tail that resumes after a short gap) — the first version (one event's size, counted per gesture) either stepped twice or never. **But the lock must not outlive the tail**, which the second version did: extended by every event, it held as long as wheel events kept coming, so a second flick made before the tail went quiet was swallowed whole, and slow mode never came back. A tail only fades, so inside the lock a delta of 24 px or more that is over twice the previous one, or that turns the other way, is a new flick (120 ms after the step at the earliest) and steps again; and once the tail falls to 2 px the lock ends, so a slow drag can follow at once. **For 1.5 s after a consumed swipe event the next gesture is claimed wherever the pointer is** (`composerSwipedAt`): a step changes the composer's height and leaves the pointer over the thread, and the next flick then went nowhere until the pointer was moved back. Only a sideways gesture is consumed, so a vertical scroll of the thread still scrolls. **A slow drag works like a magnet** (asked for): the one underline (`composerIndicator`, below) stretches towards the next tab elastically — its leading edge runs ahead (up to 72% of the way at the threshold) while the trailing edge lags (28%), painted once per frame with the newest pull and a 70 ms follow (`.following`), so it tracks the fingers instead of trailing them on the .12s ease the first version had (reworked on request, 2026-11-17) — the tab snaps at 44 px with a slight overshoot on the position (`.snapping`, set in `composerSwipeStep`), and holds 220 ms before the next step can arm, so a slow drag walks on tab by tab without skipping. **At the end of the row the bar answers without moving tabs**: a slow drag on into the end is held there (`ComposerSwipe.blocked(step)` sets a wall, the pull stays at its maximum and nothing steps again until the drag turns back or ends) and drawn as a rubber band — the leading edge out by up to 8 px; a flick into the end bounces the bar out and back (`bounceComposerIndicator`). It used to zero the pull and re-step, so the bar jittered against the end. **The axis is decided on the first 6 px of movement**, sideways only if |dx| ≥ |dy| summed over them, never from one event: a vertical scroll drifting sideways does not walk the tabs, and a diagonal start of a sideways swipe no longer reads as "scroll down". **The gesture is claimed where it starts and followed on `document`** (capture listener): a step animates the composer's height, so the rest of the gesture landed on the thread and was lost. It takes the default (`preventDefault`), and the new tab is scrolled into view. Wheel only — a touch drag still scrolls the row.
 - **Which composer tabs are shown is a per-device choice** (Chat Settings → Appearance → Composer tabs, `localStorage` `aiBrowser.chat.composerTabsHidden`, all shown by default): Skills, Activity, Prompts, Bash, Files and GitHub can be switched off; Chat cannot be hidden. With every other tab off the whole tab row goes, Chat's title with it. Hiding the open tab returns to Chat, and its Alt+letter key does nothing. **A right-click anywhere on the tab row**, the empty space to its right included, opens the same choice as a menu (`openComposerTabsMenu`): every tab in the row's order with a check, Chat disabled ("Always shown"); a row toggles through `setComposerTabShown` and **stays open, its check redrawn in place** (`MenuItem.toggle`), so several can be changed in a row — closing and reopening it made it blink. It opens **at the pointer**, hung from a fixed zero-size `pointerAnchor` placed at the click, so it neither sits at the row's left edge nor moves when the row changes width. With every other tab hidden the row is gone, and only Chat Settings brings them back.
 - **Activity and Prompts are composer tabs too** (asked for): Activity is one scrolling list in the
   box's place (`.composer-list`) with two sections, Agents then Access (`.cl-section`); Prompts lists
@@ -7652,7 +7880,9 @@ the recorded requests):
   would never show — and a press opens the open question if it still needs its answer, else the
   next that does. Skip sends none. Picking an option of a one-choice question moves on to the next
   question still unanswered, and with none left focuses Answer; Enter in a text row answers, or
-  moves on the same way. **The focus goes with the open question** (`show`): hiding the block that
+  moves on the same way. **Answer is lit by a `ready` class once every question has an answer**, not
+  by the focus: an own answer keeps the focus in its text row, and Answer then looked unlit while it
+  would send (reported). **The focus goes with the open question** (`show`): hiding the block that
   held it dropped it to the body, where the number keys and Enter reach nothing, so a second `1`
   did nothing (review finding). The tabs wrap onto a second row rather than scroll: a strip with
   no scrollbar left the open tab past the edge of a narrow side bar.
@@ -7790,20 +8020,33 @@ once enough are closed, and only a window restore is cut to the new limit.
 **In the narrow strip, a tab-list dropdown is always at the right end of the row** (asked for, so every
 tab's whole name can be read at any moment): the `chevron-down` button sits after "+" and New terminal
 (`margin-left: auto`) and lists **every** tab, the one in front marked `current` and focused first, names
-wrapping instead of being cut; it counts the hidden ones ("+N") only while some tabs do not fit, and its room
-is taken off before fitting (`available - overflowWidth`, `overflowWidth: -gap`). A row of a tab already shown
-only selects it; opened from the list, any tab's own menu gets Rename and Close. It is hidden beside the wide
-drawer, which shows titles whole. Tabs that do not fit go into the same dropdown: `layoutTabOverflow` in
-`chat.ts`, the fitting rule in [preview-src/tabOverflow.ts](preview-src/tabOverflow.ts) (leaf, under test).
-The tab in front is always shown, then the others in strip order while they fit at their own width;
-the rest get the class `overflowed` (hidden, never removed — the nodes stay keyed, #365/#383) and the
-button reads `chevron-down +N`; its list shows each tab with its mark, agent count or terminal icon. A row selects its tab; a right-click, the context-menu key or its `⋯` opens the
-tab's own context menu (`TabNode.openMenu`) over the list, which stays open under it (`keep`), with
-Rename and Close added for a hidden tab. Rename selects the tab first and starts once it is shown
-(`renameWhenShown`); a busy tab's close confirmation is placed under the `+N` button. The layout is
-measured synchronously in `renderTabs`, before the switch animation measures, with every tab shown and
-`flex-shrink: 0` (`.tab-row.measuring`) in one frame, so nothing flashes; a `ResizeObserver` on the strip
-re-runs it. **While tabs overflow, the row reads: the tabs still shown, stretched to the full width left of the buttons (`.tab-row.stretched`, removed while `layoutTabOverflow` measures natural widths), then "+" and New terminal, then the `+N` dropdown last — the DOM order is tabs, adds, overflow button. Hovering the `+N` button opens the list at once (hover-capable pointers only, focus stays where it was); it closes 250 ms after the pointer has left both the button and the list, unless a tab's own menu is open over it.** The wide drawer is untouched: there everything is shown and the button hidden. **A conversation row in the dropdown can be dragged onto the strip** (terminals too, with their own local `draggedTerminal` path): it sets the same `draggedChatTab` and `beginTabDrag` a strip tab does, and the visible tabs' own `dragover`/`drop` post `placeTab`, so dropping on the left half of the first tab puts it at the very start and `fitTabs` then shows it and pushes another into the list. The panel is hidden from a `setTimeout(0)` after `dragstart`, never during it, and only hidden (its nodes stay), or the source node goes and `dragend` never fires.
+wrapping instead of being cut. A row of a tab already in front only slides the strip to it; opened from
+the list, any tab's own menu gets Rename and Close. It is hidden beside the wide drawer, which shows titles
+whole.
+
+**The narrow strip holds every tab, in strict order, and scrolls sideways** (asked for, 2026-11-17,
+replacing the earlier "tabs that do not fit go into the dropdown"): the dropdown is the list of them all,
+the strip is all of them laid out horizontally. `layoutTabOverflow` in `chat.ts` measures the tabs at the
+scrolling widths (157 px, 211 px for the one in front; terminal tabs 112 / 151 px, `.tab-row.measuring`) in one frame, before the switch
+animation measures; when they do not fit beside the buttons the row gets `.scrolling`, keeps those widths
+and scrolls (`overflow-x: auto`, no scrollbar). A trackpad's sideways swipe over the strip scrolls it
+natively; a mouse wheel's vertical turn over it is turned into a sideways scroll. **"+", New terminal and the
+`chevron-down +N` button have their own area** (asked for): `.tab-tail`, a non-scrolling container beside the
+row inside `.tab-lane`, so the row scrolls and takes hover only left of them and no tab ever passes under a
+button. (They were first sticky inside the row, and a tab under them showed through on hover.) The row's
+edges fade (`more-left` / `more-right`, a CSS mask) where more tabs lie beyond. In the wide drawer
+`.tab-lane` is `display: contents`, the tail is hidden and `renderTabs` puts the add buttons back at the end
+of the list — it picks the container by `wideChat`, and the media query's `change` re-renders. **"+N" counts the tabs scrolled out of view** — less than two thirds on show
+(`updateTabsOutOfView`, on the row's `scroll` in a frame and after each layout; such a tab gets
+`out-of-view`, which `tabOffStrip` reads, so its menus hang from the `+N` button); its list shows each tab
+with its mark, agent count or terminal icon. **Choosing a tab anywhere slides the strip to it**
+(`revealStripTab`, smooth unless reduced motion, 340 ms after a front change so the width has settled).
+Rename from a menu scrolls the tab into view first. Nodes are never hidden or removed (keyed, #365/#383).
+A sideways swipe that reaches the strip's end does not run on into the composer tabs: the strip is
+excluded from the composer swipe's "recent swipe" path. A row selects its tab; a right-click, the
+context-menu key or its `⋯` opens the tab's own context menu (`TabNode.openMenu`) over the list, which
+stays open under it (`keep`). A busy tab's close confirmation is placed under the `+N` button; a
+`ResizeObserver` on the strip re-runs the layout. **In the narrow strip the DOM is `.tab-lane` > (tabs row, `.tab-tail` > adds, overflow button). Hovering the `+N` button opens the list at once (hover-capable pointers only, focus stays where it was); it closes 250 ms after the pointer has left both the button and the list, unless a tab's own menu is open over it.** The wide drawer is untouched: there everything is shown and the button hidden. **A conversation row in the dropdown can be dragged onto the strip** (terminals too, with their own local `draggedTerminal` path): it sets the same `draggedChatTab` and `beginTabDrag` a strip tab does, and the visible tabs' own `dragover`/`drop` post `placeTab`, so dropping on the left half of the first tab puts it at the very start. The panel is hidden from a `setTimeout(0)` after `dragstart`, never during it, and only hidden (its nodes stay), or the source node goes and `dragend` never fires.
 
 **The dropdown reorders in place as well** (asked for). A row dragged within the list drops before or after another row of the same kind (a conversation among conversations, a terminal among terminals), with a line marking the place. The list stays open while a row is held, is not rebuilt during that drag (the row's `dragend` would never arrive), and dims (`drag-away`) while the pointer is outside it, so the strip under it still takes a drop; a drop outside closes it as before. Found by the capture-phase `dragover` on `document`: the strip's tab handlers stop propagation, so a bubbling listener misses the pointer.
 
@@ -7831,7 +8074,7 @@ re-runs it. **While tabs overflow, the row reads: the tabs still shown, stretche
   the unread mark). A tab reopened from the history has no mark, or the orange one when its last
   entry is an error.
 
-- **The tab in front is wider than the others** (130–260 px against 56–140 px), and the width
+- **The tab in front is wider than the others** (106–264 px against 78–196 px; raised 40% on request, terminal tabs keep 76–189 / 56–140 through `.terminal-tab`), and the width
   changes with a transition — asked for. **The tab left and the tab chosen move together**, one
   linear animation each, started in the same frame (asked for, after a `calc-size()` version
   that kept their sum exact was turned down as more than wanted): `animateTabSwitch` measures
@@ -7984,7 +8227,7 @@ name are numbered. Nothing changes while only one project is open.
   numbers, not a loader). Names are shown whole while the bar has room and shrink only when it runs
   out, longest first, down to four letters; the chosen chip never shrinks. A project out of view with unread
   results or a question glows (`.calls`). Choosing one shows only its tabs (`.project-hidden`,
-  outside `fitTabs` and the `+N` count) and, if the tab in front is elsewhere, brings forward its
+  outside the strip's layout and the `+N` count) and, if the tab in front is elsewhere, brings forward its
   waiting, then unread, then failed, then last-used tab (`tabForProject`). `projectHold` keeps the
   choice for 2 s while that selection travels.
 - **The tab in front is always on show**: a tab brought forward from another project (history,
@@ -8013,10 +8256,14 @@ name are numbered. Nothing changes while only one project is open.
   (`localStorage` `aiBrowser.chat.projectColors`, closed projects too, up to 64), so a project
   keeps its colour while others open and close; a remembered slot wins over the hash while it
   is free. Bar chip, wide heading, collapsed-rail divider and tab-list heading all use it.
-- **One empty chat per project** (asked for): New Chat "here" and the strip's "+" reuse a tab
-  nothing was sent from only when it is in the project of the tab beside which the new one would
-  open (`_tabProjectId`, the same `tabProject` the strip groups by); in another project a new
-  tab opens. It used to be one empty chat for the whole view, so a second project could not get one.
+- **Up to five empty chats** (asked for; `maxEmptyTabs` in `chatView.ts`): New Chat "here" and
+  the strip's "+" open a new tab while fewer than five tabs of the surface have nothing sent from
+  them. At five, the newest empty tab in the project of the tab beside which the new one would open
+  (`_tabProjectId`, the same `tabProject` the strip groups by) is brought forward and flashed; with
+  none in that project the press is refused through the status bar. A request for one agent
+  (`newChat('here', agent)`: Connect, Open Chrome for an agent) still goes to that agent's empty
+  chat in the project first, below the limit too. It was one empty chat per
+  project before, and one for the whole view before that.
 - **Dragging a tab onto another project's tab** reorders it in the host's list, and it stays shown
   under its own project: the order is within a project.
 
@@ -8198,6 +8445,14 @@ choose Send now or Send later (later by default); and a message can be sent at a
 
 Verified: the leaf under `npm test`, the cards, the drag and the picker in headless Chrome
 against the built `chat.js` (`composerControlsSmoke.ts`). **Not run inside VS Code yet.**
+
+### Drafts: a message put aside
+
+Asked for: save the message in the box as a draft instead of sending it. **Save as draft** is the send menu's fourth row (hover Send) and **⌘/Ctrl+Shift+Enter** in the box; the Prompts tab has a **Drafts** section above "Waiting to send" with a *Save current message* button (disabled while the box is empty). A draft row takes the message into the box at the caret to edit (the draft leaves the list), **Send** (shown only while the box is empty and no turn runs) takes it in and sends it, 🗑 deletes it.
+
+- **Webview-only, per device**: `localStorage` `hoverdeck.chat.drafts`, at most 50, read entry by entry (`readAttachmentText`; a bad entry is dropped). Shared by every chat of that device, not saved with a conversation, so the host, the protocol and the command table are untouched (Chrome and the website get it with the same `chat.js`).
+- **Badges survive** the way the ↑ history's do: a draft is `AttachmentText` (`portableAttachmentText`), saving asks the host to retain the attachments (`rememberAttachments`), taking one back goes through `enterBadgedText` like a paste. A draft whose attachments the host no longer holds comes back as the badge's name.
+- **Send waits for the badges** (`sendWhenReady`) as a recalled message does. Not run inside VS Code yet.
 
 ### Lists and links while composing
 
@@ -9107,7 +9362,9 @@ the review's confirmed findings are breaks-silently #526 onwards.
   from the front (`terminalFocus.test.ts` guards both). `terminalFront` is cleared explicitly by the
   paths that bring a conversation forward and never through the `_active` setter; closing a
   background conversation does not take the front.
-- **Tab context menus are grouped with dividers** (`MenuItem.separator`, `.menu-separator`): a terminal's is Rename / Restart, then the agent rows (Ask agent, pause, send to chat, website access), then Close terminal; a chat's is the pinned terminals, the Move rows, then **Continue in VS Code terminal** (named so it is not read as the strip's own terminal tabs) and Close. The terminal toolbar no longer repeats the tab's name; the folder is its tooltip.
+- **Tab context menus are grouped with dividers** (`MenuItem.separator`, `.menu-separator`): a terminal's is Rename / Restart, then the agent rows (Ask agent, pause, send to chat, website access), then Close terminal; a chat's is the pinned terminals, the Move rows, then **Continue in VS Code terminal** (named so it is not read as the strip's own terminal tabs) and **Continue in terminal tab**, then Close chat, Close other chats and Close all chats (asked for; Close chat is always listed). The terminal toolbar no longer repeats the tab's name; the folder is its tooltip.
+- **Close other / all chats** close conversations only, never terminal tabs. With nothing among them that `asksBeforeClose` (working, queued, skill runs, pinned), they close at once; otherwise one question in the close popover under the tab the menu was opened on (`closingMany` beside `closingTab`, `closeManyFromStrip`): "Close N chats?", naming how many are working and how many pinned. The view then posts one `closeTab` per tab, the tab in front last (`closeChats`); no protocol change. Closing the last one leaves a fresh tab, as a single close does.
+- **Continue in terminal tab** (`resumeInTerminal` with `where: 'tab'`, also in the "/" palette; offered only while `terminalSupport.available`) is Continue in VS Code terminal with the agent's CLI in one of this surface's own terminal tabs: the same resume arguments, the same Codex release and wait for the chat's process to exit (`JsonLineProcess.stopped()`), the chat tab closed first. `_resumeInTerminalTab` checks terminal support, that agent among `support.agents`, and the terminal limit before anything closes. The tab's process comes from `_terminalStarter(cwd, agent, { args, chatId })`, which adds the held-back flags, the browser server and **that conversation's** browser tab (`_browserCliLaunch(agent, chatId)`), so Restart on the terminal resumes the same conversation again. The history panel's terminal button still opens a VS Code editor terminal. Not run inside VS Code yet.
 - **A terminal can move between surfaces** (asked for): its tab menu has *Move to a new window*, *Move to a new tab*, *Return to main window* (only in a panel; the side bar surface is flagged `ChatSurface.main`) and a row per other open surface. `TerminalSet.release` takes the tab out without ending it and `adopt` puts it in another set (`TerminalTab.rehome` re-points its post, change and front callbacks); the PTY, the screen model, pins (held by conversation tabs, found across surfaces) and the website-sharing mark all stay. The moved tab's view is detached first, so what was in flight is given back and the new view's `terminalAttach` gets a replay. A new tab or window is a panel with a fresh conversation (`_detachTerminal`); a panel left with no conversation and no terminals closes (`closesEmptyPanel`). Chrome and the website do not get these (`moveTerminalTo`/`moveTerminalToNew` are `editor()` in `commands.ts`).
 - **Each surface owns its terminals** — the side bar and every chat panel — and kills them in its
   own `dispose()`. A panel that still has terminals is not closed by moving its last conversation
@@ -9293,6 +9550,34 @@ the editor's machine.
   1.5 s after the user typed in that terminal, with `retryAfterMs`; **Pause agent input** is the
   emergency stop — every agent input refused until resumed, reading still allowed. Only the user's
   input feeds the gate. The agent's own input draws the "typing" mark for 3 s.
+
+#### The composer's Terminal tab: one terminal per conversation
+
+Asked for: a **Terminal** composer tab (Alt+T) beside Chat, Workflows, Activity and the rest, holding a real
+terminal that belongs to the conversation — **just the terminal, no toolbar, no key bar buttons** — which the
+user can attach to the chat so its agent writes into it through the `terminal_*` MCP tools.
+
+- **It is an ordinary terminal tab with a mark**: `TerminalTabSummary.composerOf` names the conversation tab
+  that owns it, and the host keeps the pair in `_composerTerminals` (tab id → terminal id). Same PTY, screen
+  model, flow control, pins and one-shot grants as every terminal; nothing about the MCP path is new.
+- **Named "Own terminal"** (asked for; it was "Chat terminal N"): `nextTerminalName` with `bare`, so the first is plain "Own terminal" and another conversation's gets "Own terminal 2".
+- **Started on first opening**: the view posts `openComposerTerminal { tabId }` (once per tab, editor-only in
+  `commands.ts`); `_openComposerTerminal` creates it in the conversation's folder and **pins it to that tab**
+  in control mode. A right-click on the Terminal tab button detaches or re-attaches it, toggles Watch only
+  and restarts it — the same `pinTerminal` messages the strip uses.
+- **It is never in the strip**: `chat.ts`'s `splitComposerTerminals` takes composer terminals out of
+  `state.terminals` before anything renders, and `routeTerminalMessage` sends their output to a second,
+  `embedded` `createTerminalView` (no toolbar, no `terminal-front` class) inside `.composer-terminal-panel`.
+  The host refuses `selectTerminal` for one, so it can never be put in front of the chat.
+- **It does not count and is not kept**: the terminal limit, `closesEmptyPanel` and the restore guards use
+  `_stripTerminalCount()` (size minus composer terminals); `_saveTerminals` leaves it out — it is restarted
+  fresh when the tab is opened again. It closes with its conversation tab (`_removeTab`) and moves with it
+  between surfaces (`_moveTabInto`).
+- **Editor only**: `remoteTerminalView` drops it, the tab is hidden on Chrome and the website, and `exchangeTerminals` / `_remoteTerminalCommand` refuse it by id (`_composerOf`) even if it is marked shared.
+- A pinned-terminal chip of a composer terminal opens the Terminal tab instead of the strip.
+- **Attached while open, offered while not** (asked for): opening the Terminal tab attaches the conversation's terminal (`_autoPinComposer`, every opening, not only the first); leaving the tab posts `leaveComposerTerminal` and the host detaches it again — **unless the chat's agent has typed into it since** (`TerminalTab.agentWrites` compared with the count recorded at the attach, `_composerAutoPins`), then it stays attached until the user detaches it. A manual attach or detach (`pinTerminal`) drops the record, so a tab switch never undoes the user's own choice. While it is not attached, a dashed suggestion chip (`detachedComposerTerminal`, `composerTerminalSuggestion` in `chat.ts`) offers it **on every composer tab**, so it can be attached without opening the Terminal tab. The record is per surface: a conversation moved to another surface keeps its terminal attached.
+- Sandbox tests that lift `_moveTabInto` and the terminal methods need `_composerTerminals` and
+  `_stripTerminalCount` on their fakes (#521). **Not run inside VS Code yet.**
 
 #### The message box under a pinned terminal
 
@@ -9717,7 +10002,7 @@ a title read from the page, never in `BrowserTab.title`. What actually removes i
     evidence that the package is clean; only `unzip -l` is. **And a third time** with `.claude/settings.local.json`,
     Claude Code's per-machine permission rules, written into the repository root during a session
     and ignored by the user's *global* git ignore — so no file in this repository mentions it,
-    and `vsce` packed it. `.vscodeignore` now lists `.claude/**`.
+    and `vsce` packed it. `.vscodeignore` now lists `.claude/**`. **And a fifth time** with `vs-code-tab-browser-ultimate/`, a clone of the frozen AI Browser repository kept in the working tree and hidden by `.git/info/exclude`: the HoverDeck VSIX grew from 274 files to 12 682 (80 MB) with nothing in `git status`. `.vscodeignore` lists it; a file count far from the last release's is the tell.
 76. **Two element kinds sharing a centre dot** → the icon is the only label a primary button
     has, so the toolbar shows the same picture for two different actions and the `Cmd+Alt+C`
     chord looks like it fires at random. The old grid check only compared dots *within* a kind;
@@ -11677,6 +11962,50 @@ a title read from the page, never in `BrowserTab.title`. What actually removes i
      the section before putting it in the page, so `render()` saw `!content.isConnected`, cleared its
      `securityRender` hook and the host's answer had nobody to draw it: every Security switch stayed
      disabled (Remote terminals the same). Treat "disconnected" as closed only after it was connected.
+574. **Filling a value into a command line** → a model's reply or a page's text written into a shell
+     step becomes shell syntax. Workflow values reach a command only as environment variables
+     (`shellEnv`), never through `fillVars`; keep it that way when adding a field or a step kind.
+575. **A workflow field stored on the skill** → an older build rewrites the toolbar without it
+     (#424). Step kinds live under `toolbarWorkflow`, merged on every read.
+576. **`height: auto` on a scrolled textarea** → measuring the message box resets its scroll to
+     the top, so in a tall draft every new line (Enter, Shift+Enter, a continued list item) left
+     the caret out of sight. `autosize` keeps the scroll and `revealInputCaret` brings the caret's
+     line back while the box has focus.
+577. **Merging a stored record by naming the fields to keep** → `_toolbar()` rebuilt each workflow
+     step from `{ shell, name }`, so routes and decision choices were saved and dropped on the next
+     read, and every workflow ran straight through. Keep everything stored but the copy that
+     identifies the step (its `prompt`).
+578. **A stop that asks whether the shell is still running** → `sleep 600 & echo started` exits at
+     once and the step ends only on `close`, which the background child holds off; Stop and the
+     timeout saw `exitCode !== null` and did nothing. Signal the process group regardless, then
+     let go of the streams after the grace period, so the step always ends.
+579. **A selector that matches every copy of an element** → `.terminal-main` is also the composer's
+     Terminal panel, so the docked messages and the Show messages button went to whichever came
+     first in the page. The strip's terminal is `.terminal-main:not(.composer-terminal)`.
+580. **A page-side control styled only inside its shadow root** → the host element is the page's
+     to style, so `hoverdeck-logins { opacity: 0 }` made the login list and the save card
+     invisible and a click on the page could land on "Use this login" or "Never". The host's
+     look is pinned inline with `!important`, and a click counts only after the view has been on
+     screen 350 ms, when `elementFromPoint` finds our host and no ancestor is faded or filtered.
+581. **A "front" rule that every caller has to remember** → closing or moving out a terminal put
+     the neighbour in front, and that could be a conversation's composer terminal, which is never
+     shown in the strip. `TerminalSet.background` excludes them where the choice is made; an
+     adopted terminal can arrive without taking the front.
+
+582. **Measuring a box under a scrolling list with `height: auto`** → reading `scrollHeight` forces a
+     layout with the box collapsed, the thread grows and the browser clamps its `scrollTop`; when the
+     box grows back the end is the box's height below the fold, and the scroll event that follows
+     clears "following the end". Typing a long message in a long chat scrolled it up a few lines. Wrap
+     such a resize in `keepThreadScroll` (`chat.ts`).
+
+583. **A route left out of the list the checks walk** → a decide step's failure route was taken by
+     `nextStep` but missing from `routesOf`, so a route back there needed no `times`, added nothing to
+     `executionBound`, and a run that kept failing the decision stopped at the bound with "ran N steps,
+     its limit" instead of its route's own rule. Every route a step can take is in the one list.
+
+584. **Asking about the page when the action lands in a frame** → `browser_upload_file` with a
+     `frameId` named the top page's site in its modal and re-checked only that, while the files went
+     to a frame from another site. Name, and re-check, where the action actually lands.
 
 ## Special cases and non-obvious decisions
 
@@ -11909,6 +12238,49 @@ state uses a bounded `window.openai.setWidgetState` compatibility shim. This is 
 Apps or a full OpenAI runtime. The browser smoke check is
 `node scripts/test-visualizations-browser.mjs` (isolated temporary Chrome profile and loopback
 server; set `CHROME_BIN` for another local Chromium binary).
+
+### Uploading files into a page: `browser_upload_file`
+
+Asked for: an agent picks a file and puts it into a form, asking first or following what the
+permissions already allow. `browser_upload_file` (selector, `paths` — one path or up to 20,
+`frameId`) in `mcpServer.ts`, `BrowserController.uploadFiles`, the page half
+`NativeActions.setFiles`, the rules in the leaf [src/browser/fileUpload.ts](src/browser/fileUpload.ts)
+(under test). Decisions:
+
+- **`DOM.setFileInputFiles` on the pinned element, never the OS file dialog**: no dialog opens,
+  a hidden input (the usual case, behind a styled button) works, and the page gets a trusted
+  `change`. The target must be an enabled `input[type=file]`, `multiple` for more than one file;
+  anything else is refused with a sentence pointing at `browser_snapshot` / `browser_html`.
+  `>>>` shadow selectors and `frameId` work as for the other native actions. Measured in Chrome
+  (`nativeActions.browser.test.ts`). **Not measured through VS Code's CDP proxy** — page-session
+  commands are said to pass unfiltered; check on a real form after changing this.
+- **Paths are the host's to resolve**: `~` expanded, a relative path taken from the chat's
+  project, else the first local workspace folder; real path; a regular file only; at most
+  100 MB each. "Outside" is `outsideProject` (symlink-safe, the approval menu's own rule).
+- **Who decides** (`uploadVerdict`): a chat agent follows the approval menu — "Files in the
+  project" for files inside, "Files outside the project" for the rest, the stricter for a mix.
+  Deny refuses (whatever the guard says), Ask asks, Auto uploads. An agent outside the chat
+  (`uploadPolicy` answers `undefined`: Claude Code or Codex in a terminal) has no menu and is always
+  asked. **A file that looks like a secret** (`isSensitiveFile`: `.env*` but not `.env.example`,
+  keys, `.npmrc`, credentials, anything under `.ssh`, `.aws`, `.gnupg`…) **is asked about even
+  under Auto.** The guard `hoverdeck.security.confirmUploads` (default on, `application`) off
+  removes every question; Deny still holds.
+- **The question is the extension's own modal** ("Let <agent> upload 2 files to <site>?", each
+  path with its size and a mark for a secret or a file outside the project, button **Upload**),
+  one at a time (`_uploadQuestion`) — no CLI rule, hook or Auto mode answers it, as with
+  cookies. A decline goes to the status bar and tells the model not to ask again unless the user
+  says so. **After the answer the tab and its host are read again**, and a change refuses: the
+  answer was about that site.
+- **With `frameId`, the site asked about is the frame's** (`uploadSite`): its origin, else its
+  address, with the page beside it when the two differ ("pay.example (a frame inside shop.example)").
+  The file goes to the frame, so naming the top page had the user approve a recipient they never saw.
+  The same string is read again before `setFiles`, so the frame navigating elsewhere refuses too; a
+  frame no longer listed is refused with the `browser_frames` sentence.
+- The chat side is `ChatViewProvider.uploadPolicy(chatId)`, wired in `extension.ts`
+  (`browser.uploadPolicy`), so `browserController.ts` imports nothing of the chat but the leaf
+  `outsideProject`.
+- Not in Chat Settings → MCP's feature groups (it is a browser tool); not in the toolbar's
+  Insert. **Not run inside VS Code yet.**
 
 ### Native page actions inspired by Stagehand
 

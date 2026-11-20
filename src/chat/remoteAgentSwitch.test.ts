@@ -18,7 +18,7 @@ function fixture(transport:'server'|'chrome', permissions?: ConnectionPermission
  const exports:any={};let serial=0;
  const makeTab=(id:string,agent='codex',started=true):any=>({id,chat:{id,agent,title:id,entries:[],folder:'/project'},attachments:[],pendingSends:[],started,start(chat:any){this.chat=chat;},push(){}});
  runInNewContext(transpileModule(code,{compilerOptions:{module:ModuleKind.CommonJS,target:ScriptTarget.ES2022}}).outputText,{
-  exports,selectionKey:'selection',chromeChatCommandFeature:()=> 'chat',exchangeRefusal(){},remoteRefusal:(surface:any,type:string)=>remoteRefusal(surface,type,permissions),remoteScope,newChat:(agent:string)=>({id:`replacement-${++serial}`,agent,entries:[]}),tabLimit:()=>20,
+  exports,selectionKey:'selection',chromeChatCommandFeature:()=> 'chat',exchangeRefusal(){},remoteRefusal:(surface:any,type:string)=>remoteRefusal(surface,type,permissions),remoteScope,newChat:(agent:string)=>({id:`replacement-${++serial}`,agent,entries:[]}),tabLimit:()=>20,maxEmptyTabs:5,refuse(){},
   chatTranscript:()=> 'Conversation transcript',transcriptFileName:()=> 'conversation.md',writeChatTranscript:async()=>'/project/conversation.md',agentNames:{codex:'Codex',claude:'Claude'},generateUuid:()=> 'attachment',vscode:{l10n:{t:(value:string)=>value},Uri:{file:(value:string)=>value}},
  });
  const View=exports.View,view=new View(),native=makeTab('native'),remote=makeTab('remote'),events:any[]=[];
@@ -33,7 +33,7 @@ function fixture(transport:'server'|'chrome', permissions?: ConnectionPermission
  View._surfaces.set('source',view);
  const reply=(message:any,chatId:string)=>events.push({message,chatId});
  const send=(message:any)=>transport==='server'?View.commandExchangeSource('source',remote.chat.id,message,[],reply):View.commandChromeSource('source',remote.chat.id,message,[],reply);
- return {view,native,remote,events,send};
+ return {view,native,remote,events,send,makeTab};
 }
 for(const transport of ['server','chrome'] as const){
  test(`${transport}: pending agent choice belongs to the background conversation and survives snapshots`,async()=>{
@@ -62,8 +62,10 @@ for (const type of ['newTab', 'newChat']) {
  });
  test(`Chrome: ${type} reuses an empty conversation and follows it`,async()=>{
   const f=fixture('chrome');f.remote.started=false;
+  for(let i=0;i<4;i++){f.view._tabs.push(f.makeTab(`spare-${i}`,"codex",false));}
+  const count=f.view._tabs.length;
   await f.send({type,location:'here'});
-  assert.equal(f.view._tabs.length,2);
+  assert.equal(f.view._tabs.length,count);
   assert.equal(f.view._frontActive,f.native);
  });
 }

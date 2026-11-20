@@ -208,6 +208,9 @@ export class TerminalTab {
 	public get status(): 'running' | 'exited' { return this._status; }
 	public get exitCode(): number | undefined { return this._exitCode; }
 	public get running(): boolean { return this._status === 'running' && !!this._session; }
+	/** How many agent inputs reached the shell: the composer's terminal stays attached once a chat has typed into it. */
+	public get agentWrites(): number { return this._agentWrites; }
+	private _agentWrites = 0;
 
 	/** `pinnedBy` and an `allowed` agent control are the provider's to add: only it knows the owner. */
 	public summary(): TerminalTabSummary {
@@ -428,6 +431,7 @@ export class TerminalTab {
 			return { ok: false, reason: 'paused', message: 'There is nothing to type, or it is too long.' };
 		}
 		this._session?.write(data);
+		this._agentWrites++;
 		this._gate.agentTyped();
 		this._scheduleActiveEnd();
 		this._changed();
@@ -569,6 +573,11 @@ export class TerminalSet {
 	private readonly _changed: () => void;
 	/** The typing gate and unread mark of each new terminal; without it agents can never type (`closedControls`). */
 	private readonly _controls: (() => TerminalControls) | undefined;
+	/**
+	 * Terminals that are never put in front: a conversation's own composer
+	 * terminal. Set by the provider, which knows which ones those are.
+	 */
+	public background: (id: string) => boolean = () => false;
 
 	constructor(limit: () => number, post: (message: HostToView) => void, changed: () => void, controls?: () => TerminalControls) {
 		this._limit = limit;
@@ -658,20 +667,37 @@ export class TerminalSet {
 		const at = this._tabs.indexOf(tab);
 		this._tabs.splice(at, 1);
 		tab.detach();
-		if (this._front === tab.id) { this._front = this._tabs[Math.min(at, this._tabs.length - 1)]?.id; this._focus = this._front; }
+		if (this._front === tab.id) { this._front = this._neighbour(at); this._focus = this._front; }
 		this._changed();
 		return tab;
 	}
 
-	/** A live terminal from another surface, in front here; its process and screen carry on. */
-	public adopt(tab: TerminalTab): void {
+	/**
+	 * A live terminal from another surface, in front here unless `front` is
+	 * false (a composer terminal, which is never in front); its process and
+	 * screen carry on.
+	 */
+	public adopt(tab: TerminalTab, front = true): void {
 		if (this._disposed || this._tabs.includes(tab)) { return; }
 		tab.rehome(this._post, this._changed, () => this._front === tab.id);
 		this._tabs.push(tab);
-		this._front = tab.id;
-		this._focus = tab.id;
-		tab.markRead();
+		if (front) {
+			this._front = tab.id;
+			this._focus = tab.id;
+			tab.markRead();
+		}
 		this._changed();
+	}
+
+	/** The terminal to put in front after the one at `at` left: the nearest that may be in front. */
+	private _neighbour(at: number): string | undefined {
+		for (let i = Math.min(at, this._tabs.length - 1); i >= 0; i--) {
+			if (!this.background(this._tabs[i].id)) { return this._tabs[i].id; }
+		}
+		for (let i = at; i < this._tabs.length; i++) {
+			if (!this.background(this._tabs[i].id)) { return this._tabs[i].id; }
+		}
+		return undefined;
 	}
 
 	/** A conversation is in front now. Returns whether a terminal was. */
@@ -690,7 +716,7 @@ export class TerminalSet {
 		tab.dispose();
 		if (this._front === tab.id) {
 			// A neighbour terminal, else a conversation (the front is cleared).
-			this._front = this._tabs[Math.min(at, this._tabs.length - 1)]?.id;
+			this._front = this._neighbour(at);
 			this._focus = this._front;
 		}
 		this._changed();

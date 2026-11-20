@@ -4,132 +4,26 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import type { BrowserController, ShareView } from '../browser/browserController';
+import type { BrowserController } from '../browser/browserController';
 import { inUseMarker, sharedMarker, stripMarker } from '../browser/shareIndicator';
-import { plainInLabel, plainInMarkdown } from '../core/notifyText';
+import { plainInLabel } from '../core/notifyText';
 import { normalizeAddress } from '../core/webUrl';
 import { hasExternalAgents, ownExtensionId, productName } from '../core/flavor';
 import { supportsSecondarySidebar } from '../chat/chatView';
 import { securityGuardStates } from '../core/securitySettings';
 import { pageTitle } from '../translate/translateText';
 import {
-	browserApiState, integratedBrowserCommand, onDidChangeGrantState,
-	shouldUseIntegratedBrowser, type BrowserApiState,
+	browserApiState, integratedBrowserCommand,
+	shouldUseIntegratedBrowser,
 } from './proposedApi';
 
-/* AI Browser opens the main menu. The optional native browser setup item is
- * informational: Chrome and agents do not need the browser API grant. */
-
-/** Highest of the left-hand items, so it does not drift behind language tools. */
-const priority = 1000;
-
 export function registerStatusBar(context: vscode.ExtensionContext, controller: BrowserController): void {
-	const item = vscode.window.createStatusBarItem(
-		'hoverdeck.status', vscode.StatusBarAlignment.Left, priority);
-	item.name = productName();
-	item.command = menuCommand;
-	item.show();
-	context.subscriptions.push(item);
-
-	// The share is the one piece of state this item carries, because it is the
-	// one piece a user can lose track of: an assistant driving a tab in the
-	// background looks exactly like an assistant doing nothing.
-	const applyShare = () => applyShareState(item, controller.shares);
-	applyShare();
-	context.subscriptions.push(controller.onDidChangeShare(applyShare));
-
-	const enable = vscode.window.createStatusBarItem(
-		'hoverdeck.enableApi', vscode.StatusBarAlignment.Left, priority - 1);
-	enable.name = vscode.l10n.t("{0}: browser API", productName());
-	enable.command = 'hoverdeck.enableBrowserApi';
-	context.subscriptions.push(enable);
-
-	const refresh = async () => {
-		const state = await browserApiState();
-		applyState(enable, state);
-	};
-
-	void refresh();
-	// The only thing that moves this within a session is our own write.
-	context.subscriptions.push(onDidChangeGrantState(() => void refresh()));
+	// HoverDeck puts nothing in the status bar (asked for: AI Browser, installed
+	// beside it, keeps its own items there). The menu stays reachable as the
+	// palette command "HoverDeck: Menu"; the share state and the restart reminder
+	// that the items used to carry are in that menu and in the Enable command.
 	context.subscriptions.push(vscode.commands.registerCommand(menuCommand,
 		() => showMenu(controller)));
-}
-
-/** Only remind about a restart after the user has chosen to enable native tabs. */
-function applyState(item: vscode.StatusBarItem, state: BrowserApiState): void {
-	if (state === 'awaitingRestart') {
-		item.text = '$(debug-restart) Restart to finish';
-		item.tooltip = new vscode.MarkdownString(vscode.l10n.t(
-			"**`argv.json` is set, this window is not.**\n\nIt is read when the process starts, so the editor has to be fully quit and reopened — Reload Window is not enough."));
-		item.backgroundColor = undefined;
-		item.show();
-		return;
-	}
-	item.hide();
-}
-
-/**
- * The permanent item, carrying the assignments.
- *
- * The glyphs are the ones on the tabs themselves, so the item and the tab read
- * as one indicator rather than as two that happen to agree. With more than one
- * assignment the item counts them instead of listing them — a status bar is
- * peripheral vision, and the tooltip is where "who is on what" belongs.
- *
- * A paused assignment is the only state that takes a background. It is not
- * decoration: that assistant is stopped until the user acts, which is precisely
- * the case the warning colour exists for — and the only two colours the API
- * accepts are `warningBackground` and `errorBackground`, per the `.d.ts`. Red
- * would say something broke, and nothing did.
- */
-function applyShareState(item: vscode.StatusBarItem, shares: ShareView): void {
-	const { assignments, paused } = shares;
-
-	if (paused.length > 0) {
-		item.text = `$(globe) ${productName()} $(debug-pause)`;
-		item.tooltip = new vscode.MarkdownString([
-			vscode.l10n.t("**Paused, because a shared tab was closed.**"),
-			'\n\n',
-			paused.map(entry => `- ${entry.label}`).join('\n'),
-			'\n\n',
-			vscode.l10n.t("They will not fall back to another page on their own — give them a tab again, or stop sharing."),
-		].join(''));
-		item.backgroundColor = undefined;
-		return;
-	}
-
-	item.backgroundColor = undefined;
-
-	if (assignments.length === 0) {
-		item.text = `$(globe) ${productName()}`;
-		item.tooltip = vscode.l10n.t("{0} — open a page, give a tab to an assistant", productName());
-		return;
-	}
-
-	const used = assignments.some(assignment => assignment.usedBy.length > 0);
-	const glyph = used ? inUseMarker : sharedMarker;
-	item.text = assignments.length === 1
-		? `$(globe) ${productName()} ${glyph}`
-		: `$(globe) ${productName()} ${glyph}${assignments.length}`;
-	item.tooltip = new vscode.MarkdownString([
-		vscode.l10n.t("**Shared tabs**"),
-		'\n\n',
-		assignments.map(assignment => {
-			// Page-chosen, into Markdown — see `plainInMarkdown`.
-			const page = plainInMarkdown(assignment.title || assignment.url || '');
-			return assignment.usedBy.length > 0
-				? `- ${assignment.label} → ${page} · ${vscode.l10n.t("working")}`
-				: `- ${assignment.label} → ${page} · ${vscode.l10n.t("not picked up yet")}`;
-		}).join('\n'),
-		'\n\n',
-		// Not "no `browser_` tools": nothing is named that. A client namespaces
-		// every MCP tool under the server, so the names a model actually sees are
-		// `mcp__ai-browser__browser_state` and the like — telling somebody to look
-		// for a bare prefix is the defect this build fixed in the connect prompt,
-		// and repeating it here would have kept it alive one surface along.
-		vscode.l10n.t("An assistant with a tab of its own acts on that tab and sees no other. If one reports having no browser tools, it was started before the config was written and has to be restarted."),
-	].join(''));
 }
 
 /**

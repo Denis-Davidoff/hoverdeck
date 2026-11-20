@@ -618,11 +618,10 @@ function requireBrowserTab(): vscode.BrowserTab | undefined {
 	if (!isBrowserApiGranted()) {
 		// Deliberately not a notification. A browser tab is very likely the thing
 		// on screen right now, and a toast over it pauses the page — the exact
-		// complaint this whole surface was built to remove. The actionable half
-		// is already there: the status bar carries `Enable Browser API` in
-		// precisely this state.
+		// complaint this whole surface was built to remove. The status bar is
+		// only the line; the fix is the palette command it names.
 		refuse(vscode.l10n.t(
-			"Browser API not enabled — click \"Enable Browser API\" in the status bar."));
+			"Browser API not enabled — run \"{0}: Enable Integrated Browser API\" from the command palette.", productName()));
 		return undefined;
 	}
 

@@ -30,7 +30,7 @@ async function transfer(fail = false, location: 'tab' | 'window' = 'tab', comman
 	const session = { running: true };
 	const tab = { id: 'moving', chat: { id: 'conversation', title: 'My chat' }, session, attachments: [{ chip: { id: 'attached' } }],
 		moveTo(host: unknown) { calls.push('move'); Object.assign(this, { host }); }, close() { assert.fail('moving must not close the session'); } };
-	const source: any = { _tabs: [tab], _active: tab, _remembered: { agent: 'codex' }, _preferredAgent() { return this._remembered.agent; }, _terminals: { size: 0 },
+	const source: any = { _tabs: [tab], _active: tab, _remembered: { agent: 'codex' }, _preferredAgent() { return this._remembered.agent; }, _terminals: { size: 0 }, _composerTerminals: new Map(), _stripTerminalCount(this: any) { return this._terminals.size - this._composerTerminals.size; },
 		_registry: {}, _runs: {}, _services: {}, _savedDrafts: new Map(), _livePages: new Map(), _repoBusy: new Map(), _gitCommits: new Map(), _windows: new Set(), _childChats: new Set(),
 		_draining: new Map(), _chatSkillTabs: new Map([['skill', [{ tab }]]]), _annotationLinks: new Map(),
 		_post() { calls.push('post'); }, _saveTabs() { calls.push('save'); }, _fail() { calls.push('error'); } };
@@ -40,6 +40,7 @@ async function transfer(fail = false, location: 'tab' | 'window' = 'tab', comman
 		_tabs: unknown[];
 		_tabHost = {};
 		_terminals = { clearFront() { return false; }, dispose() {} };
+		_composerTerminals = new Map();
 		_leaveTerminal() { return false; }
 		_view = {};
 		_services: unknown;
@@ -125,9 +126,9 @@ function existingViews(limit = 10) {
 	const old = { id: 'old', chat: { id: 'chat-old' } };
 	const sibling = { id: 'sibling', chat: { id: 'chat-sibling' } };
 	const source: any = { _tabs: [live, sibling], _active: live, _preferredAgent() { return this._remembered?.agent; }, _services: services, _savedDrafts: new Map(), _registry: {}, _repoBusy: new Map(), _gitCommits: new Map(),
-		_draining: new Map(), _chatSkillTabs: new Map(), _annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _dragToken: 'secret', _terminals: { size: 0 } };
+		_draining: new Map(), _chatSkillTabs: new Map(), _annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _dragToken: 'secret', _terminals: { size: 0 }, _composerTerminals: new Map(), _stripTerminalCount(this: any) { return this._terminals.size - this._composerTerminals.size; } };
 	const target: any = { _tabs: [old], _active: old, _services: services, _savedDrafts: new Map(), _drainQueues() {}, _view: {}, _tabHost: {}, _chatSkillTabs: new Map(),
-		_annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _terminals: { clearFront() { return false; } }, _leaveTerminal() { return false; },
+		_annotationLinks: new Map(), _livePages: new Map(), _post() {}, _saveTabs() {}, _terminals: { clearFront() { return false; } }, _composerTerminals: new Map(), _leaveTerminal() { return false; },
 		_state() { return { chatId: this._active.chat.id }; }, _postMessage(message: any) { messages.push(message); } };
 	const surfaces = new Map([['source', source], ['target', target]]);
 	const context = { closesEmptyPanel, clearTimeout, tabLimit: () => limit, ChatViewProvider: { _surfaces: surfaces },

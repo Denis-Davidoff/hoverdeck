@@ -80,6 +80,12 @@ export interface TerminalViewOptions {
 	};
 	/** Draws a toolbar button's tooltip from its `data-tip` (the chat's `hoverTip`). Absent: native titles. */
 	readonly tooltip?: (anchor: HTMLElement) => void;
+	/**
+	 * A second view living inside another element (the composer's Terminal tab): its column is appended
+	 * there instead of after `after`, it draws no toolbar, it leaves the page's `terminal-front` class
+	 * alone, and `isShown` replaces that class as the test of whether its terminal is on screen.
+	 */
+	readonly embedded?: { readonly container: HTMLElement; readonly isShown: () => boolean };
 }
 
 export interface TerminalView {
@@ -93,6 +99,8 @@ export interface TerminalView {
 	hasSelection(id: string): boolean;
 	/** The selection, or the last lines of the screen: with an anchor, to the chat picked in a menu there; without, to the one in front. */
 	sendToChat(id: string, anchor?: HTMLElement): void;
+	/** An embedded view was shown again: lays its terminal out (a hidden host has no size) and, with `focus`, focuses it. */
+	shownAgain(focus: boolean): void;
 }
 
 /** The last lines of the screen "send last output to the chat" takes. */
@@ -140,8 +148,8 @@ export function createTerminalView(options: TerminalViewOptions): TerminalView {
 	const { app, post } = options;
 	const platform = terminalPlatform(navigator.platform, navigator.userAgent);
 	const main = document.createElement('div');
-	main.className = 'terminal-main';
-	options.after.after(main);
+	main.className = options.embedded ? 'terminal-main composer-terminal' : 'terminal-main';
+	if (options.embedded) { options.embedded.container.append(main); } else { options.after.after(main); }
 	// The hosts lie over this, not over the whole column: the toolbar above it and the key bar under it keep their own height.
 	const stage = document.createElement('div');
 	stage.className = 'terminal-stage';
@@ -201,7 +209,7 @@ export function createTerminalView(options: TerminalViewOptions): TerminalView {
 	/* ------------------------------------------------------------ layout */
 
 	function shown(entry: Entry): boolean {
-		return front === entry.id && app.classList.contains('terminal-front');
+		return front === entry.id && (options.embedded ? options.embedded.isShown() : app.classList.contains('terminal-front'));
 	}
 
 	function scheduleLayout(entry: Entry): void {
@@ -489,7 +497,8 @@ export function createTerminalView(options: TerminalViewOptions): TerminalView {
 		onTap: id => { const entry = entries.get(id); if (entry) { focusTerminal(entry, true); } },
 	});
 
-	main.append(stage, bar.el, toolbar.el);
+	// An embedded view is the terminal alone (asked for: no buttons around it).
+	if (options.embedded) { main.append(stage, bar.el); } else { main.append(stage, bar.el, toolbar.el); }
 
 	function create(summary: TerminalTabSummary): Entry {
 		// Before the first xterm exists: its styles are made when it is opened.
@@ -659,7 +668,7 @@ export function createTerminalView(options: TerminalViewOptions): TerminalView {
 				renderExit(entry);
 				entry.host.classList.toggle('front', front === entry.id);
 			}
-			app.classList.toggle('terminal-front', front !== undefined);
+			if (!options.embedded) { app.classList.toggle('terminal-front', front !== undefined); }
 			const frontEntry = front ? entries.get(front) : undefined;
 			bar.setFront(frontEntry ? { id: frontEntry.id, term: frontEntry.term } : undefined);
 			touchUi.setFront(front);
@@ -755,5 +764,13 @@ export function createTerminalView(options: TerminalViewOptions): TerminalView {
 		},
 
 		sendToChat,
+
+		shownAgain(focus) {
+			const entry = front ? entries.get(front) : undefined;
+			if (!entry) { return; }
+			if (focus) { entry.focusWhenShown = true; entry.focusExplicit = false; }
+			scheduleLayout(entry);
+			if (entry.opened) { requestAnimationFrame(() => entry.term.refresh(0, entry.term.rows - 1)); }
+		},
 	};
 }

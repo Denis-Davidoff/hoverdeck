@@ -55,7 +55,7 @@ test('the real host action reuses its viewer, streams the same command, and clos
 	});
 	const command = entry('Ready\n');
 	const tab = { chat: { id: 'chat', entries: [command] } };
-	const host = { _tabs: [tab], _shellOutputViews: new Map<string, { refresh(): void }>() };
+	const host = { _tabs: [tab], _runs: { shellRow: () => undefined }, _shellOutputViews: new Map<string, { refresh(): void }>() };
 	show.call(host, 'other-chat', command.id);
 	assert.equal(terminals.length, 0);
 	show.call(host, 'chat', command.id);

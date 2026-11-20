@@ -25,6 +25,9 @@ vscode-marketplace/**
 # is unused — the manifest names media/icon.png.
 ai-browser-instruct.jpg
 PUBLISHING.md
+# Developer notes, among them the readme template (docs/readme-template.md); links
+# from the readme go to GitHub.
+docs/**
 media/icon.svg
 # The voice helper ships compiled (bin/ai-browser-voice); its Swift source does not.
 native/**
@@ -42,3 +45,4 @@ deploy-exchange.sh
 
 # Per-agent Open VSX listings: separate extensions, built from listings/
 listings/**
+vs-code-tab-browser-ultimate/**

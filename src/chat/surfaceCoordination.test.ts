@@ -117,7 +117,7 @@ test('moving an idle chat during queue debounce reschedules and sends in the alr
 	const services = {};
 	const surface = (tabs: any[]) => ({ _tabs: tabs, _active: tabs[0], _services: services, _view: {}, _registry: {}, _repoBusy: new Map(),
 		_gitCommits: new Map(), _draining: new Map(), _chatSkillTabs: new Map(), _annotationLinks: new Map(), _livePages: new Map(), _savedDrafts: new Map(),
-		_terminals: { clearFront() { return false; }, size: 0 }, _leaveTerminal() { return false; },
+		_terminals: { clearFront() { return false; }, size: 0 }, _composerTerminals: new Map(), _stripTerminalCount(this: any) { return this._terminals.size - this._composerTerminals.size; }, _leaveTerminal() { return false; },
 		_post() {}, _saveTabs() {}, _state() { return {}; }, _postMessage() {}, _fail(error: Error) { throw error; },
 		_send: async (text: string) => { assert.equal(text, 'queued message'); sent++; } });
 	const from: any = surface([tab, sibling]), to: any = surface([sibling]);

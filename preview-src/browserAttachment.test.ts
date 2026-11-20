@@ -17,7 +17,7 @@ function fixture() {
 		addEventListener(type: string, fn: () => void) { this.listeners[type] = fn; } });
 	const row = { hidden: false, children: [] as unknown[], replaceChildren(...children: unknown[]) { this.children = children; } };
 	const api = runInNewContext(transpileModule([
-		"let attachmentsShown = '';", lift('renderAttachments'), lift('browserMenuItems'), lift('suggestionNode'),
+		"let attachmentsShown = '';", lift('renderAttachments'), lift('browserMenuItems'), lift('suggestionNode'), lift('detachedComposerTerminal'),
 		'({ renderAttachments, browserMenuItems });',
 	].join('\n'), {}).outputText, {
 		state, post: (message: unknown) => posted.push(message), attachmentsRow: row,
@@ -27,7 +27,7 @@ function fixture() {
 		icon: (name: string) => name, chipIcon: (chip: { kind: string }) => chip.kind,
 		fileIconsSignature: '', chipShown: (chip: unknown) => chip,
 		isPinChip: (chip: { terminalId?: string }) => !!chip.terminalId,
-		pinChipNode: (chip: unknown) => chip,
+		pinChipNode: (chip: unknown) => chip, composerTab: 'chat', composerTerminalAvailable: false,
 		browserPinNode: (tab: unknown) => tab,
 		toolbarLayoutShape: '', scheduleToolbarLayout() {},
 		autosize() {},

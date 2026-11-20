@@ -12,7 +12,7 @@
  * loads it directly (see "Recipe for the next feature" in CLAUDE.md).
  */
 
-import type { ChatCommand, ToolbarColors, ToolbarNotify, ToolbarParam, ToolbarSkill, ToolbarStep } from './chatProtocol';
+import type { ChatCommand, ToolbarChoice, ToolbarColors, ToolbarNotify, ToolbarParam, ToolbarSkill, ToolbarRoute, ToolbarStep, ToolbarWorkflowStep } from './chatProtocol';
 
 /**
  * As typed after `/` or `$`: lower case, no spaces, like a CLI's own skills
@@ -25,6 +25,8 @@ export const toolbarColors = ['red', 'orange', 'yellow', 'green', 'blue', 'purpl
 const hexColor = /^#[0-9a-f]{6}$/i;
 const paramNameShape = /^[A-Za-z_][A-Za-z0-9_-]{0,31}$/;
 const iconShape = /^[a-z0-9-]{1,60}$/;
+/** A workflow step's name, as `{{steps.<name>.stdout}}` and `STEP_<NAME>_STDOUT` read it. */
+export const stepNameShape = /^[a-z][a-z0-9_]{0,31}$/;
 
 export const toolbarLimits = {
 	skills: 30,
@@ -70,17 +72,26 @@ export function validToolbarSkill(raw: unknown): ToolbarSkill | string {
 		return `The prompt is longer than ${toolbarLimits.prompt} characters.`;
 	}
 	const followUps: ToolbarStep[] = [];
-	for (const item of Array.isArray(raw.followUps) ? raw.followUps : []) {
-		const step = validStep(item, followUps.length + 2);
+	// The raw index of each kept follow-up, so `workflow` (aligned with the
+	// steps as sent, blank rows included) still lines up after a blank is dropped.
+	const kept: number[] = [];
+	const rawFollowUps: unknown[] = Array.isArray(raw.followUps) ? raw.followUps : [];
+	for (let i = 0; i < rawFollowUps.length; i++) {
+		const step = validStep(rawFollowUps[i], followUps.length + 2);
 		if (typeof step === 'string') {
 			return step;
 		}
 		if (step) {
 			followUps.push(step);
+			kept.push(i + 1);
 		}
 	}
 	if (followUps.length > toolbarLimits.followUps) {
 		return `A skill sends at most ${toolbarLimits.followUps + 1} prompts.`;
+	}
+	const workflow = validWorkflow(raw.workflow, [0, ...kept]);
+	if (typeof workflow === 'string') {
+		return workflow;
 	}
 	const result = raw.result === 'clipboard' || raw.result === 'silent' || raw.result === 'toast' ? raw.result : 'chat';
 	// How the first prompt goes in the chat while the agent works: `later` (the default) waits for the turn.
@@ -108,7 +119,164 @@ export function validToolbarSkill(raw: unknown): ToolbarSkill | string {
 	if (params.length > toolbarLimits.params) {
 		return `A skill takes at most ${toolbarLimits.params} parameters.`;
 	}
-	return { id, name, prompt, followUps: followUps.length ? followUps : undefined, result, firstSend, notify, agents, icon, label, tooltip, colors, params };
+	if (workflow) {
+		if (result === 'chat' && workflow.some(step => step.shell)) {
+			return 'A workflow with shell steps runs in the background: choose the clipboard, silently or a notification for its result.';
+		}
+		if (result === 'chat' && workflow.some(step => step.onSuccess || step.onFailure)) {
+			return 'A workflow with routes between steps runs in the background: choose the clipboard, silently or a notification for its result.';
+		}
+		if (result === 'chat' && workflow.some(step => step.choices)) {
+			return 'A workflow with decision steps runs in the background: choose the clipboard, silently or a notification for its result.';
+		}
+		for (let i = 1; i < workflow.length; i++) {
+			if (workflow[i - 1].shell && followUps[i - 1].check) {
+				return `Step ${i + 1} follows a shell step and cannot have a check: the command's exit code decides whether the workflow goes on.`;
+			}
+			if (workflow[i - 1].choices && followUps[i - 1].check) {
+				return `Step ${i + 1} follows a decision step and cannot have a check: the choice decides where the workflow goes.`;
+			}
+		}
+	}
+	return { id, name, prompt, followUps: followUps.length ? followUps : undefined, workflow, result, firstSend, notify, agents, icon, label, tooltip, colors, params };
+}
+
+/**
+ * The kind and name of each step, picked out at `indexes` (the raw positions
+ * of the steps kept). Absent when no step is a shell command and none has a
+ * name: then the skill is an ordinary one.
+ */
+function validWorkflow(raw: unknown, indexes: readonly number[]): ToolbarWorkflowStep[] | string | undefined {
+	if (!Array.isArray(raw)) {
+		return undefined;
+	}
+	const steps: ToolbarWorkflowStep[] = [];
+	const names = new Set<string>();
+	for (let i = 0; i < indexes.length; i++) {
+		const item = raw[indexes[i]];
+		const from = isRecord(item) ? item : {};
+		const shell = from.shell === true;
+		const stepName = typeof from.name === 'string' ? from.name.trim() : '';
+		if (stepName && !stepNameShape.test(stepName)) {
+			return `Step ${i + 1}'s name is lower-case letters, digits and "_", starting with a letter, at most 32 characters.`;
+		}
+		if (stepName === 'prev') {
+			return '"prev" names the step before, in `{{steps.prev.stdout}}`: give the step another name.';
+		}
+		if (stepName && names.has(stepName)) {
+			return `Two steps are named "${stepName}".`;
+		}
+		if (stepName) {
+			names.add(stepName);
+		}
+		const choices = validChoices(from.choices, i, indexes);
+		if (typeof choices === 'string') {
+			return choices;
+		}
+		if (choices && shell) {
+			return `Step ${i + 1} is a shell command and cannot decide: only an agent step chooses.`;
+		}
+		// A decision step goes where its choice says; success has no route of its own.
+		const onSuccess = choices ? undefined : validRoute(from.onSuccess, i, indexes, 'success');
+		if (typeof onSuccess === 'string') {
+			return onSuccess;
+		}
+		const onFailure = validRoute(from.onFailure, i, indexes, 'failure');
+		if (typeof onFailure === 'string') {
+			return onFailure;
+		}
+		steps.push({
+			...(shell ? { shell: true as const } : {}),
+			...(stepName ? { name: stepName } : {}),
+			...(onSuccess ? { onSuccess } : {}),
+			...(onFailure ? { onFailure } : {}),
+			...(choices ? { choices } : {}),
+		});
+	}
+	return steps.some(step => step.shell || step.name || step.onSuccess || step.onFailure || step.choices) ? steps : undefined;
+}
+
+/** A decision step offers 2 to this many choices. */
+export const workflowMaxChoices = 5;
+/** The longest choice label, in characters. */
+export const choiceLabelLimit = 40;
+
+/**
+ * A decision step's choices: 2 to {@link workflowMaxChoices}, each a label on
+ * one line (no `<` or `>`, which the choice marker uses) and a route. Labels
+ * differ ignoring case, since the agent is shown them side by side. Every
+ * route is stored, `next` included: a choice has no default.
+ */
+function validChoices(raw: unknown, at: number, indexes: readonly number[]): ToolbarChoice[] | string | undefined {
+	if (!Array.isArray(raw) || raw.length === 0) {
+		return undefined;
+	}
+	if (raw.length < 2 || raw.length > workflowMaxChoices) {
+		return `Step ${at + 1} decides between 2 and ${workflowMaxChoices} choices.`;
+	}
+	const choices: ToolbarChoice[] = [];
+	const seen = new Set<string>();
+	for (let c = 0; c < raw.length; c++) {
+		const item: Record<string, unknown> = isRecord(raw[c]) ? raw[c] : {};
+		const label = typeof item.label === 'string' ? item.label.trim() : '';
+		if (!label) {
+			return `Step ${at + 1}, choice ${c + 1} has no label.`;
+		}
+		if (label.length > choiceLabelLimit || /[\r\n<>]/.test(label)) {
+			return `Step ${at + 1}, choice ${c + 1}: a label is one line of at most ${choiceLabelLimit} characters, without "<" or ">".`;
+		}
+		if (seen.has(label.toLowerCase())) {
+			return `Step ${at + 1} offers "${label}" twice.`;
+		}
+		seen.add(label.toLowerCase());
+		const route = validRoute(item.route, at, indexes, 'choice');
+		if (typeof route === 'string') {
+			return route.replace('on choice', `choice "${label}"`);
+		}
+		choices.push({ label, route: route ?? { to: 'next' } });
+	}
+	return choices;
+}
+
+/** How many times a route back may be taken: the same bound as `workflowGraph.maxBackTimes`, written twice (a leaf). */
+export const workflowMaxBack = 3;
+
+/**
+ * A step's route, its target remapped from the editor's raw position to the
+ * index among the steps kept. The default for its outcome (on for success,
+ * fail for failure) is not stored. A route back needs `times` 1–3; a route
+ * forward takes neither `times` nor `whenSpent`. The rules are
+ * `workflowGraph.routeProblems`', written again here because this module is a
+ * leaf `npm test` loads directly.
+ */
+function validRoute(raw: unknown, at: number, indexes: readonly number[], outcome: 'success' | 'failure' | 'choice'): ToolbarRoute | string | undefined {
+	if (!isRecord(raw)) {
+		return undefined;
+	}
+	const where = `Step ${at + 1}, on ${outcome}`;
+	if (raw.to === 'next' || raw.to === 'done' || raw.to === 'fail') {
+		const isDefault = outcome === 'success' ? raw.to === 'next' : outcome === 'failure' && raw.to === 'fail';
+		if (raw.to === 'next' && at === indexes.length - 1) {
+			return outcome === 'success' ? undefined : { to: 'done' };
+		}
+		return isDefault ? undefined : { to: raw.to };
+	}
+	if (raw.to !== 'step') {
+		return undefined;
+	}
+	const target = typeof raw.step === 'number' && Number.isInteger(raw.step) ? indexes.indexOf(raw.step) : -1;
+	if (target < 0) {
+		return `${where}: the step it goes to is empty or gone.`;
+	}
+	if (target > at) {
+		return target === at + 1 && outcome === 'success' ? undefined
+			: target === at + 1 && outcome === 'choice' ? { to: 'next' } : { to: 'step', step: target };
+	}
+	const times = raw.times;
+	if (typeof times !== 'number' || !Number.isInteger(times) || times < 1 || times > workflowMaxBack) {
+		return `${where}: going back is allowed 1 to ${workflowMaxBack} times.`;
+	}
+	return { to: 'step', step: target, times, whenSpent: raw.whenSpent === 'next' ? 'next' : 'fail' };
 }
 
 /** None, ours, or the user's own text — which may not be empty, or the notification would say nothing. */
@@ -233,6 +401,15 @@ export function valueProblem(param: ToolbarParam, value: string): string | undef
 export interface FilledStep {
 	readonly text: string;
 	readonly check?: string;
+	/** A workflow's shell step: `text` is the command, unfilled. */
+	readonly shell?: true;
+	/** A workflow step's name, for `{{steps.<name>.…}}`. */
+	readonly name?: string;
+	/** Where the run goes next; absent, the defaults (on to the next step; fail). */
+	readonly onSuccess?: ToolbarRoute;
+	readonly onFailure?: ToolbarRoute;
+	/** A decision step's choices; its prompt ends with `withChoices`. */
+	readonly choices?: readonly ToolbarChoice[];
 }
 
 /**
@@ -253,10 +430,25 @@ export function fillPrompt(skill: ToolbarSkill, values: Readonly<Record<string, 
 	}
 	const fill = (text: string) => text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}/g,
 		(whole, name: string) => Object.prototype.hasOwnProperty.call(filled, name) ? filled[name] : whole);
+	// A shell step's command is never filled in: its values reach it as
+	// environment variables (`workflowVars.shellEnv`), so nothing a parameter
+	// holds is ever read as shell syntax.
+	const kinds = skill.workflow;
+	const step = (text: string, check: string | undefined, index: number): FilledStep => {
+		const kind = kinds?.[index];
+		const filledText = kind?.shell ? text : fill(text);
+		return {
+			text: filledText,
+			...(check ? { check: fill(check) } : {}),
+			...(kind?.shell ? { shell: true as const } : {}),
+			...(kind?.name ? { name: kind.name } : {}),
+			...(kind?.onSuccess ? { onSuccess: kind.onSuccess } : {}),
+			...(kind?.onFailure ? { onFailure: kind.onFailure } : {}),
+			...(kind?.choices ? { choices: kind.choices } : {}),
+		};
+	};
 	return {
-		steps: [{ text: fill(skill.prompt) }, ...(skill.followUps ?? []).map(step => step.check
-			? { text: fill(step.prompt), check: fill(step.check) }
-			: { text: fill(step.prompt) })],
+		steps: [step(skill.prompt, undefined, 0), ...(skill.followUps ?? []).map((s, i) => step(s.prompt, s.check, i + 1))],
 	};
 }
 
@@ -302,6 +494,35 @@ export function nextDecision(reply: string): boolean | undefined {
 		}
 		if (lines[i] === nextNo) {
 			return false;
+		}
+	}
+	return undefined;
+}
+
+export const choiceMarker = (n: number) => `<<<CHOICE:${n}>>>`;
+
+/**
+ * A decision step's prompt: the task, then the options by number, and the
+ * marker line to end with. The labels are the user's, checked to hold no
+ * marker syntax (`validChoices`).
+ */
+export function withChoices(prompt: string, labels: readonly string[]): string {
+	const options = labels.map((label, i) => `${i + 1}. ${label}`).join('\n');
+	return `${prompt}\n\nWhen you have finished the task above, choose exactly one of these options:\n${options}\nThen end your reply with a line of its own: ${choiceMarker(1)} for option 1, ${choiceMarker(2)} for option 2, and so on. Write exactly one such line, once, as the last line.`;
+}
+
+/**
+ * The option the agent chose, 0-based: the last marker line of the reply that
+ * names one of the `count` options. Undefined when it chose none, which the
+ * runner treats as the step failing.
+ */
+export function chosenOption(reply: string, count: number): number | undefined {
+	const lines = reply.split(/\r?\n/).map(line => line.trim().replace(/^[`*_]+|[`*_]+$/g, ''));
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const match = /^<<<CHOICE:(\d{1,2})>>>$/.exec(lines[i]);
+		if (match) {
+			const n = Number(match[1]);
+			return n >= 1 && n <= count ? n - 1 : undefined;
 		}
 	}
 	return undefined;

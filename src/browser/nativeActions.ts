@@ -324,6 +324,29 @@ export class NativeActions {
 		} finally { await Promise.all(temporary.filter(id => id !== finalId).map(id => this.release(id, scope))); }
 	}
 
+	/**
+	 * Puts local files into a file input, as if the user had chosen them in the
+	 * file dialog: `DOM.setFileInputFiles` on the pinned element, which fires
+	 * `input` and `change` and works on a hidden input too. Refuses anything that
+	 * is not `<input type=file>`, and more than one file for an input without
+	 * `multiple`. Answers the names and sizes the input now holds.
+	 */
+	setFiles(selector: string, frameId: string | undefined, files: readonly string[], signal?: AbortSignal): Promise<{ tag: string; files: { name: string; size: number }[] }> {
+		return this.enqueue(signal, signal => this.element(selector, frameId, signal, async (id, scope) => {
+			const shape = await this.call(id, scope, `function(){ return { tag: this.localName, type: this instanceof HTMLInputElement ? this.type : '', multiple: !!this.multiple, disabled: !!this.disabled }; }`, [], signal);
+			if (shape?.tag !== 'input' || shape.type !== 'file') {
+				throw new Error(`The selector matches <${shape?.tag ?? 'unknown'}>, not <input type="file">. Find the file input with browser_snapshot or browser_html (it is often hidden behind a styled button) and pass its selector.`);
+			}
+			if (shape.disabled) { throw new Error('The file input is disabled.'); }
+			if (files.length > 1 && !shape.multiple) {
+				throw new Error(`This file input takes one file (it has no "multiple" attribute); ${files.length} were given.`);
+			}
+			await this.send('DOM.setFileInputFiles', { files: [...files], objectId: id }, scope, signal);
+			const held = await this.call(id, scope, `function(){ return Array.from(this.files || []).map(f => ({ name: f.name, size: f.size })); }`, [], signal);
+			return { tag: 'input', files: Array.isArray(held) ? held : [] };
+		}));
+	}
+
 	/** Used by fill, keeping its framework-aware value logic on a pinned element. */
 	onElement(selector: string, frameId: string | undefined, functionDeclaration: string, args: unknown[], signal?: AbortSignal): Promise<any> {
 		return this.enqueue(signal, signal => this.element(selector, frameId, signal, (id, scope) => this.call(id, scope, functionDeclaration, args, signal)));

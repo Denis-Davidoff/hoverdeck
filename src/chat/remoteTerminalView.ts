@@ -70,7 +70,8 @@ export function remoteTerminalView(g: RemoteTerminalGates, shared: () => readonl
 	// Neither kind may be opened: existing shared terminals stay watchable, "New terminal" says why not.
 	const noOpen = supported.available && !shell && (!agent || supported.agents.length === 0) ? (agent ? remoteOpenHint('shell', g.surface) : `${remoteOpenHint('shell', g.surface)} ${remoteOpenHint('agent', g.surface)}`) : undefined;
 	return {
-		terminals: shared().map(t => ({
+		// A conversation's composer terminal is the editor's own: never in a remote strip.
+		terminals: shared().filter(t => t.composerOf === undefined).map(t => ({
 			id: t.id, name: t.name, status: t.status, cwd: t.cwd.split(/[\\/]/).filter(Boolean).pop() ?? '',
 			...(t.exitCode !== undefined ? { exitCode: t.exitCode } : {}), ...(t.agent ? { agent: t.agent } : {}), remote: true as const,
 		})),

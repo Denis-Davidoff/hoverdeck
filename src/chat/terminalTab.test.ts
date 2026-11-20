@@ -394,4 +394,21 @@ suite('TerminalSet moves', () => {
 		assert.deepStrictEqual(first, []);
 		assert.strictEqual(second.at(-1)?.type, 'terminalData');
 	});
+
+	test('a background terminal never takes the front: not adopted there, not chosen as a neighbour', async () => {
+		const set = new TerminalSet(() => 8, () => undefined, () => undefined);
+		const starter: TerminalStarter = async () => ({ session: new FakeSession(), cleanup: () => undefined } satisfies StartedTerminal);
+		for (const id of ['a', 'b', 'c']) { await set.create(id, id, '/tmp', undefined, starter); }
+		set.background = id => id === 'b';
+		set.select('c');
+		set.close('c');
+		assert.strictEqual(set.front, 'a');
+		const other = new TerminalSet(() => 8, () => undefined, () => undefined);
+		const moved = await other.create('m', 'm', '/tmp', undefined, starter);
+		other.release('m');
+		set.adopt(moved, false);
+		assert.strictEqual(set.front, 'a');
+		set.close('a');
+		assert.notStrictEqual(set.front, 'b');
+	});
 });

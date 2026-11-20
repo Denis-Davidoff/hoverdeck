@@ -24,7 +24,7 @@ function setup(supported = true, failMove = false) {
 		dispose() { this.disposed = true; }
 	}
 	const create = runInNewContext(transpileModule(`${method}\ncreateChat;`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, {
-		ChatViewProvider: Child, productName: () => 'AI Browser', newChat: (agent: string) => ({ agent }), refuse: (text: string) => errors.push(text),
+		ChatViewProvider: Child, productName: () => 'AI Browser', newChat: (agent: string) => ({ agent }), maxEmptyTabs: 5, refuse: (text: string) => errors.push(text),
 		vscode: { l10n: { t: (text: string) => text }, ViewColumn: { Active: -1 },
 			window: { createWebviewPanel: () => panel }, commands: {
 				getCommands: async () => supported ? ['workbench.action.moveEditorToNewWindow'] : [],
@@ -85,23 +85,31 @@ test('editor tab creates an independent chat without moving it to a window', asy
 	assert.equal(s.children[0].disposed, true);
 });
 
- test('adding a chat reuses and highlights an existing empty tab', async () => {
+test('up to five empty tabs are opened before one is reused', async () => {
 	const s = setup();
 	s.host._tabs.push({ id: 'empty', started: false, project: '/project' });
+	await s.create('here');
+	assert.deepEqual(s.added, ['codex']);
+});
+
+test('at five empty tabs the newest of the project is reused and highlighted', async () => {
+	const s = setup();
+	for (let i = 1; i <= 5; i++) { s.host._tabs.push({ id: `empty-${i}`, started: false, project: i === 5 ? '/elsewhere' : '/project' }); }
 	let selected = '';
 	s.host._selectTab = id => { selected = id; };
 	await s.create('here');
-	assert.equal(selected, 'empty');
+	assert.equal(selected, 'empty-4');
 	assert.equal(s.added.length, 0);
-	assert.deepEqual(s.messages.map(m => ({ ...m })), [{ type: 'flashTab', id: 'empty' }]);
+	assert.deepEqual(s.messages.map(m => ({ ...m })), [{ type: 'flashTab', id: 'empty-4' }]);
 });
 
-test('an empty tab of another project does not stand in for a new one', async () => {
+test('at five empty tabs of other projects a new one is refused', async () => {
 	const s = setup();
-	s.host._tabs.push({ id: 'other', started: false, project: '/elsewhere' });
+	for (let i = 1; i <= 5; i++) { s.host._tabs.push({ id: `other-${i}`, started: false, project: '/elsewhere' }); }
 	let selected = '';
 	s.host._selectTab = id => { selected = id; };
 	await s.create('here');
 	assert.equal(selected, '');
-	assert.deepEqual(s.added, ['codex']);
+	assert.equal(s.added.length, 0);
+	assert.equal(s.errors.length, 1);
 });

@@ -7,6 +7,7 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { CDPClient } from '../core/cdp';
 import { loginFormSource, loginsApiName, loginsBinding, loginsWorld } from './loginFormScript';
+import { loginSuggestApiName, loginSuggestSource } from './loginSuggestScript';
 import {
 	readFormMessage, type FieldsMessage, type FillResult, type FormMessage, type PageLogin, type SubmitMessage,
 } from './loginMessages';
@@ -141,6 +142,49 @@ export interface WatcherHandlers {
 	/** A passkey the user agreed to save was created; `credential` is CDP's `WebAuthn.Credential`. */
 	onPasskeyCreated(tab: WatchedTab, request: PasskeyRequest, credential: any): Promise<void>;
 	onPasskeyUsed(tab: WatchedTab, passkey: PasskeyEntry, signCount: number): void;
+	/** A saved login chosen in the list under a field; `id` is one `suggest` gave out for that frame. */
+	onSuggestPick(tab: WatchedTab, frame: PageFrame, id: string): void;
+	/** A footer row of that list. */
+	onSuggestAction(tab: WatchedTab, frame: PageFrame, action: 'other' | 'manage'): void;
+	/** A button of the save offer's card. */
+	onOfferAnswer(tab: WatchedTab, token: string, action: 'save' | 'update' | 'later' | 'never' | 'more'): void;
+}
+
+/** The frame a list was shown in: where a pick must be filled, and nowhere else. */
+export interface PageFrame {
+	readonly contextId: number;
+	readonly frameId: string;
+	readonly origin: string;
+}
+
+/** One row of the list under a field. Never a password: the host keeps that. */
+export interface SuggestChoice {
+	readonly id: string;
+	readonly username: string;
+	readonly detail: string;
+}
+
+export interface SuggestLabels {
+	readonly title: string;
+	readonly other: string;
+	readonly manage: string;
+}
+
+/** The save offer as the page's card shows it. Text only; `token` names the offer. */
+export interface OfferCard {
+	readonly token: string;
+	readonly kind: 'save' | 'update';
+	readonly title: string;
+	readonly who: string;
+	readonly primary: string;
+	readonly later: string;
+	/** The Never button's text; `neverTitle` is its tooltip. */
+	readonly never: string;
+	readonly neverTitle: string;
+	/** Tooltip of the "…" button, which opens every answer in a picker. */
+	readonly more: string;
+	/** Tooltip of the X in the corner, which answers like `later`. */
+	readonly close: string;
 }
 
 interface PendingSubmit {
@@ -277,6 +321,10 @@ export class WatchedTab implements vscode.Disposable {
 		await this._send('Runtime.addBinding', { name: loginsBinding, executionContextName: loginsWorld });
 		await this._send('Page.addScriptToEvaluateOnNewDocument',
 			{ source: loginFormSource(this._owner), worldName: loginsWorld, runImmediately: true });
+		// After the form script, in the same world and through the same binding,
+		// which that script leaves in place for it.
+		await this._send('Page.addScriptToEvaluateOnNewDocument',
+			{ source: loginSuggestSource(this._owner), worldName: loginsWorld, runImmediately: true });
 
 		if (passkeys) {
 			try {
@@ -450,6 +498,18 @@ export class WatchedTab implements vscode.Disposable {
 			});
 			return;
 		}
+		if (message.type === 'suggestPick') {
+			this._handlers.onSuggestPick(this, { contextId: context.id, frameId: context.frameId, origin: context.origin }, message.id);
+			return;
+		}
+		if (message.type === 'suggestAction') {
+			this._handlers.onSuggestAction(this, { contextId: context.id, frameId: context.frameId, origin: context.origin }, message.action);
+			return;
+		}
+		if (message.type === 'offerAnswer') {
+			this._handlers.onOfferAnswer(this, message.token, message.action);
+			return;
+		}
 		// `outcome`: what became of the fields of the last submission, judged in
 		// the page. Only "gone" — the field left and no sign-in field took its
 		// place — is evidence of success.
@@ -616,6 +676,52 @@ export class WatchedTab implements vscode.Disposable {
 			}
 		}
 		return refusal ?? { username: false, password: false, reason: 'noFields' };
+	}
+
+	/**
+	 * Fills the one frame a list was picked in. The same checks as `fill`: the
+	 * context must still be the one listed, and the page compares its own
+	 * origin with `origins` before it touches a field.
+	 */
+	public async fillFrame(frame: PageFrame, username: string, password: string, origins: ReadonlySet<string>): Promise<FillResult> {
+		const context = this._contexts.get(frame.contextId);
+		if (!context || context.world !== 'logins' || context.origin !== frame.origin || !origins.has(context.origin)) {
+			return { username: false, password: false, reason: 'noFields' };
+		}
+		const result = await this._call(context.id,
+			'function (u, p, e, o, n) { const api = globalThis[n]; return api ? api.fill(u, p, e, o) : undefined; }',
+			[username, password, false, [...origins], loginsApiName(this._owner)]) as FillResult | undefined;
+		return result ?? { username: false, password: false, reason: 'noFields' };
+	}
+
+	/**
+	 * The logins offered under a field in `frame`. Empty choices take the list
+	 * away. Usernames and titles only: a pick comes back as an id.
+	 */
+	public async suggest(frame: PageFrame, choices: readonly SuggestChoice[], labels: SuggestLabels): Promise<void> {
+		const context = this._contexts.get(frame.contextId);
+		if (!context || context.world !== 'logins' || context.origin !== frame.origin) {
+			return;
+		}
+		await this._call(context.id,
+			'function (c, l, n) { const api = globalThis[n]; if (api) { api.setChoices(c, l); } }',
+			[choices, labels, loginSuggestApiName(this._owner)]);
+	}
+
+	/** The save offer as a card at the top of the page, in the main frame. `undefined` takes it down. */
+	public async offer(card: OfferCard | undefined): Promise<void> {
+		const context = [...this._contexts.values()].find(c => c.world === 'logins' && c.frameId === this._mainFrameId);
+		if (!context) {
+			return;
+		}
+		await this._call(context.id,
+			'function (c, n) { const api = globalThis[n]; if (api) { if (c) { api.showOffer(c); } else { api.hideOffer(); } } }',
+			[card ?? null, loginSuggestApiName(this._owner)]);
+	}
+
+	/** Every frame running our script now, with what it last reported. */
+	public get frames(): readonly FrameFields[] {
+		return [...this._fields.values()];
 	}
 
 	/** The login the page's fields hold right now, for "save login from page". */
@@ -864,8 +970,8 @@ export class WatchedTab implements vscode.Disposable {
 					`function (o) { const s = globalThis[Symbol.for(${JSON.stringify(passkeyStateKey)})]; if (s && s.uninstall) { s.uninstall(o); } }`,
 					[this._owner], teardownTimeoutMs)
 				: this._call(context.id,
-					'function (n, o) { const api = globalThis[n]; if (api && api.uninstall) { api.uninstall(o); } }',
-					[loginsApiName(this._owner), this._owner], teardownTimeoutMs))), teardownTimeoutMs, 'teardown');
+					'function (n, m, o) { for (const k of [n, m]) { const api = globalThis[k]; if (api && api.uninstall) { api.uninstall(o); } } }',
+					[loginsApiName(this._owner), loginSuggestApiName(this._owner), this._owner], teardownTimeoutMs))), teardownTimeoutMs, 'teardown');
 		} catch {
 			// A page that does not answer keeps its leftovers; the deadline in
 			// the passkey wrapper still bounds what they can do.
@@ -998,6 +1104,12 @@ export class LoginWatcher implements vscode.Disposable {
 		} catch {
 			return undefined;
 		}
+	}
+
+	/** Every tab attached right now, for pushing a changed vault into their pages. */
+	public async watched(): Promise<WatchedTab[]> {
+		const all = await Promise.all([...this._tabs.values()].map(entry => entry.opening));
+		return all.filter((w): w is WatchedTab => !!w && !w.isClosed);
 	}
 
 	/** The watched tab for `tab`, attaching first if it has none. `undefined` when the feature is off or attaching failed. */

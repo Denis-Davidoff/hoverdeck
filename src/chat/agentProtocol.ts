@@ -1859,12 +1859,14 @@ const browserServerTools: ReadonlySet<string> = new Set([
 	'browser_inspect_element', 'browser_navigate', 'browser_press',
 	'browser_recording_pause', 'browser_recording_resume', 'browser_recording_start', 'browser_recording_status', 'browser_recording_stop',
 	'browser_replace_text', 'browser_restore_text', 'browser_screenshot', 'browser_scroll', 'browser_select_tab', 'browser_selected_element',
-	'browser_set_cookies', 'browser_snapshot', 'browser_state', 'browser_tabs', 'browser_text', 'browser_text_segments', 'browser_type', 'browser_wait_for',
+	'browser_set_cookies', 'browser_snapshot', 'browser_state', 'browser_tabs', 'browser_text', 'browser_text_segments', 'browser_type', 'browser_upload_file', 'browser_wait_for',
 	'editor_context', 'editor_definition', 'editor_references', 'editor_reveal', 'editor_symbols',
 	// The chat's reads, which any token holder may make.
 	'chat_state', 'chat_agents', 'chat_usage', 'chat_present_html', 'chat_present_image', 'chat_present_file', 'chat_present_table', 'chat_present_sources', 'chat_present_audio', 'chat_present_video', 'chat_notify', 'chat_progress', 'chat_update_plan', 'chat_present_json', 'chat_present_result', 'chat_cite', 'chat_play_sound', 'chat_alert',
 	'chat_list', 'chat_get_metadata', 'chat_read_messages', 'chat_search', 'chat_add_note',
 	'chat_list_models', 'chat_get_task',
+	// The toolbar's skills, read-only (`skillCatalog.ts`).
+	'skill_list', 'skill_get',
 ]);
 
 /** The category of one of our own server's tools, and for a terminal tool which kind. */

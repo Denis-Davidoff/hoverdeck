@@ -53,6 +53,10 @@ export interface ChatControl {
 	/** Caller identity is verified by the MCP server; target IDs confer no rights. */
 	linkedChats?(callerChatId: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
 	presentRich(ownTab: string, kind: string, args: Record<string, unknown>): Promise<unknown>;
+	/** The toolbar's skills offered to the caller's agent (every one for a caller outside the chat), as `skill_list` gives them. */
+	skills(ownTab: string | undefined): unknown;
+	/** One skill whole, by name, as `skill_get` gives it; throws naming the skills there are. */
+	skill(ownTab: string | undefined, name: string): unknown;
 	/** A sound in the user's chat view, and for `alert` a system notification and a card in the chat too. Only when the user asked for it. */
 	signal(ownTab: string, request: SignalRequest): Promise<unknown>;
 	presentArtifact(ownTab: string, file: string, kind: ArtifactKind, title?: string): Promise<unknown>;
@@ -159,8 +163,39 @@ function requireOwnTab(port: ChatControlPort, caller: Caller, what: string): str
 	return tab;
 }
 
+/**
+ * The toolbar's skills, read-only (`src/chat/skillCatalog.ts`): a catalogue to
+ * choose from and one skill to follow. Open to every caller with the token — a
+ * Claude Code in a terminal benefits as much as the chat's own agents — and
+ * switched off as a whole with the `skills` feature in Chat Settings → MCP.
+ */
+function skillTools(port: ChatControlPort): Tool[] {
+	return [
+		{
+			name: 'skill_list', title: 'Skills: list',
+			description: 'Lists the user\'s saved skills (the chat\'s toolbar skills and workflows): each one\'s name, a one-line '
+				+ 'description, its parameters and how many steps it has. When the user\'s request matches one, call skill_get '
+				+ 'with its name and follow what it returns before doing the task any other way.',
+			inputSchema: schema({}),
+			run: async (_args, caller) => control(port).skills(ownTab(port, caller)),
+		},
+		{
+			name: 'skill_get', title: 'Skills: load one',
+			description: 'Loads one of the user\'s saved skills by name (see skill_list): its prompt, any further steps with their '
+				+ 'checks, workflow commands and routes, and its parameters. Follow the steps yourself with your own tools; nothing is run for you.',
+			inputSchema: schema({ name: string('The skill\'s name, as skill_list gives it') }, ['name']),
+			run: async (args, caller) => {
+				const name = (textArgument(args.name, 'name') ?? '').trim().replace(/^[/$]/, '');
+				if (!name) { throw new Error('name is required: call skill_list for the names.'); }
+				return control(port).skill(ownTab(port, caller), name);
+			},
+		},
+	];
+}
+
 export function chatTools(port: ChatControlPort): Tool[] {
 	return [
+		...skillTools(port),
 		...(chatConnectionsEnabled ? linkedChatTools(port) : []),
 		...(chatConnectionsEnabled ? ownedChatTools(port) : []),
 		{

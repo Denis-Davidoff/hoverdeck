@@ -104,6 +104,17 @@ export interface ToolbarSkill {
 	 */
 	readonly followUps?: readonly ToolbarStep[];
 	/**
+	 * What kind each step is, aligned with `[prompt, ...followUps]`: a shell
+	 * command (`shell`) or a prompt to the agent, and the name later steps
+	 * read its output by (`{{steps.<name>.stdout}}`). Absent: an ordinary
+	 * skill, every step a prompt in one session. Present, the skill is a
+	 * workflow: each step runs on its own — a new agent session, or the
+	 * command — and an error or a non-zero exit code ends it. Stored under a
+	 * key of its own (`toolbarWorkflow`), since an older build rewrites the
+	 * toolbar without fields it does not know.
+	 */
+	readonly workflow?: readonly ToolbarWorkflowStep[];
+	/**
 	 * In the chat, as a message; to the clipboard, the marked result only;
 	 * silently, the button saying it is done; or in a VS Code notification, the
 	 * marked result as its text.
@@ -150,6 +161,42 @@ export interface ToolbarStep {
 	readonly prompt: string;
 	readonly check?: string;
 }
+
+/** A workflow step's kind and name; see `ToolbarSkill.workflow`. */
+export interface ToolbarWorkflowStep {
+	/** The step's text is a shell command, run in the conversation's folder; its values arrive as environment variables, never in the text. */
+	readonly shell?: true;
+	/** Lower case, `[a-z][a-z0-9_]*`, unique in the skill; later steps read its output by it (or by its number). */
+	readonly name?: string;
+	/** Where the run goes when the step succeeds; absent, the next step (or the end, after the last). */
+	readonly onSuccess?: ToolbarRoute;
+	/** Where the run goes when the step fails (a command exits non-zero, an agent's turn ends in an error); absent, the run fails. */
+	readonly onFailure?: ToolbarRoute;
+	/**
+	 * A decision step: the agent ends its reply by choosing one of these, 2 to
+	 * 5, and the run goes where that choice's route says. `onSuccess` has no
+	 * meaning there; a reply with no valid choice is a failure (`onFailure`).
+	 * Never a shell step.
+	 */
+	readonly choices?: readonly ToolbarChoice[];
+}
+
+/** One option of a decision step: a short label the agent picks by number, and where it leads. */
+export interface ToolbarChoice {
+	readonly label: string;
+	readonly route: ToolbarRoute;
+}
+
+/**
+ * A workflow step's route: on to the next step, the end (done), a failure, or
+ * another step by its index (0 is the first). A route back — to this step or
+ * an earlier one — names how many times it may be taken, 1 to 3, and what
+ * happens once spent: the run fails, or goes on to the next step. The rules
+ * are `workflowGraph.ts`'s, written again in `toolbarText.ts` (a leaf).
+ */
+export type ToolbarRoute =
+	| { readonly to: 'next' | 'done' | 'fail' }
+	| { readonly to: 'step'; readonly step: number; readonly times?: number; readonly whenSpent?: 'fail' | 'next' };
 
 /** A value asked for when the skill runs, and written into the prompt as `{{name}}`. Every one is required. */
 export interface ToolbarParam {
@@ -315,7 +362,11 @@ export interface ToolEntry {
 	readonly startedAt: number;
 	endedAt?: number;
 	/** Native CLI task metadata; a background shell can outlive its initiating turn. */
-	shell?: { taskId?: string; background?: boolean; provider?: 'codex'; processId?: string };
+	shell?: {
+		taskId?: string; background?: boolean; provider?: 'codex'; processId?: string;
+		/** A workflow's shell step: the id of its run's row in the agents list, which a click in the Bash tab opens. */
+		workflow?: string;
+	};
 	/** Present on agent rows (`tool: 'agent'`). */
 	agent?: AgentInfo;
 }
@@ -686,6 +737,12 @@ export interface TerminalTabSummary {
 	readonly remoteViewers?: number;
 	/** A website viewer holds the control lease: it types, and its size is the PTY's. */
 	readonly remoteControl?: true;
+	/**
+	 * The conversation tab whose composer Terminal tab shows this terminal. Such a terminal
+	 * is never in the strip, never in front, not saved across a restart, not counted against
+	 * the terminal limit, and closes with its conversation tab.
+	 */
+	readonly composerOf?: string;
 }
 
 export type TerminalSupport =
@@ -798,6 +855,8 @@ export interface ChatViewState {
 	/** The `browser` proposal is granted; without it no tab can be attached, open or not. */
 	readonly browserApi: boolean;
 	readonly nativeBrowser?: 'granted' | 'grantMissing' | 'awaitingRestart' | 'unsupported';
+	/** The favorite sites, for the browser button's Open from Favorites (editor only). */
+	readonly favorites?: readonly ChatFavorite[];
 	/** Absent until NEWS.md has been read, or when it could not be. */
 	readonly news?: ChatNews;
 	/** The user hid "What's new", and no entry has been added since. */
@@ -1058,7 +1117,7 @@ export type HostToView =
 	/** Focus this terminal's keyboard input (a terminal tab was selected, or the view was revealed on it). */
 	| { readonly type: 'terminalFocus'; readonly id: string }
 	/** The view's title bar cup: open the keep-awake popup. */
-	| { readonly type: 'openSettings'; readonly tab?: 'security' }
+	| { readonly type: 'openSettings'; readonly tab?: 'security' | 'logins' | 'favorites' }
 	/** Chat Settings → Security: each guard's state, and the sites agents were allowed to open in this window. */
 	| { readonly type: 'mcpFeatures'; readonly disabled: readonly McpFeatureId[]; readonly error?: string }
 	| { readonly type: 'securitySettings'; readonly guards: Readonly<Record<SecurityGuardId, boolean>>; readonly sites: readonly SecuritySiteApproval[]; readonly error?: string }
@@ -1071,6 +1130,9 @@ export type HostToView =
 		readonly catalog?: { readonly query: string; /** Original local address, echoed even on validation errors to match the request. */ readonly requestedEndpoint?: string;
 			/** Canonical local address for adding a model; present only after validation. */ readonly endpoint?: string; readonly items: readonly OpenRouterCatalogItem[]; readonly total: number; readonly error?: string } }
 	/** The Remote terminals section of Chat Settings: the three `hoverdeck.chat.remoteTerminal*` switches as stored, or the reason a change was refused. */
+	| { readonly type: 'logins'; readonly view?: import('../logins/loginsManager').LoginsView; readonly unavailable?: string }
+	/** The favorites list as stored, and the reason the last edit was refused. */
+	| { readonly type: 'favorites'; readonly items: readonly ChatFavorite[]; readonly error?: string; readonly hasPage?: boolean; readonly showButton?: boolean }
 	| { readonly type: 'remoteTerminalSettings'; readonly remoteTerminal: boolean; readonly shell: boolean; readonly agent: boolean; readonly chrome?: { readonly allowed: boolean; readonly shell: boolean; readonly agent: boolean }; readonly files?: import('./core/remoteFiles').RemoteFileSettings; readonly error?: string }
 	| { readonly type: 'openSleep' }
 	/** Cmd/Ctrl+W with focus in the chat: close the tab in front, as its × does (asking first while it works). */
@@ -1114,7 +1176,7 @@ export type HostToView =
 	/** A watched run has ended: the view plays the Actions sound and refreshes the GitHub tab. */
 	/** An agent asked for a sound (`chat_play_sound`, `chat_alert`): played whatever the speaker button says, at the user's volume. */
 	| { readonly type: 'githubRunEnded'; readonly key: string; readonly state: import('./githubStatus').GithubRunState }
-	| { readonly type: 'githubStatus'; readonly folder: string; readonly status?: import('./githubStatus').GithubStatus; readonly error?: string; /** Signing in to GitHub would show more (a private repository, no `gh`). */ readonly signIn?: boolean; /** A pull request was just opened from the tab. */ readonly created?: import('./githubStatus').GithubCreatedPr; /** Opening one failed; the list is unchanged. */ readonly createError?: string }
+	| { readonly type: 'githubStatus'; readonly folder: string; readonly status?: import('./githubStatus').GithubStatus; readonly error?: string; /** Signing in to GitHub would show more (a private repository, no `gh`). */ readonly signIn?: boolean; /** A pull request was just opened from the tab. */ readonly created?: import('./githubStatus').GithubCreatedPr; /** Opening one failed; the list is unchanged. */ readonly createError?: string; /** A pull request was just merged from the tab. */ readonly merged?: number; /** Merging one failed. */ readonly mergeError?: { readonly number: number; readonly text: string } }
 	| { readonly type: 'workdirGit'; readonly folder: string; readonly status?: WorkdirGitStatus; readonly branches?: GitBranchState; readonly error?: string; readonly fetchError?: string }
 	/**
 	 * The files and folders of `folder`, relative and `/`-separated, a folder
@@ -1157,6 +1219,8 @@ export type ViewToHost =
 	| { readonly type: 'mcpFeatures'; readonly action: 'load' } | { readonly type: 'mcpFeatures'; readonly action: 'set'; readonly feature: McpFeatureId; readonly enabled: boolean }
 	| { readonly type: 'securitySettings'; readonly action: 'allOn' }
 	| { readonly type: 'securitySettings'; readonly action: 'forget'; readonly key?: string; readonly site?: string }
+	| ({ readonly type: 'logins' } & ({ readonly action: 'load' } | import('../logins/loginsManager').LoginsAction))
+	| ({ readonly type: 'favorites' } & import('../browser/favoritesData').FavoritesAction)
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'load' }
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'set'; readonly key: 'remoteTerminal' | 'remoteTerminalShell' | 'remoteTerminalAgent' | 'chromeTerminalAccess' | 'chromeTerminalShell' | 'chromeTerminalAgent'; readonly value: boolean }
 	| { readonly type: 'remoteTerminalSettings'; readonly action: 'setFiles'; readonly surface: import('./core/commands').RemoteSurface; readonly value: import('./core/remoteFiles').RemoteFileLevel }
@@ -1218,7 +1282,8 @@ export type ViewToHost =
 	| { readonly type: 'resolveHistoryChat'; readonly id: string; readonly action: 'move' | 'show' }
 	| { readonly type: 'saveDrafts'; readonly drafts: Readonly<Record<string, string>> }
 	| { readonly type: 'tabDraft'; readonly request: string; readonly draft?: string }
-	| { readonly type: 'resumeInTerminal'; readonly id: string }
+	/** `where: 'tab'` resumes it in one of the chat's own terminal tabs; absent, in a VS Code editor terminal. */
+	| { readonly type: 'resumeInTerminal'; readonly id: string; readonly where?: 'tab' }
 	| { readonly type: 'deleteChat'; readonly id: string }
 	/** The composer's History tab asks for the saved chats; answered as a `history` refresh. */
 	| { readonly type: 'listHistory' }
@@ -1233,6 +1298,8 @@ export type ViewToHost =
 	| { readonly type: 'files'; readonly request: number; readonly folder: string; readonly action: 'list' | 'open' | 'reveal' | 'revealOs' | 'delete' | 'copy' | 'cut' | 'paste' | 'copyPath' | 'copyRelativePath' | 'attach' | 'newFolder' | 'drop' | 'complete' | 'upload'; readonly dir: string; readonly paths?: readonly string[]; readonly name?: string; /** For `drop`: `file:` URIs dragged in from VS Code or the system, copied (or moved, when inside the folder and `move`). */ readonly uris?: readonly string[]; readonly move?: boolean; /** For `upload`: a file dropped from the system, which a webview sees without its path. */ readonly data?: string }
 	/** The GitHub tab opens a pull request for `folder`'s current branch against the default branch. */
 	| { readonly type: 'githubCreatePr'; readonly folder: string; readonly title: string; readonly draft?: boolean }
+	/** Merges an open pull request of the folder's repository (VS Code only). */
+	| { readonly type: 'githubMergePr'; readonly folder: string; readonly number: number; readonly method: import('./githubStatus').GithubMergeMethod }
 	/** The Access tab: take a browser tab for this chat, or make it free for everyone. */
 	| { readonly type: 'tabAccess'; readonly tabId: string; readonly take: boolean; readonly reveal?: boolean }
 	| { readonly type: 'newChat'; readonly location?: 'here' | 'tab' | 'window' }
@@ -1292,6 +1359,9 @@ export type ViewToHost =
 	| { readonly type: 'newTerminal'; readonly agent?: AgentId; readonly pinTo?: string }
 	/** Pin (or unpin) a terminal to a conversation: the agent of that conversation may then read and type into it. */
 	| { readonly type: 'pinTerminal'; readonly id: string; readonly tabId: string; readonly pinned: boolean; readonly mode?: 'watch' | 'control' }
+	/** The composer's Terminal tab was opened: start this conversation tab's own terminal if it has none. */
+	| { readonly type: 'openComposerTerminal'; readonly tabId: string }
+	| { readonly type: 'leaveComposerTerminal'; readonly tabId: string }
 	/**
 	 * "Insert into terminal": the user (never an agent) puts a page address, an element, a screenshot, a
 	 * file, a selection, a video or an annotation into a terminal's input — as text, or as the path of a
@@ -1402,6 +1472,13 @@ export interface SecuritySiteApproval {
 
 /** The `hoverdeck.security.*` switches, written here too: the webview may not import the vscode-side module. */
 /** What Chat Settings → MCP can switch off. Written twice: `mcpFeatures` in `src/mcp/mcpFeatures.ts`; `mcpFeatures.test.ts` holds them equal. */
-export type McpFeatureId = 'sounds' | 'alerts' | 'cards' | 'keepAwake' | 'chatControl' | 'recording' | 'annotations' | 'cookies' | 'editor';
+export type McpFeatureId = 'sounds' | 'alerts' | 'cards' | 'keepAwake' | 'chatControl' | 'recording' | 'annotations' | 'cookies' | 'editor' | 'skills';
 
-export type SecurityGuardId = 'confirmNewSites' | 'protectSecretFields' | 'hideOtherChromeTabs' | 'confirmCookies' | 'markPageContent';
+export type SecurityGuardId = 'confirmNewSites' | 'protectSecretFields' | 'hideOtherChromeTabs' | 'confirmCookies' | 'confirmUploads' | 'markPageContent';
+
+/** A favorite site as the view sees it. */
+export interface ChatFavorite {
+	readonly id: string;
+	readonly title: string;
+	readonly url: string;
+}

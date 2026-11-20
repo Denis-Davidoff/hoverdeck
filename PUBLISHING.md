@@ -4,7 +4,7 @@
 gets the stub in [vscode-marketplace/](vscode-marketplace/) — see [Two artifacts, one id](#two-artifacts-one-id).
 
 ```sh
-npm run package        # -> tab-browser-ultimate.vsix (compiles first, via vscode:prepublish)
+npm run package        # -> hoverdeck.vsix (compiles first, via vscode:prepublish)
 npm run publish:ovsx   # -> rebuilds, then uploads to Open VSX
 ```
 
@@ -22,7 +22,8 @@ The stub is what goes to the Marketplace now.
 
 | | Id | Latest published | Reach |
 | --- | --- | --- | --- |
-| [Open VSX](https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate) | `tab-browser-ultimate` | **0.5.23** (checked 2026-09-18) | 5916 downloads across 34 versions |
+| [Open VSX](https://open-vsx.org/extension/DenysDavydov/hoverdeck) | `hoverdeck` | **1.0.0** to publish (2026-11-20) | first release |
+| [Open VSX](https://open-vsx.org/extension/DenysDavydov/tab-browser-ultimate) | `tab-browser-ultimate` | **0.9.23** live, **1.0.0** (final) to publish from its own repository | AI Browser, frozen after 1.0.0 |
 | VS Code Marketplace, old | `tab-browser-ultimate` | **0.3.17** | 2 installs, one 5★ rating — being removed by hand |
 | VS Code Marketplace, new | `tab-browser-ultimate-promo` | not yet published | the listing, from `vscode-marketplace/` |
 
@@ -108,9 +109,9 @@ The root has no Marketplace publish script at all any more: this is the only rou
    claiming one version while the artifact was missing a whole module:
 
    ```sh
-   rm -rf /tmp/vsix && unzip -q tab-browser-ultimate.vsix -d /tmp/vsix
+   rm -rf /tmp/vsix && unzip -q hoverdeck.vsix -d /tmp/vsix
    diff -rq /tmp/vsix/extension/out out          # must be silent
-   unzip -l tab-browser-ultimate.vsix | grep -E '\.ai-browser/|\.mcp\.json'   # must be empty
+   unzip -l hoverdeck.vsix | grep -E '\.ai-browser/|\.mcp\.json'   # must be empty
    ```
 
    The first catches a stale package, the second the allowlist-by-omission hazard — `.vscodeignore`
@@ -130,7 +131,7 @@ together. See
 
 **There is no GitHub Release, deliberately, and the update button knows it.** Nothing in these
 steps creates one, so the notification's `Download from GitHub` opens
-`raw/main/tab-browser-ultimate.vsix` — the URL the README documents and the promo build uses. If
+`raw/main/hoverdeck.vsix` — the URL the README documents and the promo build uses. If
 releases ever do get cut, that constant in `src/setup/updateCheck.ts` is what has to move with them.
 
 ## What an update actually does to existing users

@@ -1,3 +1,9 @@
+<!--
+HoverDeck readme template: a fuller, image-led readme drafted before the split, still branded
+"AI Browser", with placeholders for screenshots and a video. Not packaged (docs/** is in
+.vscodeignore); the shipped readme is README.md. Rename and fill in the media before using it.
+-->
+
 <div align="center">
 
 # AI Browser

@@ -15,7 +15,7 @@ import { createSourceFile, forEachChild, isMethodDeclaration, ScriptTarget, tran
 function fixture(stat: (file: string) => Promise<unknown> = async () => ({ isDirectory: () => false })) {
   const source = readFileSync('src/chat/chatView.ts', 'utf8');
   const ast = createSourceFile('chatView.ts', source, ScriptTarget.ES2022, true);
-  const wanted = new Set(['_receiveChromeFooter', '_files', '_postMessage', '_workdir', '_usage', '_changeGitIndex', '_refreshWorkdirGit']);
+  const wanted = new Set(['_receiveChromeFooter', '_files', '_postMessage', '_workdir', '_usage', '_changeGitIndex', '_refreshWorkdirGit', '_refuseRemoteShellWorkflow']);
   const methods: string[] = [];
   const visit = (node: any) => {
     if (isMethodDeclaration(node) && wanted.has(node.name.getText(ast))) { methods.push(node.getText(ast)); }

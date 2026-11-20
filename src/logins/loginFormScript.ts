@@ -36,10 +36,10 @@
  */
 
 /** The isolated world the script runs in. The page's own scripts cannot see into it. */
-export const loginsWorld = 'aiBrowserLogins';
+export const loginsWorld = 'hoverdeckLogins';
 
 /** The CDP binding it reports through. Exists only in {@link loginsWorld}. */
-export const loginsBinding = 'aiBrowserLogins';
+export const loginsBinding = 'hoverdeckLogins';
 
 /**
  * The page-side script, for `Page.addScriptToEvaluateOnNewDocument` with
@@ -80,7 +80,7 @@ export const loginsBinding = 'aiBrowserLogins';
  * **One isolated world per name is shared by every CDP session**, measured in
  * Chrome 153: a session that attaches after another left finds the first one's
  * script still in that world. So an install takes over from whatever was there
- * (`__aiBrowserLoginsRegistry`), and its API is published under its own
+ * (`__hoverdeckLoginsRegistry`), and its API is published under its own
  * `owner` — never a shared name a later install could not replace, and never
  * one an earlier session's late uninstall could reach. The first version
  * checked "already installed" and returned, which left a re-attached tab with
@@ -88,7 +88,7 @@ export const loginsBinding = 'aiBrowserLogins';
  * page navigated.
  */
 export function loginsApiName(owner: string): string {
-	return `__aiBrowserLogins_${owner}`;
+	return `__hoverdeckLogins_${owner}`;
 }
 
 export function loginFormSource(owner: string): string {
@@ -97,8 +97,8 @@ export function loginFormSource(owner: string): string {
 const OWNER = ${JSON.stringify(owner)};
 const notify = globalThis[${JSON.stringify(loginsBinding)}];
 if (typeof notify !== 'function') { return; }
-const registry = Array.isArray(globalThis.__aiBrowserLoginsRegistry)
-  ? globalThis.__aiBrowserLoginsRegistry : (globalThis.__aiBrowserLoginsRegistry = []);
+const registry = Array.isArray(globalThis.__hoverdeckLoginsRegistry)
+  ? globalThis.__hoverdeckLoginsRegistry : (globalThis.__hoverdeckLoginsRegistry = []);
 for (const off of registry.splice(0)) { try { off(); } catch (e) { /* already gone */ } }
 // A build before the registry published one fixed name; it is stopped the same way.
 try { globalThis.__aiBrowserLogins?.uninstall?.(); } catch (e) { /* already gone */ }
@@ -1029,7 +1029,7 @@ function uninstall(who) {
   watchGeneration++;
   for (const off of teardown.splice(0)) off();
 }
-Object.defineProperty(globalThis, '__aiBrowserLogins_' + OWNER, { value: Object.freeze({ fill, read, uninstall }), configurable: true });
+Object.defineProperty(globalThis, '__hoverdeckLogins_' + OWNER, { value: Object.freeze({ fill, read, uninstall }), configurable: true });
 registry.push(() => uninstall());
 })();`;
 }

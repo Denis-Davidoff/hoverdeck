@@ -6,7 +6,7 @@ import { transpileModule } from 'typescript';
 
 test('connection chips retain clicks during streaming, manage the correct chat, and show remote viewers access without granting controls', () => {
 	const source = readFileSync('preview-src/chat.ts', 'utf8');
-	const render = /function renderAttachments\([\s\S]*?\n\}/.exec(source)![0];
+	const render = /function renderAttachments\([\s\S]*?\n\}/.exec(source)![0] + '\n' + /function detachedComposerTerminal\([\s\S]*?\n\}/.exec(source)![0];
 	const posted: unknown[] = [];
 	const node = (_tag: string, props: object = {}, ...children: any[]) => ({ ...props, children, hidden: false, disabled: false,
 		listeners: {} as Record<string, () => void>, addEventListener(type: string, fn: () => void) { this.listeners[type] = fn; } });
@@ -15,7 +15,7 @@ test('connection chips retain clicks during streaming, manage the correct chat, 
 		button: (children: any[], props: object) => node('button', props, ...children), el: node, icon: (name: string) => name,
 		post: (message: unknown) => posted.push(message), attachmentsRow: row,
 		browserButton: { classList: { toggle() {} } }, plusButton: { classList: { toggle() {} } }, suggestionNode() {}, fileIconsSignature: '', chipShown: (chip: unknown) => chip,
-		isPinChip: () => false, pinChipNode() {}, browserPinNode() {}, autosize() {}, toolbarLayoutShape: '', scheduleToolbarLayout() {},
+		isPinChip: () => false, pinChipNode() {}, composerTab: 'chat', composerTerminalAvailable: false, browserPinNode() {}, autosize() {}, toolbarLayoutShape: '', scheduleToolbarLayout() {},
 	});
 	const state: any = { chatId: 'a', suggestions: [], attachments: [], linkedChats: [{ chatId: 'b', title: 'Research', access: 'readWrite', available: true }] };
 	run(state);

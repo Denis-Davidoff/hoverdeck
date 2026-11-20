@@ -18,7 +18,7 @@
  *   `workspaceState`, `SecretStorage` and `globalStorageUri` belong to each
  *   extension id, so they can only be handed over by AI Browser itself, through
  *   an `exportState` on its `activate` result, read in memory. **No released AI
- *   Browser has it** (0.9.23, the last, does not), so today this answers
+ *   Browser has it** (1.0.0, the last, does not), so today this answers
  *   `undefined`; it is kept for a release that adds it.
  */
 
