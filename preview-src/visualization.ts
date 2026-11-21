@@ -46,6 +46,9 @@ window.addEventListener('message', event => {
 		} catch { /* Unsupported state is ignored. */ }
 	} else if (data.type === 'error' && typeof data.message === 'string') {
 		channel.postMessage({ type: 'error', message: data.message.slice(0, 300), revision: activeRevision });
+	} else if (data.type === 'copy' && typeof data.text === 'string' && data.text.length > 0 && data.text.length <= 1_000_000) {
+		// The frames have no clipboard access of their own; the chat decides whether to write it.
+		channel.postMessage({ type: 'copy', text: data.text, revision: activeRevision });
 	}
 });
 
@@ -71,6 +74,15 @@ function visualizationRuntime(initial: { state: unknown; theme?: Record<string, 
 	window.addEventListener('message', event => {
 		if (event.source === window.parent && event.data?.type === 'visualization-theme') { theme(event.data.theme); }
 	});
+	// Cmd/Ctrl+C inside this frame never reaches the chat, and the frame may not write the
+	// clipboard itself (clipboard-write 'none'), so the selection is handed up instead.
+	document.addEventListener('keydown', event => {
+		if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey || event.isComposing || event.key.toLowerCase() !== 'c') { return; }
+		const text = String(window.getSelection() ?? '');
+		if (!text) { return; }
+		event.preventDefault();
+		send({ type: 'copy', text });
+	}, true);
 	window.addEventListener('error', event => send({ type: 'error', message: event.message }));
 	window.addEventListener('unhandledrejection', event => send({ type: 'error', message: String(event.reason) }));
 	window.addEventListener('DOMContentLoaded', () => {

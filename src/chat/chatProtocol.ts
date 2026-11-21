@@ -630,8 +630,34 @@ export interface GitCommitState {
 	readonly message?: string;
 }
 
+/** A Git repository found in the working folder: its own, or one nested in it. */
+export interface WorkdirRepo {
+	readonly path: string;
+	/** Relative to the working folder with `/`; the working folder's own is its base name. */
+	readonly name: string;
+	readonly kind: 'root' | 'nested' | 'submodule' | 'worktree';
+}
+
+export interface GitRepoSummary {
+	readonly path: string;
+	readonly branch?: string;
+	readonly detached?: boolean;
+	readonly ahead: number;
+	readonly behind: number;
+	readonly changes: number;
+	/** The repository could not be read. */
+	readonly error?: boolean;
+}
+
 export interface WorkdirState {
 	readonly commit?: GitCommitState;
+	/**
+	 * The repositories in the working folder, when there is more than one or the
+	 * folder is not a repository itself; absent otherwise, and the footer shows no picker.
+	 */
+	readonly repos?: readonly WorkdirRepo[];
+	/** The repository the Git footer works in, when it is not `current` itself. */
+	readonly gitFolder?: string;
 	/** Absent: no folder of the window's and none picked — the home directory, with no project. */
 	readonly current?: WorkdirFolder;
 	/** The conversation picked its folder rather than taking the window's. */
@@ -1177,7 +1203,9 @@ export type HostToView =
 	/** An agent asked for a sound (`chat_play_sound`, `chat_alert`): played whatever the speaker button says, at the user's volume. */
 	| { readonly type: 'githubRunEnded'; readonly key: string; readonly state: import('./githubStatus').GithubRunState }
 	| { readonly type: 'githubStatus'; readonly folder: string; readonly status?: import('./githubStatus').GithubStatus; readonly error?: string; /** Signing in to GitHub would show more (a private repository, no `gh`). */ readonly signIn?: boolean; /** A pull request was just opened from the tab. */ readonly created?: import('./githubStatus').GithubCreatedPr; /** Opening one failed; the list is unchanged. */ readonly createError?: string; /** A pull request was just merged from the tab. */ readonly merged?: number; /** Merging one failed. */ readonly mergeError?: { readonly number: number; readonly text: string } }
-	| { readonly type: 'workdirGit'; readonly folder: string; readonly status?: WorkdirGitStatus; readonly branches?: GitBranchState; readonly error?: string; readonly fetchError?: string }
+	| { readonly type: 'workdirGit'; readonly folder: string; readonly status?: WorkdirGitStatus; readonly branches?: GitBranchState; readonly error?: string; readonly fetchError?: string;
+		/** Every repository of the working folder in a line (branch, ↑↓, changes), when there is more than one. */
+		readonly repoSummaries?: readonly GitRepoSummary[] }
 	/**
 	 * The files and folders of `folder`, relative and `/`-separated, a folder
 	 * ending with `/`; sent when the folder button asks, not with every state.
@@ -1441,6 +1469,8 @@ export type ViewToHost =
 	| { readonly type: 'restoreBranchStash'; readonly folder: string }
 	| { readonly type: 'gitRemoteAction'; readonly folder: string; readonly action: GitRemoteAction; readonly remote?: string; /** The `confirmKey` of the question answered: one about another push is asked again. */ readonly confirmed?: string }
 	| { readonly type: 'refreshWorkdirGit'; readonly fetch?: 'auto' | 'force' }
+	/** The repository the Git footer works in: one of `WorkdirState.repos`, or the working folder. */
+	| { readonly type: 'selectGitRepo'; readonly path: string }
 	| { readonly type: 'listWorkdir' }
 	/** A file or folder of the working folder, by its path relative to it, attached to the message. */
 	| { readonly type: 'attachPath'; readonly path: string }

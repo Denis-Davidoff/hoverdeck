@@ -55,7 +55,9 @@ function panel(staged: string[], unstaged: string[], available = true, manual?: 
 		changeGitFiles: (kind: string, path?: string) => actions.push({ kind, path }),
 		gitMessage: Object.assign(new Node(), { value: manual ?? '' }), gitMessageBox: new Node(), gitManual: manual !== undefined,
 		setGitManual: (on: boolean) => actions.push({ kind: on ? 'manual' : 'agent' }),
+		gitRepoSummaries: [], branchState: undefined,
 	};
+	(context as Record<string, unknown>).renderCommitRepos = production('renderCommitRepos', Object.assign(context, { gitRepoHead: new Node(), gitOtherRepos: new Node(), repoSummary: () => undefined, repoLine: () => '' }));
 	production('renderGitChanges', context)();
 	return { context, actions, list, footer };
 }
@@ -124,6 +126,7 @@ test('the combined trigger remains accessible with staged files while the chat i
 		workdirLocation: new Node(), workdirSummary: new Node(), workdirFooter: new Node(), workdirPopup: new Node(),
 		commitNotice: new Node(), commitNoticeText: new Node(), commitFix: new Node(),
 		gitManualSent: undefined, gitManual: false, gitMessage: { value: '' },
+		syncGithubFolder() {}, renderRepoButton() {}, repoSwitching: false,
 	};
 	context.commitButton.disabled = true;
 	production('renderWorkdir', context)({

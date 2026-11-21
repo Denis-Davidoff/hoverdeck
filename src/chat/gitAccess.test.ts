@@ -72,3 +72,17 @@ test('queued work waits for a mutation to release instead of being dropped', asy
 	await queued;
 	assert.equal(started, true);
 });
+
+test('a nested repository and an agent in a folder containing it wait for each other', async () => {
+	// `/work` is not a repository; `/work/api` is one of its own (identity of its own).
+	const access = new GitAccess(async folder => folder);
+	await assert.rejects(access.mutate('/work/api', () => ['/work']), /Wait for agents/);
+	const release = await access.mutate('/work/api', () => ['/elsewhere']);
+	try {
+		await assert.rejects(access.launch('/work', () => true, () => assert.fail('agent started over a nested mutation')), /Git is updating/);
+		let sibling = false;
+		await access.launch('/work-two', () => true, () => { sibling = true; });
+		assert.equal(sibling, true, 'a folder that merely shares a prefix is not a container');
+	} finally { release(); }
+	await access.launch('/work', () => true, () => {});
+});

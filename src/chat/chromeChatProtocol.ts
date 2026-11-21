@@ -336,6 +336,7 @@ function readChromeFooterMessage(m: Record<string, unknown>): ViewToHost | undef
       return { type: m.type };
     case 'refreshWorkdirGit':
       return m.fetch === undefined || m.fetch === 'auto' || m.fetch === 'force' ? { type: m.type, ...(m.fetch ? { fetch: m.fetch } : {}) } : undefined;
+    case 'selectGitRepo': return text('path', 4096) ? { type: m.type, path: m.path as string } : undefined;
     case 'compact': return tab() ? { type: m.type, tabId: m.tabId as string } : undefined;
     case 'setWorkdir': return text('path', 4096, true) ? { type: m.type, path: m.path as string | undefined } : undefined;
     case 'attachPath': case 'removeRepoFolder': return text('path') ? { type: m.type, path: m.path as string } : undefined;

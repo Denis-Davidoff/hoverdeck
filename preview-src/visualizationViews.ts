@@ -19,6 +19,8 @@ interface View {
 	stopped?: boolean;
 	pauseReason?: string;
 	runtimeError?: string;
+	actions?: ArtifactActions;
+	copiedAt?: number;
 }
 
 const groups = new WeakMap<HTMLElement, Map<number, View>>();
@@ -44,6 +46,7 @@ export function updateVisualizationViews(container: HTMLElement, references: rea
 		}
 		if (view.ref.revision !== ref.revision) { view.runtimeError = undefined; }
 		view.ref = ref;
+		view.actions = actions;
 		view.title.textContent = ref.title;
 		view.frame.title = ref.title;
 		view.element.classList.toggle('visualization-wide', !!ref.wide);
@@ -111,6 +114,13 @@ function createView(ref: VisualizationReference): View {
 			if (message.type === 'resize' && Number.isFinite(message.height)) { frame.style.height = `${Math.max(120, Math.min(1200, message.height))}px`; }
 			else if (message.type === 'state') {
 				try { if (JSON.stringify(message.state).length <= 16_384) { view.state = message.state; } } catch { /* Ignore non-JSON widget state. */ }
+			} else if (message.type === 'copy' && typeof message.text === 'string' && message.text.length <= 1_000_000) {
+				// Written only while the frame holds the focus (the user is in it), at most every 300 ms:
+				// the request comes from model-written code, which must not fill the clipboard on its own.
+				const now = Date.now();
+				// The card's frame has the focus and the chat's window does too: a frame the user clicked
+				// once stays `activeElement` while they work in another editor, where its code must not write the clipboard.
+				if (document.activeElement === frame && document.hasFocus() && now - (view.copiedAt ?? 0) >= 300) { view.copiedAt = now; view.actions?.copy?.(message.text); }
 			} else if (message.type === 'error' && typeof message.message === 'string') { view.runtimeError = message.message.slice(0, 300); status.textContent = view.runtimeError ?? ''; }
 		};
 		channel.port1.start();

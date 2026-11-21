@@ -4,10 +4,15 @@ import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
+import { isInside } from './fileExplorer.ts';
 
 const source = readFileSync(resolve('src/chat/chatView.ts'), 'utf8');
 const method = /private async _commitWorkdir\([\s\S]*?\n\t\}/.exec(source)?.[0];
 assert.ok(method);
+// The module helper `_commitWorkdir` calls, lifted with the real `isInside` (#521).
+const overlapsSource = /function overlaps\([\s\S]*?\n/.exec(source)?.[0];
+assert.ok(overlapsSource);
+const realOverlaps = runInNewContext(transpileModule(`${overlapsSource}\noverlaps;`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, { isInside });
 const code = transpileModule(`({ ${method.replace('private ', '')} })`, {
 	compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
 }).outputText;
@@ -19,13 +24,14 @@ for (const failed of [false, true]) {
 		let released = false;
 		const tab = { id: 'tab', chat: { id: 'chat', agent: 'codex' }, busy: false, push(entry: { kind: string; text: string }) { entries.push(entry); } };
 		const host = {
-			_tabs: [tab], _active: tab, _disposed: false, _workdir: () => '/repo', _gitCommits: new Map(), _repoBusy: new Map(),
+			_tabs: [tab], _active: tab, _disposed: false, _workdir: () => '/repo', _gitDir: () => '/repo', _gitCommits: new Map(), _repoBusy: new Map(),
 			_runs: { runningIn: () => 0 }, _blocked: () => false, _busyGitFolders: () => [],
 			_gitAccess: { async mutate() { return () => { released = true; }; } },
 			_registry: { detecting: false, agents: [{ id: 'codex', available: true }], backend: (agent: string) => { assert.equal(agent, 'claude'); return { generateCommitMessage: async (model: string, effort: string) => { assert.equal(model, 'selected'); assert.equal(effort, 'low'); return 'Update footer'; } }; } },
 			_featureSelection: () => ({ agent: 'claude', model: { id: 'selected' }, effort: 'low' }), _untrusted: () => false, _post() {}, async _refreshWorkdirGit() {},
 		};
 		const commit = runInNewContext(code, {
+			overlaps: realOverlaps,
 			AbortController, generateUuid: () => 'job', gitBinary: async () => '/git',
 			async commitChanges(_run: unknown, generate: (context: string) => Promise<string>) {
 				assert.equal(await generate('changes'), 'Update footer');

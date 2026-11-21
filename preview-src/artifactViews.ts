@@ -9,6 +9,8 @@ export interface ArtifactActions {
 	externalLinkLabel?: string;
 	/** Allow or refuse showing a file outside the visualization directory; absent where only VS Code can decide. */
 	fileAccess?(path: string, allow: boolean): void;
+	/** Put text selected inside a visualization on the clipboard (Cmd/Ctrl+C there cannot reach the chat). */
+	copy?(text: string): void;
 }
 
 /**

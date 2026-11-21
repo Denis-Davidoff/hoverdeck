@@ -22,7 +22,7 @@ test('commit repair requires the current error action and sends diagnostics to t
 		};
 		const host = {
 			_tabs: [tab], _active: scenario === 'other-tab' ? {} : tab,
-			_gitCommits: new Map([['/repo', job]]), _workdir: () => '/repo', _post() {},
+			_gitCommits: new Map([['/repo', job]]), _workdir: () => '/repo', _gitDir: () => '/repo', _post() {},
 			async _send(prompt: string, tabId: string, attachments: unknown[]) { sent.push({ prompt, tabId, attachments }); },
 		};
 		await answer.call(host, {

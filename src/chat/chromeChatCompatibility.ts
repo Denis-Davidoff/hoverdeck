@@ -102,7 +102,7 @@ export const chromeChatFooterCommands = {
   context: ['compact'],
   skills: ['listCommands', 'runToolbarSkill', 'stopToolbarSkill', 'toolbarApprove', 'saveToolbarSkill', 'deleteToolbarSkill', 'moveToolbarSkill', 'placeToolbarSkill'],
   workdir: ['listWorkdir', 'setWorkdir', 'chooseWorkdir', 'attachPath', 'files'],
-  git: ['refreshWorkdirGit', 'gitCommit', 'gitIndexAction', 'openGitDiff', 'fixGitCommit', 'dismissGitCommit', 'gitBranchName', 'gitBranchAction', 'gitRemoteAction', 'restoreBranchStash', 'githubStatus', 'githubCreatePr'],
+  git: ['refreshWorkdirGit', 'selectGitRepo', 'gitCommit', 'gitIndexAction', 'openGitDiff', 'fixGitCommit', 'dismissGitCommit', 'gitBranchName', 'gitBranchAction', 'gitRemoteAction', 'restoreBranchStash', 'githubStatus', 'githubCreatePr'],
   github: ['openRepo', 'repoAction', 'trustWorkdir', 'removeRepoFolder'],
 } as const;
 export function chromeChatCommandFeature(message: Pick<ViewToHost, 'type'>): ChromeChatFeature {

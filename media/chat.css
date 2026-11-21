@@ -5466,7 +5466,7 @@ body.vscode-light .pending-badge,
 
 .git-commit-button { gap: 5px; }
 .git-staged-count, .git-unstaged-count { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 10px; }
-.git-staged-count { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); border-left: 1px solid var(--border-strong); padding-left: 5px; }
+.git-staged-count { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
 .git-unstaged-count { color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
 .git-changes-popup { width: min(400px, calc(100% - 16px)); max-height: min(560px, 70vh); font-size: 12px; }
 .git-changes-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; padding: 10px 12px 6px; }
@@ -5519,7 +5519,6 @@ body.vscode-light .pending-badge,
 .git-current-check { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
 .git-branch-select.current:disabled { opacity: 1; font-weight: 600; background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #73c991) 13%, transparent); }
 
-.git-refresh-slot { display: inline-flex; flex: none; margin-right: 5px; }
 
 .git-branch-search-row { display: flex; align-items: center; gap: 4px; padding-right: 6px; }
 .git-branch-search-row .palette-search-field { flex: 1; min-width: 0; }
@@ -6336,6 +6335,7 @@ textarea.form-input {
 }
 
 /* Git footer buttons. */
+.git-repo-button,
 .git-branch-button,
 .git-commit-button {
 	box-sizing: border-box;
@@ -9425,3 +9425,144 @@ details[open] > summary.json-line > .codicon-chevron-right { transform: rotate(9
 .favorites-input { min-width: 0; box-sizing: border-box; padding: 4px 8px; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent)); border-radius: 4px; }
 .favorites-input:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
 .favorites-item.editing .logins-item-text .favorites-input { width: 100%; }
+
+/* Several repositories in the working folder: the footer's picker, the Branches window's
+   chips, the Commit window's other repositories and the GitHub tab's picker. */
+.git-repo-button { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 140px; font-size: 11px; padding: 4px; }
+.git-repo-button .git-repo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-repo-button.own .git-repo-others { border-left: 0; padding-left: 0; }
+.git-repo-button.unchosen { color: var(--vscode-editorWarning-foreground, #cca700); }
+.git-repo-others { flex: none; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); border-left: 1px solid var(--border-strong); padding-left: 4px; }
+.git-repo-chips { display: flex; gap: 5px; padding: 6px 6px 2px; overflow-x: auto; scrollbar-width: thin; }
+.git-repo-chip { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 76px; max-width: 160px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); color: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+.git-repo-chip:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent); }
+.git-repo-chip.on { border-color: var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent); }
+.git-repo-chip-name { display: flex; align-items: center; gap: 5px; max-width: 100%; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-repo-chip-line { display: flex; gap: 5px; max-width: 100%; font-size: 10.5px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; }
+.git-repo-chip-branch { overflow: hidden; text-overflow: ellipsis; }
+.git-repo-chip-counts { flex: none; color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
+.git-repo-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb, var(--vscode-foreground) 25%, transparent); }
+.git-repo-dot.dirty { background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); }
+.git-repo-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px 0; font-size: 12px; }
+.git-repo-head-branch { color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-other-repos { border-top: 1px solid var(--border-strong); margin-top: 6px; padding-top: 2px; }
+.git-other-repo { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; border: none; border-radius: 5px; background: none; color: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.git-other-repo:hover { background: var(--vscode-list-hoverBackground); }
+.git-other-repo.clean { opacity: .6; }
+.git-other-line { flex: 1; min-width: 0; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-other-open { flex: none; font-size: 11px; color: var(--vscode-textLink-foreground); }
+.composer-list .gh-repo-pick { display: inline-flex; align-items: center; gap: 4px; max-width: 45%; padding: 2px 6px; font-size: 11px; text-transform: none; letter-spacing: normal; }
+.composer-list .gh-repo-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-list .gh-repo-pick.pinned { color: var(--vscode-charts-yellow, #cca700); }
+
+/* The Git window: a tab per repository on top, Branches on the left, Changes on the right.
+   The two panes are the former Branches and Commit windows, kept whole. */
+.git-window {
+	width: min(880px, calc(100% - 16px));
+	height: min(560px, 74vh);
+	padding: 0;
+	overflow: hidden;
+	font-size: 12px;
+	container-type: inline-size;
+	z-index: var(--ds-z-palette);
+}
+.git-window.open { display: flex; flex-direction: column; }
+.git-window-head {
+	display: flex; align-items: stretch; gap: 6px; flex: none;
+	min-height: 40px; padding: 0 6px 0 4px;
+	border-bottom: 1px solid var(--border-strong);
+	background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.git-window-title { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 8px; font-size: 13px; }
+.git-window-title[hidden] { display: none; }
+.git-window-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-window-title-branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-window-close { flex: none; align-self: center; margin-left: auto; }
+
+/* Repository tabs */
+.git-window-head .git-repo-chips { flex: 1 1 auto; min-width: 0; align-items: stretch; gap: 0; padding: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.git-window-head .git-repo-chips::-webkit-scrollbar { display: none; }
+.git-window-head .git-repo-chip {
+	position: relative; justify-content: center; gap: 1px;
+	min-width: 92px; max-width: 200px; padding: 5px 14px 6px;
+	border: 0; border-radius: 0; background: transparent;
+	color: var(--fg-3, var(--vscode-descriptionForeground));
+	transition: background .12s, color .12s;
+}
+.git-window-head .git-repo-chip + .git-repo-chip::before {
+	content: ''; position: absolute; left: 0; top: 10px; bottom: 10px;
+	border-left: 1px solid var(--border-strong);
+}
+.git-window-head .git-repo-chip:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.git-window-head .git-repo-chip.on { color: var(--fg); background: var(--ds-surface-raised); }
+.git-window-head .git-repo-chip.on::after {
+	content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px;
+	border-radius: 2px; background: var(--vscode-focusBorder, var(--accent));
+}
+.git-window-head .git-repo-chip.on + .git-repo-chip::before, .git-window-head .git-repo-chip.on::before { display: none; }
+.git-window-head .git-repo-chip:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -2px; }
+.git-window-head .git-repo-chip-name { font-size: 12px; }
+.git-window-head .git-repo-chip-line { font-size: 10.5px; }
+
+/* The two panes */
+.git-window-body { display: grid; grid-template-columns: minmax(230px, 40%) minmax(0, 1fr); flex: 1 1 auto; min-height: 0; }
+.git-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.git-window .git-branch-popup { width: auto; max-height: none; border-right: 1px solid var(--border-strong); background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.git-window .git-changes-popup { width: auto; max-height: none; }
+.git-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: none; padding: 10px 12px 4px; }
+.git-pane-head strong { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3, var(--vscode-descriptionForeground)); }
+.git-pane-head strong .codicon { font-size: 13px; }
+.git-window .git-branch-search-row { display: flex; align-items: center; gap: 2px; padding: 0 6px 0 0; }
+.git-window .git-branch-search-row .palette-search-field { flex: 1; }
+.git-window .git-branch-list { flex: 1 1 auto; }
+.git-window .git-changes-list { flex: 1 1 auto; }
+.git-window .git-changes-actions { max-height: 45%; background: color-mix(in srgb, var(--fg) 2%, transparent); }
+
+/* Stacked panes need more height than side by side: take all the room above the footer
+   (constrainOverlay caps it at the space there). The width rule matches the container query below:
+   the window is 16px narrower than the view, so it stacks at a 576px view. A container query cannot
+   size the container itself, hence the media query. */
+@media (max-width: 576px) {
+	.git-window { height: 100vh; }
+}
+/* A narrow side bar: the panes stack, branches above changes. */
+@container (max-width: 560px) {
+	.git-window-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(150px, 42%) minmax(0, 1fr); }
+	.git-window .git-branch-popup { border-right: 0; border-bottom: 1px solid var(--border-strong); }
+	.git-window-head .git-repo-chip { min-width: 76px; padding: 5px 10px 6px; }
+}
+
+/* The footer: repository, branch and changes read as one control that opens the window. */
+.git-status:has(> .git-branch-button:not([hidden])) {
+	gap: 0; padding: 1px;
+	border: 1px solid var(--border-strong); border-radius: 7px;
+	background: color-mix(in srgb, var(--fg) 3%, transparent);
+	transition: border-color .12s, background .12s;
+}
+/* One hover for the three segments: they open one window, so they light up together. */
+.git-status:has(> .git-repo-button:hover, > .git-branch-button:hover, > .git-commit-button:hover) {
+	border-color: color-mix(in srgb, var(--fg) 30%, transparent);
+	background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--fg) 8%, transparent));
+}
+.git-status > .git-repo-button, .git-status > .git-branch-button, .git-status > .git-commit-button { border-radius: 5px; }
+.git-status > .git-repo-button:hover, .git-status > .git-branch-button:hover, .git-status > .git-commit-button:hover,
+.git-status > .git-repo-button:active, .git-status > .git-branch-button:active, .git-status > .git-commit-button:active { background: transparent; }
+.git-status > .git-repo-button:not([hidden]) + .git-branch-button,
+.git-status > .git-branch-button + .git-commit-button { position: relative; }
+.git-status > .git-repo-button:not([hidden]) + .git-branch-button::before,
+.git-status > .git-branch-button + .git-commit-button::before {
+	content: ''; position: absolute; left: -1px; top: 5px; bottom: 5px;
+	border-left: 1px solid var(--border-strong);
+}
+.git-status > .git-branch-button > .codicon-chevron-down,
+.git-status > .git-repo-button > .codicon-chevron-down { display: none; }
+.git-status > .active { background: transparent; }
+.git-status:has(> .active) { background: color-mix(in srgb, var(--vscode-focusBorder, var(--accent)) 16%, transparent); }
+.git-window-head .git-repo-chip-label { overflow: hidden; text-overflow: ellipsis; }
+.git-repo-chip-kind { flex: none; font-size: 11px; opacity: .7; }
+.git-branch-create[hidden], .git-branch-sync-button[hidden] { display: none; }
+.git-repo-button[hidden] { display: none; }
+/* In a narrow side bar the branch keeps a readable width; the repository name gives way first. */
+.git-status > .git-branch-button { min-width: 72px; flex: 0 1 auto; }
+.git-status > .git-repo-button { flex: 0 3 auto; min-width: 28px; }
+.git-repo-chips[hidden] { display: none; }

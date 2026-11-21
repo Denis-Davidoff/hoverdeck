@@ -142,7 +142,7 @@ export const COMMANDS = {
 	listWorkdir: both('workdir'), setWorkdir: { feature: 'workdir', chrome: 'host', exchange: 'mixed' },
 	// The website asks for the path in a dialog of its own and sends `setWorkdir`.
 	chooseWorkdir: { feature: 'workdir', chrome: 'host', exchange: { local: 'Enter the folder path in the website instead of opening a local folder dialog.' } }, attachPath: both('workdir'),
-	refreshWorkdirGit: both('git'), gitCommit: both('git'), gitIndexAction: both('git'), openGitDiff: both('git'),
+	refreshWorkdirGit: both('git'), selectGitRepo: both('git'), gitCommit: both('git'), gitIndexAction: both('git'), openGitDiff: both('git'),
 	fixGitCommit: both('git'), dismissGitCommit: both('git'), gitBranchName: both('git'), gitBranchAction: both('git'),
 	gitRemoteAction: both('git'), restoreBranchStash: both('git'),
 	// Bound by the host to the conversation's own working folder.

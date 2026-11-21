@@ -32,6 +32,11 @@ One deck for all your AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Pi an
 - $(location) **Page markers** — pin notes to page elements and send them to the agent as one prompt.
 - $(settings-gear) **Chat Settings** — use the gear at the top to edit prompts for commit messages, branch names and chat titles, or clean up temporary files.
 
+## 1.0.5 — 2026-11-21
+
+- **Several repositories** — a project folder holding nested repositories gets one Git window: a tab per repository, branches on the left, changes and commits on the right, opened by hovering the footer.
+- **Copy in visualizations** — Cmd+C (Ctrl+C) copies what you select inside a chat visualization.
+
 ## 1.0.2 — 2026-11-21
 
 - The empty chat now opens with the HoverDeck icon instead of a globe.

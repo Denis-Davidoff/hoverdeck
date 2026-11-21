@@ -84,7 +84,7 @@ try {
 
 import type {
 	ChatAgent,
-	AgentId, AllAgentsChat, AgentQuestion, AgentUsage, ApprovalEntry, UsageAlert, ToolbarParam, ToolbarResult, ToolbarRun, ToolbarSkill, ApprovalKind, ApprovalMode, AttachmentChip, AttachmentKind, PastedAttachment, ChatCommand, ChatEntry, ChatStats, ChatSummary, ChatTabStatus, ChatTabSummary, ChatViewMode, ChatViewState, HostToView, RepoMode, ToolEntry, ViewToHost, VoiceEvent, WorkdirFolder, GitBranchState, GitRemoteAction, WorkdirGitStatus,
+	AgentId, AllAgentsChat, AgentQuestion, AgentUsage, ApprovalEntry, UsageAlert, ToolbarParam, ToolbarResult, ToolbarRun, ToolbarSkill, ApprovalKind, ApprovalMode, AttachmentChip, AttachmentKind, PastedAttachment, ChatCommand, ChatEntry, ChatStats, ChatSummary, ChatTabStatus, ChatTabSummary, ChatViewMode, ChatViewState, HostToView, RepoMode, ToolEntry, ViewToHost, VoiceEvent, WorkdirFolder, GitBranchState, GitRemoteAction, WorkdirGitStatus, GitRepoSummary, WorkdirRepo,
 } from '../src/chat/chatProtocol';
 import type { ChatSound, ChatSoundSettings, PendingSend, SecurityGuardId, McpFeatureId, ToolbarRoute, TerminalTabSummary } from '../src/chat/chatProtocol';
 import { executionBound, type RoutedStep } from '../src/chat/workflowGraph';
@@ -579,10 +579,6 @@ const workdirLocation = el('span', { class: 'workdir-location' }, workdirLocatio
 const workdirSummary = button([workdirMode, workdirLocation], { class: 'workdir-summary', title: 'Working folder' });
 const gitChanged = el('span', { class: 'git-changed' }, '+0');
 const gitDeleted = el('span', { class: 'git-deleted' }, '−0');
-const gitRefresh = button([icon('refresh')], { class: 'ghost round', title: 'Fetch remote changes and refresh Git status' });
-gitRefresh.setAttribute('aria-label', 'Fetch remote changes and refresh Git status');
-const gitRefreshSlot = el('span', { class: 'git-refresh-slot' }, gitRefresh);
-gitRefreshSlot.dataset.tip = 'Fetch remote changes and refresh Git status';
 const branchName = el('span', { class: 'git-branch-name' }, '…');
 const branchAhead = el('span', { class: 'git-branch-ahead' });
 const branchBehind = el('span', { class: 'git-branch-behind' });
@@ -593,22 +589,82 @@ branchButton.setAttribute('aria-expanded', 'false');
 const commitIcon = icon('git-commit');
 const gitStagedCount = el('span', { class: 'git-staged-count', title: 'Staged files' });
 const gitUnstagedCount = el('span', { class: 'git-unstaged-count', title: 'Unstaged files' });
-const commitButton = button([commitIcon, 'Commit', gitStagedCount, gitUnstagedCount, icon('chevron-down')], { class: 'ghost git-commit-button', title: 'Git changes and commit' });
+const commitButton = button([commitIcon, gitStagedCount, gitUnstagedCount, icon('chevron-down')], { class: 'ghost git-commit-button', title: 'Git changes and commit' });
 commitButton.setAttribute('aria-haspopup', 'dialog');
 commitButton.setAttribute('aria-expanded', 'false');
-const gitStatus = el('div', { class: 'git-status' }, branchButton, commitButton, gitRefreshSlot);
+/**
+ * The repository picker: shown only when the working folder holds more than one
+ * repository, or is not one itself (`WorkdirState.repos`). Branch, Commit and
+ * GitHub then work in the one picked; the others are summed up in a line each.
+ */
+const repoName = el('span', { class: 'git-repo-name' });
+const repoOthers = el('span', { class: 'git-repo-others' });
+const repoButton = button([icon('repo'), repoName, repoOthers, icon('chevron-down')], { class: 'ghost git-repo-button', title: 'Choose the repository' });
+repoButton.hidden = true;
+let gitRepoSummaries: readonly GitRepoSummary[] = [];
+/** The pick came from inside a Git window, which stays open while the folder changes under it. */
+let repoSwitching = false;
+function selectGitRepo(target: string): void {
+	if (target === gitFolder) { return; }
+	repoSwitching = true;
+	post({ type: 'selectGitRepo', path: target });
+}
+/** The working folder's own repository has the name `''`: it is shown by the folder's name. */
+function repoLabel(repo: WorkdirRepo): string {
+	return repo.name || state?.workdir.current?.name || repo.path.split(/[\\/]/).filter(Boolean).pop() || '.';
+}
+function repoSummary(target: string): GitRepoSummary | undefined { return gitRepoSummaries.find(r => r.path === target); }
+function repoLine(repo: WorkdirRepo): string {
+	const sum = repoSummary(repo.path);
+	if (!sum) { return repo.kind === 'root' ? 'working folder' : repo.kind; }
+	if (sum.error) { return 'could not be read'; }
+	const parts = [sum.detached ? 'detached HEAD' : sum.branch ?? '…'];
+	if (sum.ahead) { parts.push(`↑${sum.ahead}`); }
+	if (sum.behind) { parts.push(`↓${sum.behind}`); }
+	if (sum.changes) { parts.push(`${sum.changes} changed`); }
+	if (repo.kind === 'submodule' || repo.kind === 'worktree') { parts.push(repo.kind); }
+	return parts.join(' · ');
+}
+function repoMenuItems(current: string | undefined, pick: (target: string) => void): MenuItem[] {
+	return (state?.workdir.repos ?? []).map(repo => ({
+		icon: repo.kind === 'submodule' ? 'file-submodule' : 'repo',
+		label: repoLabel(repo), description: repoLine(repo), checked: repo.path === current, run: () => pick(repo.path),
+	}));
+}
+repoButton.addEventListener('click', () => toggleGitWindow('repos'));
+function renderRepoButton(): void {
+	const repos = state?.workdir.repos;
+	repoButton.hidden = !repos;
+	if (!repos) { return; }
+	const current = repos.find(r => r.path === gitFolder);
+	repoName.textContent = current ? repoLabel(current) : 'Choose a repository';
+	// The working folder's own repository is already named by the folder beside it (asked for):
+	// the segment keeps its icon and the count of other repositories with changes, not the name.
+	const own = !!current && (current.kind === 'root' || current.path === state?.workdir.current?.path);
+	repoName.hidden = own;
+	repoButton.classList.toggle('own', own);
+	repoButton.classList.toggle('unchosen', !current);
+	const others = gitRepoSummaries.filter(r => r.path !== gitFolder && r.changes > 0).length;
+	repoOthers.textContent = others ? String(others) : '';
+	repoOthers.hidden = !others;
+	// Nothing to say about the folder's own repository with no other one changed: the segment goes,
+	// and the Git window's repository tabs still pick another.
+	if (own && !others) { repoButton.hidden = true; }
+	repoButton.title = `${current ? `Repository: ${repoLabel(current)}` : 'The working folder is not a repository: choose one'} — ${repos.length} in this folder${others ? `, ${others} other${others === 1 ? ' has' : 's have'} changes` : ''}`;
+	repoButton.setAttribute('aria-label', repoButton.title);
+	renderRepoChips();
+}
+const gitStatus = el('div', { class: 'git-status' }, repoButton, branchButton, commitButton);
 gitStatus.hidden = true;
 let gitFolder: string | undefined;
 let gitPending = false;
 function refreshGitStatus(fetch: 'auto' | 'force' = 'auto'): void {
  if (!gitFolder || gitPending) { return; }
  gitPending = true;
- gitRefresh.disabled = true;
  gitPopupRefresh.disabled = true;
  branchRefresh.disabled = true;
  post({ type: 'refreshWorkdirGit', fetch });
 }
-gitRefresh.addEventListener('click', () => refreshGitStatus('force'));
 gitStatus.addEventListener('mouseenter', () => refreshGitStatus());
 commitButton.addEventListener('focus', () => refreshGitStatus());
 setInterval(() => { if (!document.hidden) { refreshGitStatus(); } }, 15_000);
@@ -1934,13 +1990,43 @@ setInterval(() => {
 	if (composerTab !== 'github' || document.hidden || githubPending) { return; }
 	if (Date.now() - githubAt >= githubAutoMs) { requestGithub(true); }
 }, 5_000);
+/**
+ * The GitHub tab follows the repository the Git footer works in, unless one is
+ * pinned in its own menu (asked for: watch one repository's runs while working
+ * in another). A pin no longer among the folder's repositories is dropped.
+ */
+let githubPin: string | undefined;
+let githubShownFolder: string | undefined;
+function ghFolder(): string | undefined {
+	return githubPin && state?.workdir.repos?.some(r => r.path === githubPin) ? githubPin : gitFolder;
+}
+/** Starts the tab over when the repository it shows changed: a pick, a pin, another working folder. */
+function syncGithubFolder(): void {
+	const folder = ghFolder();
+	if (folder === githubShownFolder) { return; }
+	githubShownFolder = folder;
+	githubAnswer = undefined;
+	githubPending = false;
+	githubBranchShape = '';
+	githubAgain = false;
+	githubForgetRefresh();
+	composerGithubShape = '';
+	if (composerTab === 'github') { requestGithub(); }
+}
+function setGithubPin(target: string | undefined): void {
+	githubPin = target;
+	syncGithubFolder();
+	composerGithubShape = '';
+	renderComposerGithub();
+}
 function requestGithub(force = false, signIn = false, refresh = false): void {
-	if (!gitFolder || (githubPending && !signIn)) { renderComposerGithub(); return; }
+	const folder = ghFolder();
+	if (!folder || (githubPending && !signIn)) { renderComposerGithub(); return; }
 	if (!force && !signIn && githubAnswer && Date.now() - githubAt < 30_000) { renderComposerGithub(); return; }
 	githubPending = true;
 	githubAskedAt = Date.now();
 	if (refresh) { githubRefreshOwed = false; }
-	post({ type: 'githubStatus', folder: gitFolder, ...(signIn ? { signIn } : {}), ...(refresh ? { refresh } : {}) });
+	post({ type: 'githubStatus', folder, ...(signIn ? { signIn } : {}), ...(refresh ? { refresh } : {}) });
 	renderComposerGithub();
 }
 /**
@@ -1953,7 +2039,7 @@ const githubRefreshMs = 10_000;
 let githubRefreshOwed = false;
 let githubRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function githubManualRefresh(): void {
-	if (!gitFolder) { return; }
+	if (!ghFolder()) { return; }
 	githubRefreshOwed = true;
 	if (githubPending) { renderComposerGithub(); return; }
 	const wait = githubAskedAt + githubRefreshMs - Date.now();
@@ -1983,7 +2069,7 @@ let githubPrOpen = false;
 let githubPrWanted: string | undefined;
 /** Folders whose pull request is being opened: per folder, so switching folders mid-create neither drops the answer nor locks the form. */
 const githubPrCreatingIn = new Set<string>();
-const githubPrCreatingHere = (): boolean => !!gitFolder && githubPrCreatingIn.has(gitFolder);
+const githubPrCreatingHere = (): boolean => { const folder = ghFolder(); return !!folder && githubPrCreatingIn.has(folder); };
 let githubPrError = '';
 /** The pull request whose merge question is open under its row, and the folder it belongs to. */
 let githubMergeAsk: { folder: string; number: number } | undefined;
@@ -2026,11 +2112,12 @@ const githubPrForm = el('div', { class: 'gh-pr-form' },
 	el('div', { class: 'gh-pr-actions' }, el('label', { class: 'gh-pr-draft' }, githubPrDraft, el('span', { text: 'Draft' })), el('span', { class: 'cl-spacer' }), githubPrCancel, githubPrSubmit));
 function submitGithubPr(): void {
 	const title = githubPrTitle.value.trim();
-	if (!gitFolder || githubPrCreatingHere()) { return; }
+	const folder = ghFolder();
+	if (!folder || githubPrCreatingHere()) { return; }
 	if (!title) { githubPrError = 'Give the pull request a title.'; composerGithubShape = ''; renderComposerGithub(); githubPrTitle.focus(); return; }
-	githubPrCreatingIn.add(gitFolder);
+	githubPrCreatingIn.add(folder);
 	githubPrError = '';
-	post({ type: 'githubCreatePr', folder: gitFolder, title, ...(githubPrDraft.checked ? { draft: true } : {}) });
+	post({ type: 'githubCreatePr', folder, title, ...(githubPrDraft.checked ? { draft: true } : {}) });
 	composerGithubShape = '';
 	renderComposerGithub();
 }
@@ -2062,7 +2149,7 @@ function renderComposerGithub(): void {
 }
 function renderComposerGithubList(): void {
 	if (composerTab !== 'github') { return; }
-	const shape = JSON.stringify([gitFolder ?? '', githubPending, githubRefreshOwed, githubAnswer ?? null, githubPrOpen, githubPrCreatingHere(), githubPrError, githubPrCreated ?? null, [...githubWatched], githubMergeAsk ?? null, gitFolder ? githubMergingIn.get(gitFolder) ?? 0 : 0, githubMergeError ?? null]);
+	const shape = JSON.stringify([ghFolder() ?? '', githubPending, githubRefreshOwed, githubAnswer ?? null, githubPrOpen, githubPrCreatingHere(), githubPrError, githubPrCreated ?? null, [...githubWatched], githubMergeAsk ?? null, githubMergingIn.get(ghFolder() ?? '') ?? 0, githubMergeError ?? null]);
 	if (shape === composerGithubShape) { return; }
 	if (githubPressed) { githubStale = true; return; }
 	composerGithubShape = shape;
@@ -2088,8 +2175,19 @@ function renderComposerGithubList(): void {
 		repoLink.addEventListener('click', () => post({ type: 'openLink', url, external: true }));
 		head.querySelector('.cl-head-title')?.replaceWith(repoLink);
 	}
+	const repos = state?.workdir.repos;
+	if (repos) {
+		const shown = repos.find(r => r.path === ghFolder());
+		const pinned = !!githubPin && shown?.path === githubPin;
+		const pick = button([icon(pinned ? 'pinned' : 'repo'), el('span', {}, shown ? repoLabel(shown) : 'Choose a repository'), icon('chevron-down')], { class: `ghost gh-repo-pick${pinned ? ' pinned' : ''}`, title: pinned ? `Pinned to ${shown ? repoLabel(shown) : ''}; the Git footer may work elsewhere` : 'Follows the repository the Git footer works in' });
+		pick.addEventListener('click', () => openMenu(pick, [
+			{ icon: 'sync', label: 'Follow the current repository', description: ((r?: WorkdirRepo) => r && repoLabel(r))(repos.find(r => r.path === gitFolder)), checked: !githubPin, run: () => setGithubPin(undefined) },
+			...repoMenuItems(githubPin, target => setGithubPin(target)).map((item, i) => ({ ...item, ...(i === 0 ? { separator: true } : {}), description: `${item.description ?? ''} · pin` })),
+		], 'GitHub repository'));
+		head.insertBefore(pick, refresh);
+	}
 	composerGithubList.append(head);
-	if (!gitFolder) { composerGithubList.append(clEmpty('folder', 'This chat has no working folder.')); return; }
+	if (!ghFolder()) { composerGithubList.append(clEmpty('folder', 'This chat has no working folder.')); return; }
 	if (!githubAnswer) {
 		composerGithubList.append(el('div', { class: 'cl-empty', title: 'Loading pull requests and runs' }, codiconSpinner('cl-empty-icon')));
 		return;
@@ -2106,7 +2204,7 @@ function renderComposerGithubList(): void {
 	// Arrived from the Branches window's Create PR, and the fresh answer is in: open the form
 	// filled in, so one click on Create is left; a pull request that exists is brought into view.
 	let focusAfter: HTMLElement | undefined;
-	const wanted = !githubPending && githubPrWanted !== undefined && githubPrWanted === gitFolder;
+	const wanted = !githubPending && githubPrWanted !== undefined && githubPrWanted === ghFolder();
 	if (wanted) {
 		githubPrWanted = undefined;
 		if (canOfferPullRequest(status) && status.branch && status.published !== false && !githubPrCreatingHere()) {
@@ -2121,7 +2219,7 @@ function renderComposerGithubList(): void {
 	// request). Once the list carries it, its row gets a "just opened" chip; until then, a small
 	// log line under the heading says so, with a link.
 	const stale = githubPrCreated;
-	if (stale && (stale.folder !== gitFolder || stale.branch !== status.branch
+	if (stale && (stale.folder !== ghFolder() || stale.branch !== status.branch
 		|| (!githubPending && Date.now() - stale.at > githubPrCreatedMs && !status.prs.some(pr => pr.number === stale.number)))) {
 		githubPrCreated = undefined;
 	}
@@ -2158,7 +2256,10 @@ function renderComposerGithubList(): void {
 			// opens the Branches window, where Publish is; the push refreshes this tab.
 			offer.addEventListener('click', () => {
 				if (unpublished) {
-					if (!branchPopup.classList.contains('open')) { branchButton.click(); }
+					// Publish is in the Git window, over the repository this tab shows.
+					const target = ghFolder();
+					if (!branchPopup.classList.contains('open')) { openGitWindow('branches'); }
+					if (target && target !== gitFolder) { selectGitRepo(target); }
 					return;
 				}
 				githubPrOpen = true;
@@ -2209,7 +2310,7 @@ function renderComposerGithubList(): void {
 		// sits inside the row, left of the open-in-browser icon, laid over a slot the row keeps for
 		// it — the bell's shape on an Actions run, since a button cannot hold a button.
 		const methods = status.mergeMethods ?? [];
-		const folder = gitFolder;
+		const folder = ghFolder();
 		const merging = !!folder && githubMergingIn.get(folder) === pr.number;
 		const mergeable = !!folder && !!pr.mergeReady && !pr.conflict && methods.length > 0 && gate('githubMergePr').s === 'on';
 		const trail = el('span', { class: 'gh-run-trail' }, ...(mergeable ? [el('span', { class: 'gh-merge-slot' })] : []), icon('link-external', 'cl-chevron'));
@@ -2249,11 +2350,12 @@ function renderComposerGithubList(): void {
 					const b = button([githubMergeLabels[method]], { class: `gh-merge-method${i === 0 ? ' primary' : ''}` });
 					b.disabled = merging;
 					b.addEventListener('click', () => {
-						if (!gitFolder || githubMergingIn.has(gitFolder)) { return; }
+						const folder = ghFolder();
+						if (!folder || githubMergingIn.has(folder)) { return; }
 						localStorage.setItem(githubMergeMethodKey, method);
-						githubMergingIn.set(gitFolder, pr.number);
+						githubMergingIn.set(folder, pr.number);
 						githubMergeError = undefined;
-						post({ type: 'githubMergePr', folder: gitFolder, number: pr.number, method });
+						post({ type: 'githubMergePr', folder, number: pr.number, method });
 						composerGithubShape = '';
 						renderComposerGithub();
 					});
@@ -2330,7 +2432,7 @@ function renderComposerGithubList(): void {
 			if (local || workflowUrl) {
 				link.addEventListener('click', event => {
 					event.stopPropagation();
-					if (local && gitFolder) { post({ type: 'openWorkflowFile', folder: gitFolder, path: workflowFile }); }
+					if (local && ghFolder()) { post({ type: 'openWorkflowFile', folder: ghFolder()!, path: workflowFile }); }
 					else if (workflowUrl) { open(workflowUrl)(); }
 				});
 			}
@@ -2343,14 +2445,14 @@ function renderComposerGithubList(): void {
 		// for it and the bell is laid over that slot, since a button cannot hold a button.
 		const key = runWatchKey(status.repo, run.id);
 		const watched = githubWatched.has(key);
-		const bellable = (runInFlight(run.state) || watched) && !!gitFolder && gate('githubWatchRun').s === 'on';
+		const bellable = (runInFlight(run.state) || watched) && !!ghFolder() && gate('githubWatchRun').s === 'on';
 		const trail = el('span', { class: 'gh-run-trail' }, ...(bellable ? [el('span', { class: 'gh-watch-slot' })] : []), icon('link-external', 'cl-chevron'));
 		const focused = githubFocusRun?.key === key && githubFocusRun.until > Date.now();
 		const row = button(clRow(lead, run.title || run.name, meta, trail), { class: `cl-row gh-run-row${own ? ' own' : ''}${run.current ? ' current' : ''}${focused ? ' picked' : ''}`, title: `${run.state} · ${run.event}${workflowFile ? `\n${workflowFile}` : ''}\n${run.url}` });
 		row.dataset.runKey = key;
 		row.addEventListener('click', open(run.url));
-		if (bellable && gitFolder) {
-			const folder = gitFolder;
+		if (bellable && ghFolder()) {
+			const folder = ghFolder()!;
 			const tip = watched ? 'Watching this run — a sound and a system notification when it ends. Click to stop.' : 'Notify me when this run ends';
 			const bell = button([icon(watched ? 'bell-dot' : 'bell')], { class: `gh-watch${watched ? ' on' : ''}${githubBellRang === key ? ' rang' : ''}` });
 			bell.dataset.tip = tip;
@@ -3038,16 +3140,16 @@ const approvalPopup = el('div', { class: 'popup approval-popup' });
 const palette = el('div', { class: 'popup palette' });
 /** The folder button's list: folders to work in, then the files of the one in use. */
 const workdirPopup = el('div', { class: 'popup palette workdir-popup' });
-const gitPopup = el('div', { class: 'popup palette git-changes-popup' });
+const gitPopup = el('div', { class: 'git-pane git-changes-popup' });
 gitPopup.id = 'git-changes-popup';
-gitPopup.setAttribute('role', 'dialog');
-gitPopup.setAttribute('aria-label', 'Git changes and commit');
+gitPopup.setAttribute('role', 'region');
+gitPopup.setAttribute('aria-label', 'Changes and commit');
 commitButton.setAttribute('aria-controls', gitPopup.id);
 const gitPopupRefresh = button([icon('refresh')], { class: 'ghost round', title: 'Refresh Git changes' });
 gitPopupRefresh.setAttribute('aria-label', 'Refresh Git changes');
 gitPopupRefresh.disabled = gitPending;
-gitPopupRefresh.addEventListener('click', () => { gitPopupPinned = true; refreshGitStatus('force'); });
-const gitPopupHeader = el('div', { class: 'git-changes-heading' }, el('strong', {}, 'Git changes'),
+gitPopupRefresh.addEventListener('click', () => refreshGitStatus('force'));
+const gitPopupHeader = el('div', { class: 'git-changes-heading git-pane-head' }, el('strong', {}, icon('git-commit'), 'Changes'),
  el('div', { class: 'git-changes-heading-tools' }, el('span', { class: 'git-change-totals' }, gitChanged, gitDeleted), gitPopupRefresh));
 const gitPopupError = el('div', { class: 'git-branch-error' });
 gitPopupError.setAttribute('role', 'status');
@@ -3067,6 +3169,33 @@ gitMessage.setAttribute('aria-label', 'Commit message — the first line is the 
 const gitMessageHint = el('div', { class: 'git-commit-message-hint' }, el('span', {}, 'First line is the subject'), el('kbd', {}, /Mac/.test(navigator.platform) ? '⌘↵' : 'Ctrl+↵'));
 const gitMessageBox = el('div', { class: 'git-commit-message-box' }, gitMessage, gitMessageHint);
 gitMessageBox.hidden = true;
+/** With several repositories: which one this window commits in, and the others with changes below. */
+const gitRepoHead = el('div', { class: 'git-repo-head' });
+gitRepoHead.hidden = true;
+const gitOtherRepos = el('div', { class: 'git-other-repos' });
+gitOtherRepos.hidden = true;
+function renderCommitRepos(): void {
+	const repos = state?.workdir.repos;
+	const current = repos?.find(r => r.path === gitFolder);
+	gitRepoHead.hidden = !current;
+	gitRepoHead.replaceChildren(...(current ? [icon(current.kind === 'submodule' ? 'file-submodule' : 'repo'), el('strong', {}, repoLabel(current)), el('span', { class: 'git-repo-head-branch' }, branchState?.current || 'detached HEAD')] : []));
+	const others = (repos ?? []).filter(r => r.path !== gitFolder);
+	gitOtherRepos.hidden = !others.length;
+	if (!others.length) { gitOtherRepos.replaceChildren(); return; }
+	const dirty = others.filter(r => (repoSummary(r.path)?.changes ?? 0) > 0);
+	const clean = others.filter(r => !dirty.includes(r));
+	gitOtherRepos.replaceChildren(
+		el('div', { class: 'git-changes-group' }, el('strong', {}, `Other repositories (${others.length})`)),
+		...[...dirty, ...clean].map(repo => {
+			const sum = repoSummary(repo.path);
+			const row = button([el('span', { class: `git-repo-dot${sum?.changes ? ' dirty' : ''}` }), el('strong', {}, repoLabel(repo)), el('span', { class: 'git-other-line' }, repoLine(repo)), el('span', { class: 'git-other-open' }, sum?.changes ? 'Commit here' : 'Open')],
+				{ class: `git-other-repo${sum?.changes ? '' : ' clean'}`, title: `Work in ${repoLabel(repo)}` });
+			row.addEventListener('click', () => selectGitRepo(repo.path));
+			return row;
+		}));
+}
+// With several repositories the window's tabs name the one in use and mark the others with changes,
+// so `gitRepoHead` and `gitOtherRepos` are kept for the sandbox tests but not shown.
 gitPopup.append(gitPopupHeader, gitPopupError, gitPopupList, gitMessageBox, gitPopupActions);
 /** The message is the user's (the box is open), not the agent's. */
 let gitManual = false;
@@ -3078,7 +3207,6 @@ function fitGitMessage(): void {
 }
 function setGitManual(on: boolean): void {
 	gitManual = on;
-	gitPopupPinned = true;
 	renderGitChanges();
 	if (on) { fitGitMessage(); gitMessage.focus(); } else { gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit.primary:not(:disabled)')?.focus(); }
 }
@@ -3095,15 +3223,11 @@ let gitFiles: WorkdirGitStatus | undefined;
 let gitError = '';
 let gitFetchError = '';
 let gitIndexPending = false;
-let gitPopupPinned = false;
 let gitPopupPressed = false;
 let gitPopupShape = '';
-let gitOpenTimer: ReturnType<typeof setTimeout> | undefined;
-let gitCloseTimer: ReturnType<typeof setTimeout> | undefined;
 
 function changeGitFiles(action: 'stage' | 'unstage', path?: string): void {
 	if (!gitFolder || !state || gitIndexPending) { return; }
-	gitPopupPinned = true;
 	gitIndexPending = true;
 	gitError = '';
 	renderGitChanges();
@@ -3237,8 +3361,9 @@ function renderGitChanges(): void {
 	const commitReason = busyReason || (gitManual ? (messageEmpty ? 'Write a commit message first' : '') : !modelAvailable ? 'Choose an available agent for commit messages in Chat Settings.' : '');
 	gitMessageBox.hidden = !gitManual || !gitFiles || !(staged || unstaged);
 	gitMessage.disabled = !!busyReason;
-	const shape = JSON.stringify([gitFiles, gitError, busyReason, commitReason, commitAgentId, commitChoice.effort, gitManual]);
+	const shape = JSON.stringify([gitFiles, gitError, busyReason, commitReason, commitAgentId, commitChoice.effort, gitManual, gitFolder ?? '', state?.workdir.repos ?? null, gitRepoSummaries, branchState?.current ?? '']);
 	if (shape === gitPopupShape) { return; }
+	renderCommitRepos();
 	gitPopupShape = shape;
 	gitPopupError.textContent = gitError;
 	gitPopupList.replaceChildren();
@@ -3268,7 +3393,6 @@ function renderGitChanges(): void {
 			const open = button([name], { class: file.status === 'D' ? 'git-file git-deleted git-file-open' : 'git-file git-file-open', title: `Open ${label.toLowerCase()} diff: ${name}` });
 			open.addEventListener('click', () => {
 				if (!gitFolder || !state) { return; }
-				gitPopupPinned = true;
 				post({ type: 'openGitDiff', folder: gitFolder, tabId: state.activeTab, path: file.path, staged: label === 'Staged' });
 			});
 			gitPopupList.append(el('div', { class: 'git-changes-file' }, gitFileIcon(file), open, statusMark, move));
@@ -3331,51 +3455,18 @@ function renderGitChanges(): void {
 		hint(`Message written by ${commitAgent?.name ?? 'the configured agent'}${commitChoice.effort ? ` · ${commitChoice.effort}` : ''}`).append(messageToggle());
 	}
 }
-function openGitChanges(pin: boolean): void {
-	if (!gitFolder) { return; }
-	if (!pin && document.querySelector('.popup.open') && !gitPopup.classList.contains('open')) { return; }
-	if (pin) { gitPopupPinned = true; }
-	if (!gitPopup.classList.contains('open')) {
-		openAbove(gitPopup, commitButton, 'right');
-		gitPopupShape = '';
-	}
-	commitButton.setAttribute('aria-expanded', 'true');
-	renderGitChanges();
-	refreshGitStatus();
-}
-function closeGitHover(): void {
-	clearTimeout(gitOpenTimer);
-	clearTimeout(gitCloseTimer);
-	gitCloseTimer = setTimeout(() => {
-		if (!gitPopupPinned && gitPopup.classList.contains('open')) { closePopups(); }
-	}, 250);
-}
-commitButton.addEventListener('click', () => {
-	clearTimeout(gitOpenTimer); clearTimeout(gitCloseTimer);
-	if (gitPopup.classList.contains('open') && gitPopupPinned) { closePopups(); return; }
-	openGitChanges(true);
-	if (gitManual && !gitMessageBox.hidden) { fitGitMessage(); gitMessage.focus(); return; }
-	gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit.primary:not(:disabled)')?.focus();
-});
-commitButton.addEventListener('mouseenter', () => {
-	clearTimeout(gitCloseTimer);
-	gitOpenTimer = setTimeout(() => openGitChanges(false), 150);
-});
-commitButton.addEventListener('mouseleave', closeGitHover);
-gitPopup.addEventListener('mouseenter', () => clearTimeout(gitCloseTimer));
-gitPopup.addEventListener('mouseleave', closeGitHover);
-gitPopup.addEventListener('focusin', () => { gitPopupPinned = true; });
-gitPopup.addEventListener('mousedown', () => { gitPopupPressed = true; gitPopupPinned = true; });
+commitButton.addEventListener('click', () => toggleGitWindow('changes'));
+gitPopup.addEventListener('mousedown', () => { gitPopupPressed = true; });
 document.addEventListener('mouseup', () => {
 	if (!gitPopupPressed) { return; }
 	gitPopupPressed = false;
 	setTimeout(renderGitChanges, 0);
 });
 
-const branchPopup = el('div', { class: 'popup palette git-branch-popup' });
+const branchPopup = el('div', { class: 'git-pane git-branch-popup' });
 branchPopup.id = 'git-branch-popup';
-branchPopup.setAttribute('role', 'dialog');
-branchPopup.setAttribute('aria-label', 'Git branches');
+branchPopup.setAttribute('role', 'region');
+branchPopup.setAttribute('aria-label', 'Branches');
 branchButton.setAttribute('aria-controls', branchPopup.id);
 const branchSearch = el('input', { class: 'palette-search' });
 branchSearch.type = 'text';
@@ -3403,7 +3494,174 @@ branchRefresh.addEventListener('click', () => refreshGitStatus('force'));
 branchSearchRow.append(clearableSearch(branchSearch), branchMagic, branchRefresh);
 /** The current branch against its remote: Publish, Push, Pull, and the pull request page. */
 const branchSync = el('div', { class: 'git-branch-sync' });
-branchPopup.append(branchSearchRow, branchSync, branchError, branchRestoreStash, branchCreate, branchList);
+/** One chip per repository of the working folder; the Branches window works in the one marked. */
+const branchRepoChips = el('div', { class: 'git-repo-chips' });
+branchRepoChips.setAttribute('role', 'tablist');
+branchRepoChips.setAttribute('aria-label', 'Repositories');
+branchRepoChips.hidden = true;
+let repoChipsShape = '';
+/** The tabs of the current repository list, by path; refilled in place (#365: a pick or a summary must not replace the focused tab). */
+let repoChipsList = '';
+const repoChipNodes = new Map<string, { chip: HTMLButtonElement; dot: HTMLElement; branch: HTMLElement; counts: HTMLElement }>();
+function renderRepoChips(): void {
+	const repos = state?.workdir.repos;
+	const shape = JSON.stringify([repos ?? null, gitRepoSummaries, gitFolder ?? '', state?.workdir.current?.name ?? '']);
+	if (shape === repoChipsShape) { return; }
+	repoChipsShape = shape;
+	branchRepoChips.hidden = !repos || repos.length < 2;
+	const list = JSON.stringify([(repos ?? []).map(r => [r.path, r.name, r.kind]), state?.workdir.current?.name ?? '']);
+	if (list !== repoChipsList) {
+		repoChipsList = list;
+		const focused = [...repoChipNodes].find(([, n]) => n.chip === document.activeElement)?.[0];
+		repoChipNodes.clear();
+		branchRepoChips.replaceChildren(...(repos ?? []).map(repo => {
+			const dot = el('span', { class: 'git-repo-dot' });
+			const branch = el('span', { class: 'git-repo-chip-branch' });
+			const counts = el('span', { class: 'git-repo-chip-counts' });
+			const kind = repo.kind === 'submodule' ? icon('file-submodule', 'git-repo-chip-kind') : repo.kind === 'worktree' ? icon('list-tree', 'git-repo-chip-kind') : undefined;
+			const chip = button([el('span', { class: 'git-repo-chip-name' }, dot, el('span', { class: 'git-repo-chip-label' }, repoLabel(repo)), ...(kind ? [kind] : [])), el('span', { class: 'git-repo-chip-line' }, branch, counts)], { class: 'git-repo-chip' });
+			chip.setAttribute('role', 'tab');
+			chip.addEventListener('click', () => selectGitRepo(repo.path));
+			repoChipNodes.set(repo.path, { chip, dot, branch, counts });
+			return chip;
+		}));
+		if (focused) { repoChipNodes.get(focused)?.chip.focus(); }
+	}
+	for (const repo of repos ?? []) {
+		const nodes = repoChipNodes.get(repo.path);
+		if (!nodes) { continue; }
+		const sum = repoSummary(repo.path);
+		const on = repo.path === gitFolder;
+		nodes.dot.classList.toggle('dirty', !!sum?.changes);
+		nodes.branch.textContent = sum?.detached ? 'detached' : sum?.branch ?? '…';
+		nodes.counts.textContent = `${sum?.ahead ? `↑${sum.ahead}` : ''}${sum?.behind ? ` ↓${sum.behind}` : ''}`.trim();
+		nodes.chip.classList.toggle('on', on);
+		nodes.chip.setAttribute('aria-selected', String(on));
+		nodes.chip.title = `${repoLabel(repo)} — ${repoLine(repo)}`;
+	}
+	branchRepoChips.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+const branchPaneHead = el('div', { class: 'git-pane-head' }, el('strong', {}, icon('git-branch'), 'Branches'));
+branchPopup.append(branchPaneHead, branchSearchRow, branchSync, branchError, branchRestoreStash, branchCreate, branchList);
+/**
+ * The Git window (asked for): one wide window opened from the footer. Its top row
+ * is a tab per repository of the working folder, the Branches pane on the left
+ * and the Changes pane on the right. The two panes are the old Branches and
+ * Commit windows, kept whole: each gets the `open` class while the window is
+ * open, so everything that asks whether "its" window is open still works.
+ */
+const gitWindow = el('div', { class: 'popup git-window' });
+gitWindow.id = 'git-window';
+gitWindow.setAttribute('role', 'dialog');
+gitWindow.setAttribute('aria-label', 'Git');
+const gitWindowTitle = el('div', { class: 'git-window-title' });
+const gitWindowClose = button([icon('close')], { class: 'ghost round git-window-close', title: 'Close' });
+gitWindowClose.setAttribute('aria-label', 'Close the Git window');
+gitWindowClose.addEventListener('click', () => { closePopups(); });
+const gitWindowHead = el('div', { class: 'git-window-head' }, gitWindowTitle, branchRepoChips, gitWindowClose);
+const gitWindowBody = el('div', { class: 'git-window-body' }, branchPopup, gitPopup);
+gitWindow.append(gitWindowHead, gitWindowBody);
+let gitWindowAnchor: HTMLElement = commitButton;
+/** Without several repositories the head names the one repository and its branch instead of tabs. */
+function renderGitWindowHead(): void {
+	const repos = state?.workdir.repos;
+	const tabs = !!repos && repos.length > 1;
+	gitWindowTitle.hidden = tabs;
+	if (tabs) { return; }
+	const only = repos?.length === 1 ? repos[0] : undefined;
+	const name = (only ? repoLabel(only) : undefined) ?? (gitFolder && gitFolder === state?.workdir.current?.path ? state.workdir.current.name : undefined) ?? gitFolder?.split(/[\\/]/).filter(Boolean).pop() ?? 'Git';
+	gitWindowTitle.replaceChildren(icon('repo'), el('strong', {}, name),
+		el('span', { class: 'git-window-title-branch' }, icon('git-branch'), branchState ? branchState.current || 'detached HEAD' : '…'));
+	gitWindowTitle.title = gitFolder ?? '';
+}
+/** Opened by the pointer resting on the footer: no focus moved, and it goes when the pointer leaves. */
+let gitWindowByHover = false;
+function openGitWindow(focus: 'branches' | 'changes' | 'repos' | 'none', anchor?: HTMLElement): void {
+	if (!gitFolder) { return; }
+	const wasOpen = gitWindow.classList.contains('open');
+	if (!wasOpen) {
+		gitWindowByHover = focus === 'none';
+		gitWindowAnchor = anchor ?? commitButton;
+		// A branch name is often typed in parts, closing the window between them: keep what was
+		// typed for two minutes after the last keystroke (asked for).
+		if (Date.now() - branchSearchTypedAt > branchSearchKeepMs) { branchSearch.value = ''; }
+		branchDeleting = undefined;
+		remoteConfirm = undefined;
+		branchError.textContent = '';
+		openAbove(gitWindow, gitStatus, 'right');
+		gitWindowAnchor.classList.add('active');
+		gitPopupShape = '';
+	}
+	branchPopup.classList.add('open');
+	gitPopup.classList.add('open');
+	for (const b of [branchButton, commitButton, repoButton]) { b.setAttribute('aria-expanded', 'true'); }
+	renderGitWindowHead();
+	repoChipsShape = '';
+	renderRepoChips();
+	renderBranches();
+	renderGitChanges();
+	if (!wasOpen) { refreshGitStatus(); }
+	if (focus === 'none') { return; }
+	gitWindowByHover = false;
+	if (focus === 'branches') { branchSearch.focus(); }
+	else if (focus === 'repos') { (branchRepoChips.querySelector<HTMLElement>('.on') ?? branchRepoChips.querySelector<HTMLElement>('button') ?? branchSearch).focus(); }
+	else if (gitManual && !gitMessageBox.hidden) { fitGitMessage(); gitMessage.focus(); }
+	else { (gitPopup.querySelector<HTMLButtonElement>('.git-changes-commit.primary:not(:disabled)') ?? branchSearch).focus(); }
+}
+function toggleGitWindow(focus: 'branches' | 'changes' | 'repos'): void {
+	const anchor = focus === 'branches' ? branchButton : focus === 'repos' ? repoButton : commitButton;
+	if (gitWindow.classList.contains('open')) {
+		// A click on a window the pointer opened keeps it, and moves the focus into it.
+		if (!gitWindowByHover) { closePopups(); return; }
+		gitWindowAnchor.classList.remove('active');
+		gitWindowAnchor = anchor;
+		anchor.classList.add('active');
+	}
+	// The button pressed is the one marked while the window is open.
+	openGitWindow(focus, anchor);
+}
+/**
+ * The Git window opens when the pointer rests on the footer's control (asked for), after a short
+ * delay so a pointer passing over it does not open a window that wide, and goes 300 ms after the
+ * pointer has left both — unless it is being used: focus inside it, a menu over it, or a click
+ * that kept it (`gitWindowByHover` false).
+ */
+const gitHover = window.matchMedia('(hover: hover) and (pointer: fine)');
+let gitHoverOpenTimer: ReturnType<typeof setTimeout> | undefined;
+let gitHoverLeaveTimer: ReturnType<typeof setTimeout> | undefined;
+function gitHoverEnter(): void {
+	clearTimeout(gitHoverLeaveTimer);
+	if (!gitHover.matches || gitWindow.classList.contains('open')) { return; }
+	clearTimeout(gitHoverOpenTimer);
+	gitHoverOpenTimer = setTimeout(() => {
+		if (!gitStatus.matches(':hover') || gitWindow.classList.contains('open') || document.querySelector('.popup.open, .menu.open')) { return; }
+		const over = [repoButton, branchButton, commitButton].find(b => !b.hidden && b.matches(':hover')) ?? commitButton;
+		openGitWindow('none', over);
+	}, 220);
+}
+function gitHoverLeft(): void {
+	clearTimeout(gitHoverOpenTimer);
+	clearTimeout(gitHoverLeaveTimer);
+	gitHoverLeaveTimer = setTimeout(() => {
+		if (!gitWindowByHover || !gitWindow.classList.contains('open')) { return; }
+		if (gitStatus.matches(':hover') || gitWindow.matches(':hover') || menu.classList.contains('open')) { return; }
+		if (gitWindow.contains(document.activeElement)) { return; }
+		closePopups();
+	}, 300);
+}
+gitStatus.addEventListener('mouseenter', gitHoverEnter);
+gitStatus.addEventListener('mouseleave', gitHoverLeft);
+gitWindow.addEventListener('mouseenter', () => clearTimeout(gitHoverLeaveTimer));
+gitWindow.addEventListener('mouseleave', gitHoverLeft);
+// Anything typed or clicked inside makes it the user's: it stays until closed as any popup.
+gitWindow.addEventListener('focusin', () => { gitWindowByHover = false; });
+gitWindow.addEventListener('keydown', event => {
+	if (event.isComposing || event.key !== 'Escape') { return; }
+	event.preventDefault();
+	event.stopPropagation();
+	closePopups();
+	commitButton.focus();
+});
 let branchNameSequence = 0;
 let branchNamePending: { id: number; tabId: string; folder: string; query: string } | undefined;
 branchMagic.addEventListener('click', () => {
@@ -3501,6 +3759,8 @@ function renderBranchSync(): void {
 				: 'Open GitHub\'s page to create a pull request, in the system browser', () => {
 				if (!inTab) { post({ type: 'openLink', url, external: true }); return; }
 				closePopups();
+				// The pull request is this repository's: the tab stops following a pinned other one.
+				if (githubPin && githubPin !== gitFolder) { setGithubPin(undefined); }
 				githubPrWanted = gitFolder;
 				setComposerTab('github');
 				requestGithub(true);
@@ -3581,20 +3841,7 @@ function renderBranches(): void {
 	}
 	if (!branchList.childElementCount) { branchList.append(el('div', { class: 'git-branch-empty' }, 'No matching branches')); }
 }
-branchButton.addEventListener('click', () => {
-	if (branchPopup.classList.contains('open')) { closePopups(); return; }
-	// A branch name is often typed in parts, closing the window between them: keep what was
-	// typed for two minutes after the last keystroke (asked for).
-	if (Date.now() - branchSearchTypedAt > branchSearchKeepMs) { branchSearch.value = ''; }
-	branchDeleting = undefined;
-	remoteConfirm = undefined;
-	branchError.textContent = '';
-	renderBranches();
-	openAbove(branchPopup, branchButton, 'right');
-	branchButton.setAttribute('aria-expanded', 'true');
-	refreshGitStatus();
-	branchSearch.focus();
-});
+branchButton.addEventListener('click', () => toggleGitWindow('branches'));
 const branchSearchKeepMs = 2 * 60_000;
 let branchSearchTypedAt = 0;
 branchSearch.addEventListener('input', () => { branchSearchTypedAt = Date.now(); branchDeleting = undefined; renderBranches(); });
@@ -3753,7 +4000,7 @@ function renderRemoteBar(s: ChatViewState): void {
 }
 
 if (!remoteSlot) { app.append(remoteBar); }
-app.append(featureSettingsPanel, sleepPopup, tabStrip, chatMain, selectorStrip, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, branchPopup, gitPopup, paramsPopup, skillEditor, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel);
+app.append(featureSettingsPanel, sleepPopup, tabStrip, chatMain, selectorStrip, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, gitWindow, paramsPopup, skillEditor, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel);
 
 /* ---------------------------------------------------------------- state */
 
@@ -4378,10 +4625,7 @@ vscode.onMessage(message => {
    if (pushAfterCommit) {
     pushAfterCommit = false;
     if ((message.error || remoteConfirm) && !branchPopup.classList.contains('open')) {
-     closePopups();
-     openAbove(branchPopup, branchButton, 'right');
-     branchButton.setAttribute('aria-expanded', 'true');
-     refreshGitStatus();
+     openGitWindow('branches');
     }
    }
    if (remoteConfirm && branchPopup.classList.contains('open')) { branchSync.querySelector<HTMLButtonElement>('button.primary')?.focus(); }
@@ -4401,9 +4645,9 @@ vscode.onMessage(message => {
     githubMergingIn.delete(message.folder);
     if (githubMergeAsk?.folder === message.folder) { githubMergeAsk = undefined; }
     githubMergeError = message.mergeError ? { folder: message.folder, number: message.mergeError.number, text: message.mergeError.text } : undefined;
-    if (message.mergeError && message.folder === gitFolder && !message.status) { composerGithubShape = ''; renderComposerGithub(); return; }
+    if (message.mergeError && message.folder === ghFolder() && !message.status) { composerGithubShape = ''; renderComposerGithub(); return; }
    }
-   if (message.folder !== gitFolder) { return; }
+   if (message.folder !== ghFolder()) { return; }
    if (message.createError !== undefined || message.created) {
     githubPrError = message.createError ?? '';
     if (message.created) { githubPrCreated = { number: message.created.number, url: message.created.url, folder: message.folder, branch: message.status?.branch ?? githubAnswer?.status?.branch, at: Date.now() }; githubPrOpen = false; githubPrTitle.value = ''; githubPrDraft.checked = false; }
@@ -4438,15 +4682,14 @@ vscode.onMessage(message => {
   }
   case 'workdirGit': {
    if (message.folder !== gitFolder) { return; }
+   gitRepoSummaries = message.repoSummaries ?? [];
+   renderRepoButton();
    gitPending = false;
-   gitRefresh.disabled = false;
    gitPopupRefresh.disabled = false;
    branchRefresh.disabled = false;
    gitFiles = message.status;
    if (message.error || message.fetchError) { gitError = message.error ?? message.fetchError ?? ''; }
    else if (!gitIndexPending) { gitError = ''; }
-   gitRefresh.title = message.fetchError ? `Fetch failed: ${message.fetchError}` : 'Fetch remote changes and refresh Git status';
-   gitRefreshSlot.dataset.tip = gitRefresh.title;
    if (gitFetchError && branchError.textContent === `Remote data may be outdated: ${gitFetchError}`) { branchError.textContent = ''; }
    gitFetchError = message.fetchError ?? '';
    if (gitFetchError) { branchError.textContent = `Remote data may be outdated: ${gitFetchError}`; }
@@ -4470,6 +4713,7 @@ vscode.onMessage(message => {
    branchButton.title = branchState ? `Current branch: ${branchState.current || 'Detached HEAD'} — switch or manage branches` : message.error ?? 'Git branches unavailable';
    if (ahead || behind) { branchButton.title += ` — ${ahead} to push, ${behind} to pull (${remoteBranch}; last fetched state)`; }
    if (branchPopup.classList.contains('open')) { renderBranches(); }
+   if (gitWindow.classList.contains('open')) { renderGitWindowHead(); }
    renderGitChanges();
    return;
   }
@@ -7659,6 +7903,7 @@ function updateAssistantNode(node: HTMLElement, entry: Extract<ChatEntry, { kind
 		},
 		sourceLink: (url, title) => linkNode(url, title),
 		openLink: (url, external) => post({ type: 'openLink', url, external }),
+		copy: text => post({ type: 'copy', text }),
 		openLinkLabel: state?.surface === 'chrome' ? 'Open in new tab' : state?.surface === 'exchange' ? 'Open in remote browser' : `Open in ${productLabel()}`,
 		externalLinkLabel: state?.surface === 'chrome' || state?.surface === 'exchange' ? undefined : 'Open in System Browser ↗',
 		// Only VS Code decides which files outside the directory a conversation may show.
@@ -11517,11 +11762,9 @@ function closePopups(except?: HTMLElement, keep?: HTMLElement): void {
  if (except !== selectorStrip && keep !== selectorStrip) {
   restoreSelectorControls();
  }
- if (except !== branchPopup) { branchButton.setAttribute('aria-expanded', 'false'); branchNamePending = undefined; }
- if (except !== gitPopup) {
-  gitPopupPinned = false;
-  commitButton.setAttribute('aria-expanded', 'false');
-  clearTimeout(gitOpenTimer); clearTimeout(gitCloseTimer);
+ if (except !== gitWindow) {
+  branchNamePending = undefined;
+  for (const b of [branchButton, commitButton, repoButton]) { b.setAttribute('aria-expanded', 'false'); }
  }
 	if (except !== agentsPanel && keep !== agentsPanel) {
 		agentsView = undefined;
@@ -11538,7 +11781,7 @@ function closePopups(except?: HTMLElement, keep?: HTMLElement): void {
 		}
 	}
 	if (except !== tabOverflowPanel && keep !== tabOverflowPanel) { overflowButton.setAttribute('aria-expanded', 'false'); }
-	for (const popup of [tabOverflowPanel, selectorStrip, featureSettingsPanel, sleepPopup, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, branchPopup, gitPopup, paramsPopup, skillEditor, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel]) {
+	for (const popup of [tabOverflowPanel, selectorStrip, featureSettingsPanel, sleepPopup, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, gitWindow, branchPopup, gitPopup, paramsPopup, skillEditor, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel]) {
 		if (popup !== except && popup !== keep) {
 			popup.classList.remove('open');
 			if (popup === featureSettingsPanel) {
@@ -11546,7 +11789,7 @@ function closePopups(except?: HTMLElement, keep?: HTMLElement): void {
 			}
 		}
 	}
-	for (const pill of [overflowButton, tabAdd, tabAddTerminal, compactSelector, agentPill, modelPill, plusButton, browserButton, usageButton, approveToggle, slashButton, workdirButton, branchButton, commitButton, contextButton]) {
+	for (const pill of [overflowButton, tabAdd, tabAddTerminal, compactSelector, agentPill, modelPill, plusButton, browserButton, usageButton, approveToggle, slashButton, workdirButton, gitStatus, branchButton, commitButton, repoButton, contextButton]) {
 		pill.classList.remove('active');
 	}
 	if (selectorStrip.classList.contains('open')) { compactSelector.classList.add('active'); }
@@ -11727,7 +11970,7 @@ document.addEventListener('mousedown', event => {
 		}
 		return;
 	}
-	if (![tabOverflowPanel, overflowButton, workdirSummary, gitRefreshSlot, effortBox, ultracodeBox, selectorStrip, featureSettingsPanel, sleepPopup, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, branchPopup, gitPopup, paramsPopup, skillBar, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel, plusButton, usageButton, usageAlertText, agentsButton, compactSelector, agentPill, modelPill, approveToggle, slashButton, workdirButton, branchButton, commitButton, contextButton, sendOptionsButton].some(n => n.contains(target))) {
+	if (![tabOverflowPanel, overflowButton, workdirSummary, effortBox, ultracodeBox, selectorStrip, featureSettingsPanel, sleepPopup, menu, usagePopup, markPopup, approvalPopup, palette, workdirPopup, gitWindow, paramsPopup, skillBar, historyPanel, agentsPanel, allAgentsPanel, agentAppsPanel, plusButton, usageButton, usageAlertText, agentsButton, compactSelector, agentPill, modelPill, approveToggle, slashButton, workdirButton, gitStatus, contextButton, sendOptionsButton].some(n => n.contains(target))) {
 		closePopups();
 	}
 });
@@ -11764,7 +12007,7 @@ document.addEventListener('keydown', event => {
 		overflowButton.focus();
 		return;
 	}
-	if (gitPopup.classList.contains('open')) {
+	if (gitWindow.classList.contains('open')) {
 		closePopups();
 		commitButton.focus();
 		return;
@@ -13105,17 +13348,19 @@ function chooseWorkdirItem(index: number): void {
 
 function renderWorkdir(s: ChatViewState): void {
 	const w = s.workdir;
-	const folder = w.current?.path;
-	gitStatus.hidden = !folder;
+	const folder = w.gitFolder ?? w.current?.path;
+	gitStatus.hidden = !w.current?.path;
 	if (folder !== gitFolder) {
-		closePopups();
+		// A pick from inside the Branches or Commit window keeps it open over the new repository.
+		const keep = repoSwitching && !!w.repos?.some(r => r.path === folder);
+		repoSwitching = false;
+		if (!keep) { closePopups(); gitRepoSummaries = []; }
+		// A push question, a chosen remote and a push queued behind a commit were about the
+		// repository that was in use; carried over, Push answered them for another one.
+		remoteConfirm = undefined;
+		publishRemoteChoice = undefined;
+		pushAfterCommit = false;
 		gitFolder = folder;
-		githubAnswer = undefined;
-		githubPending = false;
-		githubBranchShape = '';
-		githubAgain = false;
-		githubForgetRefresh();
-		if (composerTab === 'github') { requestGithub(); }
 		if (composerTab === 'files') { openFilesTab(); }
 		branchState = undefined;
 		branchBusy = false;
@@ -13135,7 +13380,11 @@ function renderWorkdir(s: ChatViewState): void {
 		gitManual = false;
 		gitManualSent = undefined;
 		refreshGitStatus();
+		if (keep && branchPopup.classList.contains('open')) { renderBranches(); }
+		if (keep && gitPopup.classList.contains('open')) { renderGitChanges(); }
 	}
+	syncGithubFolder();
+	renderRepoButton();
 	const commit = w.commit;
 	const committing = commit?.phase === 'generating' || commit?.phase === 'committing';
 	// A failed commit is never pushed: Commit & Push must not open the Branches window later.
@@ -13492,7 +13741,6 @@ const hoverTip = (() => {
 })();
 
 // The context pie's tooltip: how much of the window is used and how much is left.
-hoverTip.attach(gitRefreshSlot);
 hoverTip.attach(branchMagic);
 hoverTip.attach(contextButton);
 hoverTip.attach(ultracodeBox);

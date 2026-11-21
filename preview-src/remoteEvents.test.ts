@@ -11,7 +11,7 @@ test('PR completion clears pending state while another conversation is selected'
 	const pending = new Set(['/a']);
 	let rendered = false;
 	const receive = runInNewContext(transpileModule(`(message) => { switch(message.type) { ${handler} } }`, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, {
-		githubPrCreatingIn: pending, gitFolder: '/b', renderComposerGithub: () => { rendered = true; },
+		githubPrCreatingIn: pending, gitFolder: '/b', ghFolder: () => '/b', renderComposerGithub: () => { rendered = true; },
 	});
 	const message = { type: 'githubStatus' as const, folder: '/a', createError: 'Request failed' };
 	assert.equal(isBackgroundCompletion(message), true);

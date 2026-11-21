@@ -15,7 +15,7 @@ import { createSourceFile, forEachChild, isMethodDeclaration, ScriptTarget, tran
 function fixture(stat: (file: string) => Promise<unknown> = async () => ({ isDirectory: () => false })) {
   const source = readFileSync('src/chat/chatView.ts', 'utf8');
   const ast = createSourceFile('chatView.ts', source, ScriptTarget.ES2022, true);
-  const wanted = new Set(['_receiveChromeFooter', '_files', '_postMessage', '_workdir', '_usage', '_changeGitIndex', '_refreshWorkdirGit', '_refuseRemoteShellWorkflow']);
+  const wanted = new Set(['_receiveChromeFooter', '_files', '_postMessage', '_workdir', '_usage', '_changeGitIndex', '_refreshWorkdirGit', '_refuseRemoteShellWorkflow', '_gitDir']);
   const methods: string[] = [];
   const visit = (node: any) => {
     if (isMethodDeclaration(node) && wanted.has(node.name.getText(ast))) { methods.push(node.getText(ast)); }
@@ -33,7 +33,7 @@ function fixture(stat: (file: string) => Promise<unknown> = async () => ({ isDir
     _chromeCommand: new AsyncLocalStorage(), _tabs: [tabA, tabB], _active: tabB,
     _viewReady: true, _view: { webview: { postMessage(message: unknown) { editorMessages.push(message); } } },
     _stateSurfaces: { publish() {} }, _state: () => ({ chatId: view._active.chat.id }),
-    _workspaceFolders: () => [], _limits: new Map(),
+    _workspaceFolders: () => [], _limits: new Map(), _reposOf: () => undefined, _gitRepoPick: new WeakMap(),
   });
   return { view, tabA, tabB, editorMessages };
 }

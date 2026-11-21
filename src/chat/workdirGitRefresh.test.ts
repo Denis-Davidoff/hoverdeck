@@ -22,7 +22,7 @@ function host(overrides: Record<string, unknown> = {}): any {
 	const posted: any[] = [];
 	const h: any = {
 		posted, reads: [] as string[], _disposed: false, _view: { visible: true }, _viewReady: true, _gitStale: false,
-		_gitRefreshes: new Map(), _queued: [] as any[], _workdir: () => '/repo', _blocked: () => undefined,
+		_gitRefreshes: new Map(), _queued: [] as any[], _workdir: () => '/repo', _gitDir: () => '/repo', _blocked: () => undefined,
 		_postMessage: (m: any) => posted.push(m),
 		_stateSurfaces: { publish() {}, broadcast() {}, watching: () => false },
 		...overrides,
@@ -127,7 +127,7 @@ test('failed fetch still returns local Git status and cached branch counts', asy
  await read.call({
   _blocked: () => false, _view: undefined,
   _fetchWorkdirGit: async () => { throw new Error('Offline'); },
-  _runWorkdirGit: async () => '', _pullRequestFor: () => ({}), _branchStashes: new Map(), _lastWorkdirGit: new Map(),
+  _runWorkdirGit: async () => '', _pullRequestFor: () => ({}), _branchStashes: new Map(), _lastWorkdirGit: new Map(), _repoSummaries: async () => undefined,
   _postMessage: (message: any) => posted.push(message),
  }, '/repo', 'auto');
  assert.equal(posted.length, 1);
