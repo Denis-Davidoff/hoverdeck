@@ -1,3 +1,5 @@
+<p align="center"><img src="media/icon.png" width="128" alt="HoverDeck"></p>
+
 # HoverDeck — one deck for all your AI agents
 
 **Claude Code, Codex, Gemini CLI, OpenCode, Pi and OpenRouter (or a local Ollama / LM Studio

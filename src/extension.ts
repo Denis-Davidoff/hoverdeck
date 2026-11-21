@@ -32,7 +32,7 @@ import { copyScreenshot } from './browser/screenshot';
 import { chrome, chromeDownloadUrl, ChromeNotInstalledError } from './browser/chromeBrowser';
 import { tabs as tabSource } from './browser/tabSource';
 import {
-	enableBrowserApi, hostIsRemote, integratedBrowserCommand, isBrowserApiGranted, shouldUseIntegratedBrowser, setOwnExtensionKind, workspaceIsRemoteFromHost,
+	browserApiState, enableBrowserApi, hostIsRemote, integratedBrowserCommand, isBrowserApiGranted, shouldUseIntegratedBrowser, setOwnExtensionKind, workspaceIsRemoteFromHost,
 } from './setup/proposedApi';
 import { confirm, refuse } from './core/notify';
 import { plainInLabel, plainInNotification, plainInPrompt } from './core/notifyText';
@@ -99,10 +99,42 @@ async function openInIntegratedBrowser(url?: string): Promise<void> {
 	await vscode.commands.executeCommand(integratedBrowserCommand, url);
 }
 
+/**
+ * Said once after install, on an editor that ships no browser API at all
+ * (Cursor, Kiro, Antigravity…): everything still works through Chrome, but the
+ * built-in browser cannot be driven, and nothing else tells the user why.
+ * A notification on purpose, not the status bar — it has to be seen — and it
+ * is safe here, since no native browser view exists on such a host to pause.
+ */
+async function adviseOnUnsupportedHost(context: vscode.ExtensionContext): Promise<void> {
+	const key = 'hoverdeck.unsupportedHostAdvised';
+	if (context.globalState.get<boolean>(key) || hostIsRemote()) {
+		return;
+	}
+	try {
+		if (await browserApiState() !== 'unsupported') {
+			return;
+		}
+	} catch {
+		return;
+	}
+	await context.globalState.update(key, true);
+	const openChrome = vscode.l10n.t("Open Chrome");
+	const picked = await vscode.window.showWarningMessage(
+		vscode.l10n.t("HoverDeck: to get all features and use the built-in browser at full power, we recommend installing Devin, VS Code or VSCodium. If you would rather not, use Chrome with the Chrome plugin to work with the browser."),
+		openChrome,
+		vscode.l10n.t("Got it"),
+	);
+	if (picked === openChrome) {
+		await vscode.commands.executeCommand('hoverdeck.openInChrome');
+	}
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	// Before anything reads a setting or the state: the chat, the MCP tokens, the vault.
 	const moved = await migrateFromAiBrowser(context).catch(() => undefined);
 	activateBuild(context);
+	void adviseOnUnsupportedHost(context);
 	if (moved && moved.settings + moved.global + moved.workspace + moved.secrets > 0) {
 		vscode.window.setStatusBarMessage('$(check) Took your settings over from AI Browser', 10000);
 	}

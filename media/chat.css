@@ -1539,9 +1539,10 @@ button {
 }
 
 .welcome-icon {
-	font-size: 28px !important;
-	color: var(--fg-faint);
-	margin-bottom: 8px;
+	display: block;
+	width: 72px;
+	height: 72px;
+	margin: 0 auto 10px;
 }
 
 .welcome-title {

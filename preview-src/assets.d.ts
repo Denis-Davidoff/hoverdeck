@@ -20,3 +20,13 @@ declare module '*.csv' {
  * `terminalBuild.test.ts` checks that all three have it.
  */
 declare const __TERMINAL__: boolean;
+
+/**
+ * A `.png` bundled as a `data:` URL by esbuild (`'.png': 'dataurl'` in all three
+ * chat builders): the chat's CSP allows `img-src data:` on every surface, and a
+ * data URL needs no file copied beside the bundle.
+ */
+declare module '*.png' {
+	const url: string;
+	export default url;
+}

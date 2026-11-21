@@ -6,7 +6,7 @@ import {buildVisualizationHtml} from '../../preview-src/build-visualization.mjs'
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const output=`${root}exchange-server/apps/web/public/remote-chat/`;
 await mkdir(output,{recursive:true});
-await build({entryPoints:{host:`${root}preview-src/serverChatHost.ts`,chat:`${root}preview-src/chat.ts`,visualization:`${root}preview-src/visualization.ts`,codicon:`${root}node_modules/@vscode/codicons/dist/codicon.css`,xterm:`${root}node_modules/@xterm/xterm/css/xterm.css`},outdir:output,bundle:true,platform:'browser',format:'iife',target:'es2022',minify:true,loader:{'.ttf':'dataurl','.csv':'text'},define:{__TERMINAL__:'true'},logLevel:'info'});
+await build({entryPoints:{host:`${root}preview-src/serverChatHost.ts`,chat:`${root}preview-src/chat.ts`,visualization:`${root}preview-src/visualization.ts`,codicon:`${root}node_modules/@vscode/codicons/dist/codicon.css`,xterm:`${root}node_modules/@xterm/xterm/css/xterm.css`},outdir:output,bundle:true,platform:'browser',format:'iife',target:'es2022',minify:true,loader:{'.ttf':'dataurl','.png':'dataurl','.csv':'text'},define:{__TERMINAL__:'true'},logLevel:'info'});
 await buildVisualizationHtml(output);
 for(const [source,target] of [[`${root}media/chat.css`,'chat.css'],[`${root}media/liquid-loader.css`,'liquid-loader.css'],[`${root}media/appearance.css`,'appearance.css'],[`${root}chrome-extension/sidepanel.css`,'sidepanel.css'],[`${root}exchange-server/chat-assets/index.html`,'index.html'],[`${root}exchange-server/chat-assets/web-chat.css`,'web-chat.css']])await copyFile(source,output+target);
 // All files in one renderer release share a content-derived cache key. Include

@@ -1,8 +1,8 @@
 {
 	"name": "hoverdeck",
-	"displayName": "HoverDeck🏆 for Claude, Codex and any AI agent",
-	"description": "One deck for all your AI agents: Claude Code, Codex, Gemini, OpenCode, Pi and OpenRouter in a chat with a browser, Git and terminals — in VS Code, in Chrome and from your phone.",
-	"version": "1.0.0",
+	"displayName": "HoverDeck🏆 AI Browser, MCP, Chat",
+	"description": "One deck for all your AI agents: Claude Code, Codex, Gemini, OpenCode, Pi, OpenRouter, Ollama and LM Studio in a chat with a browser, Git and terminals — in VS Code, in Chrome and from your phone.",
+	"version": "1.0.4",
 	"enabledApiProposals": [
 		"externalUriOpener",
 		"browser"

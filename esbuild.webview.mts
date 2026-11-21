@@ -41,7 +41,7 @@ const options = {
 	target: 'es2022',
 	outdir: outDir,
 	// `.csv` as text: the chat's icon picker reads the codicon list (codicon.csv).
-	loader: { '.ttf': 'dataurl' as const, '.csv': 'text' as const },
+	loader: { '.ttf': 'dataurl' as const, '.png': 'dataurl' as const, '.csv': 'text' as const },
 	minify: !isWatch,
 	sourcemap: true,
 	logLevel: 'info' as const,

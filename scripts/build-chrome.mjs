@@ -14,7 +14,7 @@ await build({
     // xterm's stylesheet as an entry of its own: imported from chat.ts it would overwrite chat.css.
     xterm: `${source}../node_modules/@xterm/xterm/css/xterm.css` },
   outdir: output, bundle: true, platform: 'browser', format: 'iife', target: 'chrome116', logLevel: 'info',
-  loader: { '.ttf': 'dataurl', '.csv': 'text' },
+  loader: { '.ttf': 'dataurl', '.png': 'dataurl', '.csv': 'text' },
   // Terminal tabs reach Chrome too (the editor's shared terminals, over the bridge): xterm is bundled.
   define: { __TERMINAL__: 'true' },
 });

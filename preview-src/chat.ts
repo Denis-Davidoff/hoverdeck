@@ -100,6 +100,7 @@ import { formatSendTime, localInputValue, parseLocalInput, scheduleHorizonMs, sc
 // Every codicon the bundled font has, one per line (`name,char,code`); bundled
 // as text by esbuild, so the icon picker lists exactly what can be drawn.
 import codiconCsv from '@vscode/codicons/dist/codicon.csv';
+import welcomeIconUrl from '../media/welcome-icon.png';
 
 initTheme(!window.aiBrowserChatHost);
 initChatAppearance();
@@ -7443,7 +7444,7 @@ function showChromeInstall(trigger: HTMLElement): void {
 function welcome(s: ChatViewState): HTMLElement {
 	const available = s.agents.filter(a => a.available);
 	const box = el('div', { class: 'welcome' },
-		icon('globe', 'welcome-icon'),
+		Object.assign(el('img', { class: 'welcome-icon' }), { src: welcomeIconUrl, alt: '' }),
 		el('div', { class: 'welcome-title', text: productLabel() }));
 	const lead = el('div', { class: 'welcome-text' });
 	inline(lead, s.news?.intro || 'Work with the pages you have open, right inside VS Code.');
@@ -8902,16 +8903,19 @@ function renderMarkdown(text: string): DocumentFragment {
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		const fence = /^\s*(`{3,}|~{3,})\s*([\w+#.-]*)(.*)$/.exec(line);
+		const fence = /^(\s*)(`{3,}|~{3,})\s*([\w+#.-]*)(.*)$/.exec(line);
 		if (fence) {
 			flush();
-			const paste = pasteLangs.has(fence[2].toLowerCase());
-			const end = fenceEnd(lines, i, { marker: fence[1] }, paste);
-			const code = lines.slice(i + 1, end);
+			const paste = pasteLangs.has(fence[3].toLowerCase());
+			const end = fenceEnd(lines, i, { marker: fence[2] }, paste);
+			// A fence indented inside a list item: its content carries the same indent,
+			// which is the list's, not the code's (CommonMark strips up to that many spaces).
+			const indent = fence[1].replace(/\t/g, '    ').length;
+			const code = lines.slice(i + 1, end).map(l => l.replace(new RegExp(`^ {0,${indent}}`), ''));
 			i = end;
 			out.append(paste
-				? pasteBlock(code.join('\n'), fence[3].trim())
-				: codeBlock(code.join('\n'), fence[2]));
+				? pasteBlock(code.join('\n'), fence[4].trim())
+				: codeBlock(code.join('\n'), fence[3]));
 			continue;
 		}
 		if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {

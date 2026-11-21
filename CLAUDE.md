@@ -524,6 +524,7 @@ non-obvious:
   for its icon picker (declared in `preview-src/assets.d.ts`), so the picker lists exactly the
   icons the bundled font can draw. Not mandatory like the two below; without it the build fails
   loudly rather than silently.
+- `loader: { '.png': 'dataurl' }` — in all three builders of `chat.ts`: the empty chat's icon (`media/welcome-icon.png`, a 144 px render of the app icon) is imported as a `data:` URL, which every surface's CSP allows (`img-src data:`) and which needs no file copied beside the Chrome and website bundles. A builder without it fails the build loudly.
 - `format: 'iife'` — the script is loaded by a plain `<script src>` **without**
   `type="module"`. An ESM bundle simply will not execute in the panel.
 - `loader: { '.ttf': 'dataurl' }` — otherwise the icons do not render, because the CSP only

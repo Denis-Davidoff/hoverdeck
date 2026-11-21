@@ -32,6 +32,10 @@ One deck for all your AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Pi an
 - $(location) **Page markers** — pin notes to page elements and send them to the agent as one prompt.
 - $(settings-gear) **Chat Settings** — use the gear at the top to edit prompts for commit messages, branch names and chat titles, or clean up temporary files.
 
+## 1.0.2 — 2026-11-21
+
+- The empty chat now opens with the HoverDeck icon instead of a globe.
+
 ## 1.0.0 — 2026-11-20
 
 - **Skills over MCP** — agents can list your toolbar skills and workflows with `skill_list`, load the one that fits with `skill_get` and follow it themselves, under their usual approvals; switch it off in Chat Settings → MCP → Skills.
