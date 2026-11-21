@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Browser",
-  "version": "0.6.3",
-  "description": "Chat with AI Browser in Chrome. Attach page elements, screenshots and annotations to your local VS Code conversation.",
+  "name": "HoverDeck",
+  "version": "0.7.0",
+  "description": "Chat with HoverDeck in Chrome. Attach page elements, screenshots and annotations to your local VS Code conversation.",
   "minimum_chrome_version": "116",
   "permissions": [
     "sidePanel",
@@ -19,7 +19,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open AI Browser",
+    "default_title": "Open HoverDeck",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

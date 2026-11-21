@@ -1,6 +1,6 @@
-# AI Browser for Chrome
+# HoverDeck for Chrome
 
-The Chrome side panel uses the shared AI Browser renderer, Markdown, composer,
+The Chrome side panel uses the shared HoverDeck renderer, Markdown, composer,
 settings and approval controls. VS Code continues to run the agents and tools.
 Choose a conversation from the selector in Chrome. Switching editor tabs does
 not change the selected conversation. Its editor tab has an animated gradient
@@ -30,7 +30,7 @@ front tab. Permissions restrict supported actions and are enforced by VS Code;
 Chrome and Exchange cannot grant themselves access. Stop remains available.
 
 Chrome terminal access, plain shells and agent terminals default on after explicit
-pairing, with no second terminal consent prompt. Chrome can use the AI Browser
+pairing, with no second terminal consent prompt. Chrome can use the HoverDeck
 terminal tabs on this computer. The website retains its separate opt-in,
 encrypted-connection, consent and explicitly shared-terminal requirements.
 
@@ -141,7 +141,7 @@ Both release versions remain available in the connection status tooltip.
 ## ZIP archive
 
 Run `npm run package-chrome` from the repository root. It rebuilds Chrome assets
-and creates `chrome-extension/ai-browser-chrome-<version>.zip`. The archive root
+and creates `chrome-extension/hoverdeck-chrome-<version>.zip`. The archive root
 contains `manifest.json`; source files and VS Code assets are excluded.
 Unpack the ZIP and select the resulting folder using **Load unpacked** at
 `chrome://extensions`.
@@ -153,7 +153,7 @@ Unpack the ZIP and select the resulting folder using **Load unpacked** at
    or reload the editor with the updated extension installed.
 3. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**
    and select `chrome-extension/dist`.
-4. Click the AI Browser icon, then **Connect**.
+4. Click the HoverDeck icon, then **Connect**.
 5. Click **Allow** in the desired editor chat panel. With multiple editor windows,
    choose the window in Chrome first. No IDs or codes need copying.
 
@@ -185,7 +185,7 @@ VS Code, enter the extension ID and paste the resulting code into Chrome.
 - Network failures trigger retries while retaining the latest messages. A rejection
   from another editor profile does not remove the original profile's resume grant. Messages still
   pending when the editor restarts are sent through the resumed connection.
-- Closing the source editor chat panel revokes its bridge. The normal AI Browser
+- Closing the source editor chat panel revokes its bridge. The normal HoverDeck
   lifecycle still applies: closing the source interface can stop its agent.
 - VS Code must run on the same computer. Remote extension hosts are not supported.
 

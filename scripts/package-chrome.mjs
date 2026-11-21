@@ -10,7 +10,7 @@ const extension = fileURLToPath(new URL('../chrome-extension/', import.meta.url)
 const dist = `${extension}dist/`;
 const manifest = JSON.parse(await readFile(`${dist}manifest.json`, 'utf8'));
 if (!/^\d+(?:\.\d+){1,3}$/.test(manifest.version)) { throw new Error('Invalid Chrome extension version.'); }
-const archive = `${extension}ai-browser-chrome-${manifest.version}.zip`;
+const archive = `${extension}hoverdeck-chrome-${manifest.version}.zip`;
 const temporary = `${archive}.tmp`;
 
 async function files(directory, prefix = '') {

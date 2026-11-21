@@ -1,5 +1,7 @@
 # Changelog
 
+**Chrome plugin 0.7.0** — The Chrome plugin is renamed from AI Browser to **HoverDeck** (new name, icons, side-panel texts and store listing; the package is now `hoverdeck-chrome-<version>.zip`). Its page chip now names the MCP server of the editor it is paired with — `hoverdeck` for HoverDeck, `ai-browser` for AI Browser — so agents in either find their browser tools. The pairing protocol is unchanged, so it still pairs with both.
+
 **1.0.4** — New name on Open VSX: **HoverDeck🏆 AI Browser, MCP, Chat**; the agents it drives (Claude Code, Codex, Gemini, OpenCode, Pi, OpenRouter, Ollama and LM Studio) are listed in its description.
 
 **1.0.2** — The empty chat greets you with the HoverDeck icon instead of a globe, in VS Code, the Chrome side panel and on the Exchange website; the README shows it too.

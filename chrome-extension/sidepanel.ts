@@ -40,7 +40,7 @@ modeButton.addEventListener('click', () => { modeOpen = !modeOpen; renderMode();
 element('mode-close').addEventListener('click', () => { modeOpen = false; renderMode(); modeButton.focus(); });
 const modeExplanations = {
   full: 'Full mode: this Chrome was opened from VS Code, so the agents\u2019 browser tools see and drive its tabs \u2014 reading pages, clicking, filling forms, screenshots \u2014 alongside everything in this panel.',
-  limited: 'Limited mode: this Chrome was not opened from VS Code, so the agents cannot see or act on its pages. You can still chat, pick elements, attach screenshots and page addresses here. For every function, open Chrome from VS Code: in the AI Browser chat press the globe (Open browser) and choose Google Chrome, then use this panel in that window.',
+  limited: 'Limited mode: this Chrome was not opened from VS Code, so the agents cannot see or act on its pages. You can still chat, pick elements, attach screenshots and page addresses here. For every function, open Chrome from VS Code: in the HoverDeck chat press the globe (Open browser) and choose Google Chrome, then use this panel in that window.',
 } as const;
 function renderMode(): void {
   const mode = latest?.agentChrome === undefined ? undefined : latest.agentChrome ? 'full' : 'limited';
@@ -123,13 +123,23 @@ const replaySnapshots = snapshotReplay(emit);
  * its own browser tab: one click attaches it as a page that follows the tab.
  * Without it the agent has no hint that the page the user means is in Chrome.
  */
-/** What a page chip tells the agent: the page is in Google Chrome and the ai-browser tools reach it. */
+/**
+ * The MCP server name of the paired editor. This plugin pairs with HoverDeck
+ * (`hoverdeck`) and with the frozen AI Browser (`ai-browser`); the snapshot's
+ * `product` says which. An editor that sends no product is an AI Browser build.
+ */
+function editorServerName(): string {
+  const product = (latest?.view as { product?: string } | undefined)?.product;
+  return product === undefined || product === 'AI Browser' ? 'ai-browser' : 'hoverdeck';
+}
+/** What a page chip tells the agent: the page is in Google Chrome and the editor's MCP tools reach it. */
 function chromePageText(href: string, title: string | undefined): string {
+  const server = editorServerName();
   return `The user is looking at this page in Google Chrome: ${href}\n${title || ''}\n`
-    + 'To read or act on it use the ai-browser MCP tools (browser_tabs, browser_select_tab, browser_snapshot, browser_click, browser_navigate, …), '
-    + 'whose names carry a client prefix such as mcp__ai-browser__. Call browser_tabs, pick this address among the Chrome tabs, and select it with browser_select_tab before acting; '
+    + `To read or act on it use the ${server} MCP tools (browser_tabs, browser_select_tab, browser_snapshot, browser_click, browser_navigate, …), `
+    + `whose names carry a client prefix such as mcp__${server}__. Call browser_tabs, pick this address among the Chrome tabs, and select it with browser_select_tab before acting; `
     + 'open new pages with browser_navigate from that tab so they stay in Chrome.\n'
-    + 'For this page, use only the built-in ai-browser MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.';
+    + `For this page, use only the built-in ${server} MCP as your browser; do not use other browser tools or launch a separate browser. If it is unavailable, report that instead of switching tools.`;
 }
 const pageSuggestionId = 'chrome-active-page';
 function pageSuggestion(chatId: string): { id: string; kind: 'sharedPage'; label: string }[] {
@@ -222,7 +232,7 @@ function pinConversation(chatId: string): void {
   }).then(async response => {
     const result = await response.json().catch(() => ({})) as { error?: string; snapshot?: ChromeChatSnapshot };
     if (current !== generation || request !== pinning) { return; }
-    if (response.status === 426) { requireUpdate(result.error ?? 'Update both AI Browser extensions.'); return; }
+    if (response.status === 426) { requireUpdate(result.error ?? 'Update the editor extension and this Chrome extension.'); return; }
     if (!response.ok) { throw new Error(result.error ?? 'Could not switch conversations.'); }
     cancelPick(); feedback = undefined; etag = undefined; shownEpoch = undefined;
     if (result.snapshot?.view) { latest = result.snapshot; shownRevision = Math.max(shownRevision, (result as { revision?: number }).revision ?? -1); }
@@ -676,7 +686,7 @@ async function flush(): Promise<void> {
         return { error: 'Connection refused. Reconnect to the editor before sending again.' };
       }) as { error?: string; snapshot?: ChromeChatSnapshot };
       if (current !== generation) { return; }
-      if (response.status === 426) { requireUpdate(result.error ?? 'Update both AI Browser extensions to the latest version.'); return; }
+      if (response.status === 426) { requireUpdate(result.error ?? 'Update the editor extension and this Chrome extension to the latest version.'); return; }
       outbox.shift(); persisted.delete(command.id);
       if (!response.ok) { restoreCommandDraft(command); }
       else if (command.message.type === 'send') {
@@ -777,7 +787,7 @@ async function requestQuickConnection(url: string, current: number): Promise<voi
       const response = await fetch(`${url}/pair/${attempt.id}`, { method, headers: pairingHeaders(attempt.secret), signal: attempt.controller.signal });
       if (current !== generation) { return; }
       if (response.status === 429) { throw new Error('A request is already pending in the editor. Allow or deny it, then try again.'); }
-      if (response.status === 426) { const error = await response.json() as { error?: string }; throw new Error(error.error ?? 'Update both AI Browser extensions.'); }
+      if (response.status === 426) { const error = await response.json() as { error?: string }; throw new Error(error.error ?? 'Update the editor extension and this Chrome extension.'); }
       if (!response.ok) { throw new Error('The request expired or the editor is unavailable. Click Connect again.'); }
       const result = await response.json() as { status?: string; connection?: unknown };
       if (current !== generation) { return; }
@@ -819,13 +829,13 @@ quickConnect.addEventListener('click', () => {
       const response = await fetch(`${url}/discovery`, { headers: pairingHeaders(), signal: AbortSignal.timeout(1500) });
       if (!response.ok) { return undefined; }
       const host = await response.json() as { kind?: string; version?: number; label?: string; protocolVersion?: number; editorVersion?: string; capabilities?: unknown };
-      return host.kind === chromePairingKind && host.version === 1 ? { url, label: typeof host.label === 'string' ? host.label : 'AI Browser', problem: editorCompatibility(host) } : undefined;
+      return host.kind === chromePairingKind && host.version === 1 ? { url, label: typeof host.label === 'string' ? host.label : 'HoverDeck', problem: editorCompatibility(host) } : undefined;
     } catch { return undefined; }
   })).then(found => {
     if (current !== generation) { return; }
     const hosts = found.filter((host): host is { url: string; label: string; problem: string | undefined } => !!host);
     quickConnect.disabled = false; cancelConnect.hidden = true;
-    if (!hosts.length) { status.dataset.busy = 'false'; status.textContent = 'No editor found. Open a local window with an updated AI Browser extension and try again.'; return; }
+    if (!hosts.length) { status.dataset.busy = 'false'; status.textContent = 'No editor found. Open a local window with an updated HoverDeck (or AI Browser) extension and try again.'; return; }
     if (hosts.length === 1) {
       if (hosts[0].problem) { status.dataset.busy = 'false'; status.textContent = hosts[0].problem; status.dataset.state = 'error'; }
       else { void requestQuickConnection(hosts[0].url, current); }
@@ -863,7 +873,7 @@ async function performAnnotationExchange(connection: ChromeChatConnection, curre
   if (response.status === 404) { throw new Error(chromeChatFeatureError('annotations')); }
   const data = await response.json() as { requests?: AnnotationRequest[]; error?: string };
   if (current !== generation) { return; }
-  if (response.status === 426) { requireUpdate(data.error ?? 'Update both AI Browser extensions.'); return; }
+  if (response.status === 426) { requireUpdate(data.error ?? 'Update the editor extension and this Chrome extension.'); return; }
   if (!response.ok) { throw new Error(data.error ?? 'Could not synchronize Chrome annotations.'); }
   for (const result of results) { annotationResults.delete(result.id); }
   for (const task of data.requests ?? []) {
@@ -929,7 +939,7 @@ async function poll(connection: ChromeChatConnection, current: number): Promise<
       if (current === generation) { void editorGone('The editor ended this connection.'); }
       return;
     }
-    if (response.status === 426) { const error = await response.json() as { error?: string }; requireUpdate(error.error ?? 'Update both AI Browser extensions.'); return; }
+    if (response.status === 426) { const error = await response.json() as { error?: string }; requireUpdate(error.error ?? 'Update the editor extension and this Chrome extension.'); return; }
     if (response.status !== 304) {
       if (!response.ok) { throw new Error('Editor unavailable'); }
       const snapshot = snapshotFrom(await response.json());
@@ -938,7 +948,7 @@ async function poll(connection: ChromeChatConnection, current: number): Promise<
       if (current !== generation) { return; }
       const problem = editorCompatibility(snapshot);
       if (problem || snapshot.version !== 1 || !snapshot.view) {
-        requireUpdate(problem ?? 'Update both AI Browser extensions to the latest version.'); return;
+        requireUpdate(problem ?? 'Update the editor extension and this Chrome extension to the latest version.'); return;
       }
       await reconcileDelivery(snapshot.deliverySession ?? `legacy:${connection.token}`);
       if (current !== generation) { return; }

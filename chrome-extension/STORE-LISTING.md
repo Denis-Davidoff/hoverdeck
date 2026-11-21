@@ -2,16 +2,16 @@
 
 ## Name
 
-AI Browser
+HoverDeck
 
 ## Short description
 
-Chat with AI Browser in Chrome. Attach page elements, screenshots and annotations to your local VS Code conversation.
+Chat with HoverDeck in Chrome. Attach page elements, screenshots and annotations to your local VS Code conversation.
 
 ## Detailed description
 
-Continue your AI Browser conversation alongside any website in Chrome's side panel.
-Connect to the AI Browser extension running in a local VS Code window, approve the
+Continue your HoverDeck conversation alongside any website in Chrome's side panel.
+Connect to the HoverDeck extension running in a local VS Code window, approve the
 connection in the editor, and work with the same conversation and agents.
 
 - Read replies, send messages, stop generation and respond to approval requests.
@@ -22,7 +22,7 @@ connection in the editor, and work with the same conversation and agents.
 - Add editable annotations to page elements and let your agent work with those notes.
 - Record a short screen or tab video using Chrome's screen-sharing chooser.
 
-Requires the AI Browser extension for VS Code running on the same computer.
+Requires the HoverDeck extension for VS Code running on the same computer.
 VS Code runs the agents and tools; the Chrome extension is a connected chat interface.
 
 Why website access is requested
@@ -45,7 +45,7 @@ terms of your selected provider before sharing sensitive information.
 
 ## Single purpose
 
-Extend the user's local AI Browser conversation in VS Code into Chrome's side
+Extend the user's local HoverDeck conversation in VS Code into Chrome's side
 panel, with page context and attachments for that conversation.
 
 ## Permission justifications
@@ -80,7 +80,7 @@ operations when persistent website access is restricted.
 
 ### sidePanel
 
-Displays the AI Browser conversation beside the current website.
+Displays the HoverDeck conversation beside the current website.
 
 ### storage
 

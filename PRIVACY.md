@@ -1,11 +1,11 @@
-# AI Browser Privacy Policy
+# HoverDeck Privacy Policy
 
 Last updated: October 22, 2026
 
 ## Scope
 
-This policy describes the AI Browser Chrome extension and its connection to the
-AI Browser extension for VS Code, maintained by Denis Davydov
+This policy describes the HoverDeck Chrome extension and its connection to the
+HoverDeck extension for VS Code, maintained by Denis Davydov
 ([Denis-Davidoff on GitHub](https://github.com/Denis-Davidoff)).
 
 The Chrome extension provides a side-panel interface to an AI conversation running
