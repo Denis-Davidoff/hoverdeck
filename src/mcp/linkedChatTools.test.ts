@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm';
 import { test } from 'node:test';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
 import * as protocol from './mcpProtocol.ts';
+import * as browserGuides from './browserGuides.ts';
 import { LinkedChats, type LinkedChat } from '../chat/linkedChats.ts';
 import { OwnedChats } from '../chat/ownedChats.ts';
 import type { StoredChat } from '../chat/chatTab.ts';
@@ -16,6 +17,7 @@ function load(features: { readonly chatConnectionsEnabled: boolean }): Record<st
 		compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
 	}).outputText, { exports, require: (name: string) => {
 		if (name === './mcpProtocol') { return protocol; }
+		if (name === './browserGuides') { return browserGuides; }
 		if (name === '../chat/core/chatFeatures') { return features; }
 		throw new Error(`Unexpected dependency: ${name}`);
 	} });

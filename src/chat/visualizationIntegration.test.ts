@@ -19,6 +19,7 @@ import * as visualizationProtocol from './visualizationProtocol.ts';
 import * as visualizationStore from './visualizationStore.ts';
 import * as messageFiles from './messageFiles.ts';
 import * as mcpProtocol from '../mcp/mcpProtocol.ts';
+import * as browserGuides from '../mcp/browserGuides.ts';
 import * as chatFeatures from './core/chatFeatures.ts';
 import type { AgentEvent } from './agentProtocol.ts';
 import type { TabHost, StoredChat } from './chatTab.ts';
@@ -103,7 +104,7 @@ test('split markers publish only after completion and failed updates retain the 
 }));
 
 test('presentation tool uses the caller capability and cannot select a different conversation', async () => {
-	const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol });
+	const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol, './browserGuides': browserGuides });
 	const port = new ChatControlPort();
 	const seen: unknown[] = [];
 	port.target = { tabOf: (id: string) => id === 'own' ? 'own-tab' : undefined, presentHtml: async (...args: unknown[]) => { seen.push(args); return { displayed: true }; } } as unknown as NonNullable<typeof port.target>;
@@ -154,7 +155,7 @@ test('image markers stream to cards and the MCP image tool requires the caller c
 	feed(tab, { type: 'text', text: reference.slice(-1) });
 	await drain(tab);
 	assert.equal(Object.values(tab.visualizations)[0].image?.mimeType, 'image/gif');
-	const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol });
+	const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol, './browserGuides': browserGuides });
 	const port = new ChatControlPort();
 	port.target = { tabOf: (id: string) => id === 'own' ? tab.id : undefined, presentImage: async (_tab: string, file: string, title?: string) => tab.presentImage(file, title) } as unknown as NonNullable<typeof port.target>;
 	const tool = chatTools(port).find(tool => tool.name === 'chat_present_image')!;
@@ -167,7 +168,7 @@ test('image markers stream to cards and the MCP image tool requires the caller c
 
 for (const agent of ['codex', 'claude'] as const) {
 	test(`${agent} publishes all artifact tools and restores their files after source removal`, async () => fixture(async (tab, host, htmlFile) => {
-		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol });
+		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol, './browserGuides': browserGuides });
 		const port = new ChatControlPort();
 		port.target = { tabOf: (id: string) => id === 'own' ? tab.id : undefined, presentArtifact: async (_tab: string, file: string, kind: import('./visualizationProtocol.ts').ArtifactKind, title?: string) => tab.presentArtifact(file, kind, title) } as unknown as NonNullable<typeof port.target>;
 		const inputs = [
@@ -221,7 +222,7 @@ test('Claude Code plain markers and MCP completions reach the same image and tab
 
 for (const agent of ['codex', 'claude'] as const) {
 	test(`${agent} rich tools update notifications, progress, plans and JSON cards without duplicates`, async () => fixture(async (tab) => {
-		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol });
+		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol, './browserGuides': browserGuides });
 		const port = new ChatControlPort();
 		port.target = { tabOf: (id: string) => id === 'own' ? tab.id : undefined, presentRich: async (_tab: string, kind: string, args: Record<string, unknown>) => tab.presentRich(kind, args) } as unknown as NonNullable<typeof port.target>;
 		const tools = chatTools(port);
@@ -357,7 +358,7 @@ async function readPresentationRequest(args: Record<string, unknown>): Promise<m
 
 for (const agent of ['codex', 'claude'] as const) {
 	test(`${agent} publishes 1 MB and 4 MB multipart files through the real MCP request limit using paths`, async () => fixture(async (tab, _host, htmlFile) => {
-		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol });
+		const { chatTools, ChatControlPort } = load<typeof import('../mcp/chatTools.ts')>('src/mcp/chatTools.ts', { './mcpProtocol': mcpProtocol, './browserGuides': browserGuides });
 		const port = new ChatControlPort();
 		port.target = { tabOf: (id: string) => id === 'own' ? tab.id : undefined, presentRich: async (_tab: string, kind: string, args: Record<string, unknown>) => tab.presentRich(kind, args) } as unknown as NonNullable<typeof port.target>;
 		const file = path.join(path.dirname(htmlFile), 'report.bin'), image = path.join(path.dirname(htmlFile), 'cat.gif');

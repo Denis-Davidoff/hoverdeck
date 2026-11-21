@@ -37,6 +37,7 @@ import type { ChatSound } from '../chat/chatProtocol';
 export const chatToolSounds: readonly ChatSound[] = ['chime', 'bell', 'pop', 'dingdong', 'marimba', 'harp', 'kalimba', 'glass', 'bubble', 'coin', 'levelup', 'sparkle', 'sonar', 'arcade', 'droplet', 'woodblock', 'fanfare', 'zen', 'whistle', 'synth', 'lullaby', 'triad', 'ascend', 'descend', 'doorbell', 'tick', 'blip', 'laser', 'ufo', 'boing', 'piano', 'celesta', 'organ', 'flute', 'pluck', 'gong', 'twinkle', 'heartbeat', 'success', 'notice', 'trill', 'jingle', 'swoosh', 'robot', 'chirp', 'harmony', 'steel', 'cosmic', 'ping', 'victory'];
 import { schema, number, string, textArgument, numberArgument, type Caller, type Tool } from './mcpProtocol';
 import type { TerminalAgentApi } from './terminalTools';
+import { guideDocument, guideSummaries } from './browserGuides';
 import type { TerminalGrants } from './terminalGrants';
 
 /** Tools that act; `chatControlTools` in `agentProtocol.ts` is the same list, written twice. */
@@ -174,10 +175,16 @@ function skillTools(port: ChatControlPort): Tool[] {
 		{
 			name: 'skill_list', title: 'Skills: list',
 			description: 'Lists the user\'s saved skills (the chat\'s toolbar skills and workflows): each one\'s name, a one-line '
-				+ 'description, its parameters and how many steps it has. When the user\'s request matches one, call skill_get '
-				+ 'with its name and follow what it returns before doing the task any other way.',
+				+ 'description, its parameters and how many steps it has, plus built-in guides to the browser tools (forms, sign-in, '
+				+ 'iframes, common page shapes). When the user\'s request matches one, call skill_get with its name and follow what '
+				+ 'it returns before doing the task any other way.',
 			inputSchema: schema({}),
-			run: async (_args, caller) => control(port).skills(ownTab(port, caller)),
+			// The guides are there even where the chat is not: they are about the
+			// browser tools, which a Claude Code in a terminal uses as much.
+			run: async (_args, caller) => {
+				const own = port.target ? port.target.skills(ownTab(port, caller)) as Record<string, unknown> : { skills: [] };
+				return { ...own, guides: guideSummaries() };
+			},
 		},
 		{
 			name: 'skill_get', title: 'Skills: load one',
@@ -187,7 +194,8 @@ function skillTools(port: ChatControlPort): Tool[] {
 			run: async (args, caller) => {
 				const name = (textArgument(args.name, 'name') ?? '').trim().replace(/^[/$]/, '');
 				if (!name) { throw new Error('name is required: call skill_list for the names.'); }
-				return control(port).skill(ownTab(port, caller), name);
+				// A guide first: its `guide-` names are ours and fixed.
+				return guideDocument(name) ?? control(port).skill(ownTab(port, caller), name);
 			},
 		},
 	];
@@ -252,6 +260,14 @@ export function chatTools(port: ChatControlPort): Tool[] {
 				+ 'and whether the computer is kept awake. For the chat\'s own agents, their own tab (own: true) also has its title '
 				+ 'and its last reply. Other tabs\' conversations are not shown.',
 			inputSchema: schema({}),
+			// Loose: named fields are the ones a caller branches on.
+			outputSchema: {
+				type: 'object',
+				properties: {
+					tabs: { type: 'array', items: { type: 'object', properties: { status: { type: 'string' }, own: { type: 'boolean' } }, additionalProperties: true } },
+				},
+				additionalProperties: true,
+			},
 			run: async (_args, caller) => control(port).state(ownTab(port, caller)),
 		},
 		{
