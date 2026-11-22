@@ -1552,6 +1552,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				skillRuns: this._runs.runningIn(tab.chat.id),
 				busy: tab.busy,
 				queued: tab.queuedCount,
+				...(tab.scheduled.length ? { scheduled: tab.scheduled.length } : {}),
+				...(tab.started && tab.chat.agent === 'claude' && this._selection(tab).ultracode === true ? { ultracode: true } : {}),
 				status: tab.status,
 				...(mirrored.has(tab.chat.id) ? { chrome: true } : {}),
 				...this._pinnedSummary(tab),

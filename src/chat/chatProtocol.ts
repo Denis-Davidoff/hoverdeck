@@ -1018,6 +1018,10 @@ export interface ChatTabSummary {
 	readonly busy: boolean;
 	/** Messages queued in the tab, which closing it drops. */
 	readonly queued: number;
+	/** Of `queued`, those scheduled for a time (`PendingSend.at`): closing the tab drops them too, so it asks. */
+	readonly scheduled?: number;
+	/** The conversation has started with Claude Ultracode on: closing the tab asks first. */
+	readonly ultracode?: true;
 	/** The mark on the tab; absent while nothing has been sent from it. See `ChatTab.status`. */
 	readonly status?: ChatTabStatus;
 	/** Shown in Chrome's side panel: what is typed there appears here. */

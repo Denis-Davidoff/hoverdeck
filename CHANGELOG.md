@@ -2,6 +2,8 @@
 
 **Chrome plugin 0.7.0** — The Chrome plugin is renamed from AI Browser to **HoverDeck** (new name, icons, side-panel texts and store listing; the package is now `hoverdeck-chrome-<version>.zip`). Its page chip now names the MCP server of the editor it is paired with — `hoverdeck` for HoverDeck, `ai-browser` for AI Browser — so agents in either find their browser tools. The pairing protocol is unchanged, so it still pairs with both.
 
+**1.0.6** — Each turn's tokens line shows when the turn ran (`12:20–12:40 · 15 min ago`, `yesterday …`), kept current. HoverDeck is found on Open VSX by "hover deck", and four more entry points install it with a default agent: Claude Code Chat, Codex Chat, Local LLM Chat (Ollama, LM Studio, llama.cpp) and DeepSeek, Qwen, Kimi & GLM through OpenRouter.
+
 **1.0.5** — Several repositories in one working folder: the footer's repository, branch and changes buttons are one control under one hover, and they open one wide Git window — a tab per repository on top (only with two or more), branches on the left, changes and commits on the right; it opens on hover, has no refresh button in the footer, does not name the working folder's own repository, and in a low chat takes the full height above the footer. The GitHub tab follows the picked repository or one you pin. Cmd+C (Ctrl+C) now copies a selection inside a chat visualization.
 
 **1.0.4** — New name on Open VSX: **HoverDeck🏆 AI Browser, MCP, Chat**; the agents it drives (Claude Code, Codex, Gemini, OpenCode, Pi, OpenRouter, Ollama and LM Studio) are listed in its description.

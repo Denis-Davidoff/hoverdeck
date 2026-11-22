@@ -5405,6 +5405,15 @@ star is 17px and the square 10px, and the token counts stay in the small print (
 0.92em). **All three have the same space above them, 8px** (`margin-top`, asked for: twice the 4px
 it was, and one value for the three), and the working line 2px inside, as "agents running" has.
 
+**Beside the tokens, when the turn ran** (asked for): `turnSpan` in [preview-src/turnTime.ts](preview-src/turnTime.ts)
+(leaf, under test) writes the prompt's `at` to `at + workedMs` the way people say it — `12:20–12:40 · 15 min ago`
+today within twelve hours, `today 09:05–09:40`, `yesterday 12:20–12:40`, a weekday within the week, then `Nov 3`
+(and the year when it differs); a turn across midnight names both days. Local time, 24-hour clock; the tooltip has the
+full dates. `.worked-when` carries `data-start` / `data-end` and `tickTurnTimes` refills it in place every 30 s, so
+"15 min ago" moves on without rebuilding the row (#365). The end is approximate for a message that waited in a queue
+(`workedMs` counts from the turn's own start). The `.worked` line wraps in a narrow side bar, time and tokens staying
+on the right.
+
 **A turn's tokens are the difference in the chat's totals across the turn**, shown only when the
 agent reported any. That one rule is right for both agents although they report differently —
 Claude Code's `result.usage` is per turn and is added up, Codex's `tokenUsage.total` is the
@@ -8239,6 +8248,12 @@ stays open under it (`keep`). A busy tab's close confirmation is placed under th
   flipped above when there is no room; a press outside or Escape cancels) — "… is still working.
   Closing it stops its reply and 1 agent." — never in a modal. It was a band across the strip,
   which took a row for as long as the question stood (asked for: a tooltip with buttons).
+  **It also asks for a tab with scheduled messages or with Ultracode on** (asked for):
+  `ChatTabSummary.scheduled` (of `queued`, those with a send time — the question names them apart
+  from messages waiting for the turn, `closingQueueNote`) and `ultracode` (a started Claude
+  conversation whose selection has Ultracode on; an empty tab never asks, or a global Ultracode
+  default would make every fresh tab ask). Both feed `asksBeforeClose`, so Close other / all chats
+  count them too.
 - **Cmd+W (Ctrl+W), or Option+W (Alt+W), with focus in the chat closes the chat tab in front, not an editor** (asked
   for: in the side bar it closed an editor the user was not even looking at). A contributed
   keybinding, `aiBrowser.chat.closeTab`, on `aiBrowser.chatFocused` — so it is listed in Keyboard
@@ -12854,6 +12869,15 @@ built by `npm run package:listings` into `listings/dist/<name>.vsix`, published 
   (`listings.json`), independent of HoverDeck's.
 - **Not measured yet**: that Open VSX resolves `extensionDependencies` on install, and that the default reaches a fresh
   profile. Check on a clean profile after the first publish, before announcing.
+- **Search listings (2026-11-22)**: four more entries target searches the per-agent ones do not reach —
+  `hoverdeck-claude-code-chat`, `hoverdeck-codex-chat` (badge `listings/icons/icon-cli.png`), `hoverdeck-local-llm`,
+  `hoverdeck-deepseek-qwen-kimi` (badge `icon-llm.png`, both set the OpenRouter agent). A listing's optional `icon`
+  names a PNG in `listings/icons/`; the icons were rendered from `media/icon.png` plus a badge in headless Chrome.
+  Measured on Open VSX's default (relevance) search: **the extension `name` (slug) tokens outrank everything** —
+  `claude-code-chat` (91k downloads) is #2 for "claude code", `local-llm` (10k) #1 for "local llm" — then the display
+  name, tags and description. So a new search target needs its words in the slug; a slug cannot be renamed (a new
+  name is a new extension). Name only agents and models HoverDeck really drives (OpenRouter's catalogue counts for
+  DeepSeek, Qwen, Kimi, GLM); every readme says HoverDeck is not affiliated with their makers.
 
 ### The Marketplace build is a second, stubbed extension in `vscode-marketplace/`
 

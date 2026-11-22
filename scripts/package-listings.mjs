@@ -47,6 +47,7 @@ for (const listing of config.listings) {
 	if (!agentEnum.includes(listing.agent) || !listing.agent) { fail(`${listing.name}: agent "${listing.agent}" is not a value of hoverdeck.chat.defaultAgent.`); }
 	if (!listing.displayName?.startsWith('HoverDeck')) { fail(`${listing.name}: the display name should start with HoverDeck.`); }
 	if (listing.description.length > 300) { fail(`${listing.name}: description over 300 characters.`); }
+	if (listing.icon !== undefined && !/^listings\/icons\/[a-z0-9-]+\.png$/.test(listing.icon)) { fail(`${listing.name}: icon must be a PNG in listings/icons/.`); }
 }
 for (const name of wanted) { if (!names.has(name)) { fail(`No listing named ${name}.`); } }
 
@@ -58,7 +59,7 @@ for (const listing of config.listings) {
 	const dir = join(dist, listing.name);
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(join(dir, 'media'), { recursive: true });
-	copyFileSync(join(root, pkg.icon), join(dir, 'media', 'icon.png'));
+	copyFileSync(join(root, listing.icon ?? pkg.icon), join(dir, 'media', 'icon.png'));
 	copyFileSync(join(root, 'LICENSE'), join(dir, 'LICENSE'));
 	writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest(listing), null, '\t') + '\n');
 	writeFileSync(join(dir, 'README.md'), readme(listing));
@@ -87,7 +88,7 @@ function manifest(listing) {
 		homepage: pkg.homepage,
 		engines: { vscode: pkg.engines.vscode },
 		categories: ['AI', 'Chat'],
-		keywords: [...new Set([...listing.keywords, 'hoverdeck', 'ai', 'agent'])].slice(0, 30),
+		keywords: [...new Set(['hoverdeck', 'hover deck', 'hover-deck', ...listing.keywords, 'ai', 'agent'])].slice(0, 30),
 		files: ['media/icon.png', 'README.md', 'LICENSE'],
 		extensionDependencies: [config.main],
 		contributes: {
@@ -120,6 +121,9 @@ ${notes}
 - VS Code's built-in browser (and Google Chrome) as tools: read pages, click, fill forms, take screenshots, record video.
 - Git in the chat: changes, commits with generated messages, branches, pull requests and Actions runs.
 - Terminal tabs and the same chat from the Chrome side panel and your phone.
+
+HoverDeck is an independent extension, not affiliated with or endorsed by the makers of the agents and models named
+here; their names are used only to say what it works with.
 
 HoverDeck needs VS Code 1.112 or later for the built-in browser tools, and the \`browser\` API proposal enabled — the
 status bar's **Enable Browser API** does it in one click.

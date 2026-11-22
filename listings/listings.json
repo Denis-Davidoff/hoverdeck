@@ -1,14 +1,29 @@
 {
 	"$comment": "Thin Open VSX listings for HoverDeck, one per agent. Each is a manifest with no code: it depends on DenysDavydov.hoverdeck and sets hoverdeck.chat.defaultAgent. Built by scripts/package-listings.mjs; see CLAUDE.md, 'Per-agent listings on Open VSX'.",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"main": "DenysDavydov.hoverdeck",
 	"listings": [
 		{
 			"name": "hoverdeck-for-gemini",
 			"agent": "gemini",
-			"displayName": "HoverDeck🏆 for Gemini CLI",
-			"description": "Gemini CLI in a VS Code chat with a built-in browser, Git and terminals — drive pages, review diffs and approve every tool call. Installs HoverDeck with Gemini as the default agent.",
-			"keywords": ["gemini", "gemini cli", "google gemini", "gemini code assist", "ai agent", "acp", "mcp", "browser", "chat"],
+			"displayName": "HoverDeck🏆 for Gemini CLI — Chat, Browser & MCP",
+			"description": "Gemini CLI chat for VS Code with a built-in browser the agent can drive, Git and terminals: review diffs and approve every tool call. A Gemini CLI GUI over ACP. Installs HoverDeck with Gemini as the default agent.",
+			"keywords": [
+				"gemini",
+				"gemini cli",
+				"gemini-cli",
+				"google gemini",
+				"gemini code",
+				"gemini code assist",
+				"gemini chat",
+				"ai agent",
+				"coding agent",
+				"acp",
+				"agent client protocol",
+				"mcp",
+				"browser",
+				"chat"
+			],
 			"agentName": "Gemini CLI",
 			"install": "Install Gemini CLI (`npm install -g @google/gemini-cli`) and sign in once by running `gemini` in a terminal.",
 			"notes": [
@@ -18,9 +33,23 @@
 		{
 			"name": "hoverdeck-for-opencode",
 			"agent": "opencode",
-			"displayName": "HoverDeck🏆 for OpenCode",
-			"description": "OpenCode in a VS Code chat with a built-in browser, Git and terminals — any model OpenCode supports, with approvals for every command and edit. Installs HoverDeck with OpenCode as the default agent.",
-			"keywords": ["opencode", "open code", "sst opencode", "ai agent", "acp", "mcp", "browser", "chat", "terminal"],
+			"displayName": "HoverDeck🏆 for OpenCode — Chat, Browser & MCP",
+			"description": "OpenCode chat panel for VS Code with a built-in browser, Git and terminals: any model OpenCode supports, with approvals for every command and edit. An OpenCode GUI over ACP. Installs HoverDeck with OpenCode as the default agent.",
+			"keywords": [
+				"opencode",
+				"open code",
+				"opencode chat",
+				"opencode gui",
+				"opencode panel",
+				"sst opencode",
+				"ai agent",
+				"coding agent",
+				"acp",
+				"mcp",
+				"browser",
+				"chat",
+				"terminal"
+			],
 			"agentName": "OpenCode",
 			"install": "Install OpenCode (`curl -fsSL https://opencode.ai/install | bash`) and sign in with `opencode auth login`.",
 			"notes": []
@@ -28,9 +57,22 @@
 		{
 			"name": "hoverdeck-for-pi",
 			"agent": "pi",
-			"displayName": "HoverDeck🏆 for Pi",
-			"description": "The Pi coding agent in a VS Code chat with a built-in browser, Git and terminals — with an approval for every tool call Pi makes. Installs HoverDeck with Pi as the default agent.",
-			"keywords": ["pi", "pi agent", "pi coding agent", "earendil", "ai agent", "mcp", "browser", "chat", "terminal"],
+			"displayName": "HoverDeck🏆 for Pi Coding Agent — Chat, Browser & MCP",
+			"description": "The Pi coding agent in a VS Code chat with a built-in browser, Git and terminals, and an approval for every tool call Pi makes. A Pi agent GUI for VS Code and VSCodium. Installs HoverDeck with Pi as the default agent.",
+			"keywords": [
+				"pi",
+				"pi agent",
+				"pi-agent",
+				"pi coding agent",
+				"pi-coding-agent",
+				"earendil",
+				"ai agent",
+				"coding agent",
+				"mcp",
+				"browser",
+				"chat",
+				"terminal"
+			],
 			"agentName": "Pi",
 			"install": "Install Pi (`npm install -g @earendil-works/pi-coding-agent`, Node.js 20 or later) and sign in by running `pi` and typing `/login`.",
 			"notes": [
@@ -41,13 +83,148 @@
 			"name": "hoverdeck-for-openrouter",
 			"agent": "openrouter",
 			"displayName": "HoverDeck🏆 for OpenRouter, Ollama & LM Studio",
-			"description": "Chat with any OpenRouter model, or a local one from Ollama or LM Studio, in VS Code — with a built-in browser the model can drive. Installs HoverDeck with OpenRouter as the default agent.",
-			"keywords": ["openrouter", "ollama", "lm studio", "lmstudio", "llama.cpp", "local llm", "local models", "deepseek", "qwen", "llama", "ai chat", "mcp", "browser"],
+			"description": "Chat with any OpenRouter model, or a local one from Ollama or LM Studio, in VS Code — bring your own key (BYOK), with a built-in browser the model can drive over MCP. Installs HoverDeck with OpenRouter as the default agent.",
+			"keywords": [
+				"openrouter",
+				"ollama",
+				"lm studio",
+				"lmstudio",
+				"llama.cpp",
+				"local llm",
+				"local models",
+				"byok",
+				"bring your own key",
+				"deepseek",
+				"qwen",
+				"llama",
+				"ai chat",
+				"mcp",
+				"browser"
+			],
 			"agentName": "OpenRouter",
 			"install": "Open **Chat Settings → OpenRouter** in the HoverDeck chat. For OpenRouter, store your API key and add models from the catalogue. For a local model, pick **Ollama** (`http://localhost:11434/v1`) or **LM Studio** (`http://localhost:1234/v1`) as the catalogue's source and add a model — no key is needed and nothing leaves your computer.",
 			"notes": [
 				"This agent's tools are HoverDeck's browser, editor and chat tools. It has no shell and does not edit files: for that, use Claude Code, Codex, Gemini CLI, OpenCode or Pi in the same chat.",
 				"Small local models often call tools badly; switch **Supports tools** off for such a model in its settings."
+			]
+		},
+		{
+			"name": "hoverdeck-claude-code-chat",
+			"agent": "claude",
+			"icon": "listings/icons/icon-cli.png",
+			"displayName": "HoverDeck🏆 Claude Code Chat — Browser, Git & MCP",
+			"description": "Claude Code chat for VS Code with a built-in browser the agent can drive, Git, terminals and an approval for every tool call. Uses your own Claude Code CLI and subscription. Installs HoverDeck with Claude Code as the default agent.",
+			"keywords": [
+				"claude",
+				"claude code",
+				"claude-code",
+				"claude code chat",
+				"claude code gui",
+				"anthropic",
+				"sonnet",
+				"opus",
+				"ai agent",
+				"coding agent",
+				"mcp",
+				"browser automation",
+				"chat",
+				"terminal"
+			],
+			"agentName": "Claude Code",
+			"install": "Install Claude Code (`npm install -g @anthropic-ai/claude-code`, or the native installer) and sign in once by running `claude` in a terminal.",
+			"notes": [
+				"HoverDeck drives the `claude` CLI you already have, on your own subscription; nothing is resold or proxied."
+			]
+		},
+		{
+			"name": "hoverdeck-codex-chat",
+			"agent": "codex",
+			"icon": "listings/icons/icon-cli.png",
+			"displayName": "HoverDeck🏆 Codex Chat — OpenAI Codex CLI with Browser & MCP",
+			"description": "OpenAI Codex CLI chat for VS Code with a built-in browser the agent can drive, Git, terminals and an approval for every command and edit. Uses your own Codex sign-in (ChatGPT plan or API key). Installs HoverDeck with Codex as the default agent.",
+			"keywords": [
+				"codex",
+				"codex cli",
+				"openai codex",
+				"openai",
+				"chatgpt",
+				"gpt",
+				"codex chat",
+				"ai agent",
+				"coding agent",
+				"mcp",
+				"browser automation",
+				"chat",
+				"terminal"
+			],
+			"agentName": "Codex",
+			"install": "Install the Codex CLI (`npm install -g @openai/codex`) and sign in once by running `codex` in a terminal.",
+			"notes": [
+				"HoverDeck drives the `codex app-server` of the Codex CLI you already have, on your own sign-in."
+			]
+		},
+		{
+			"name": "hoverdeck-local-llm",
+			"agent": "openrouter",
+			"icon": "listings/icons/icon-llm.png",
+			"displayName": "HoverDeck🏆 Local LLM Chat — Ollama, LM Studio & llama.cpp",
+			"description": "Private local LLM chat in VS Code: Ollama, LM Studio or llama.cpp models on your computer, with a built-in browser the model can drive over MCP. No API key; your prompts stay on your computer. Installs HoverDeck.",
+			"keywords": [
+				"local llm",
+				"local-llm",
+				"local ai",
+				"offline ai",
+				"private",
+				"ollama",
+				"lm studio",
+				"lmstudio",
+				"llama.cpp",
+				"llama",
+				"qwen",
+				"gemma",
+				"mistral",
+				"deepseek",
+				"ai chat",
+				"mcp",
+				"browser"
+			],
+			"agentName": "OpenRouter (local models)",
+			"install": "Open **Chat Settings → OpenRouter** in the HoverDeck chat, pick **Ollama** (`http://localhost:11434/v1`) or **LM Studio** (`http://localhost:1234/v1`) as the catalogue's source and add a model. No key is needed.",
+			"notes": [
+				"Local models are reached only on loopback (`localhost`, `127.0.0.1`); nothing is sent off your computer.",
+				"Small local models often call tools badly; switch **Supports tools** off for such a model in its settings.",
+				"This agent's tools are HoverDeck's browser, editor and chat tools. It has no shell and does not edit files."
+			]
+		},
+		{
+			"name": "hoverdeck-deepseek-qwen-kimi",
+			"agent": "openrouter",
+			"icon": "listings/icons/icon-llm.png",
+			"displayName": "HoverDeck🏆 DeepSeek, Qwen, Kimi & GLM Chat — via OpenRouter",
+			"description": "Chat with DeepSeek, Qwen, Kimi, GLM, Grok, Mistral and hundreds more models in VS Code through OpenRouter with your own key, with a built-in browser the model can drive over MCP. Installs HoverDeck with OpenRouter as the default agent.",
+			"keywords": [
+				"deepseek",
+				"deepseek v4",
+				"qwen",
+				"qwen3",
+				"kimi",
+				"kimi k2",
+				"glm",
+				"zhipu",
+				"grok",
+				"mistral",
+				"minimax",
+				"openrouter",
+				"byok",
+				"ai chat",
+				"mcp",
+				"browser"
+			],
+			"agentName": "OpenRouter",
+			"install": "Open **Chat Settings → OpenRouter** in the HoverDeck chat, store your OpenRouter API key and add the models you want from the catalogue (search `deepseek`, `qwen`, `kimi`, `glm`…).",
+			"notes": [
+				"The models are reached through OpenRouter's API with your key; availability and prices are OpenRouter's.",
+				"This agent's tools are HoverDeck's browser, editor and chat tools. It has no shell and does not edit files: for that, use Claude Code, Codex, Gemini CLI, OpenCode or Pi in the same chat."
 			]
 		}
 	]

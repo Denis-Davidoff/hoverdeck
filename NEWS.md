@@ -32,6 +32,11 @@ One deck for all your AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Pi an
 - $(location) **Page markers** — pin notes to page elements and send them to the agent as one prompt.
 - $(settings-gear) **Chat Settings** — use the gear at the top to edit prompts for commit messages, branch names and chat titles, or clean up temporary files.
 
+## 1.0.6 — 2026-11-22
+
+- **When a turn ran** — beside each turn's tokens: its start and end time and how long ago, refreshed as time passes.
+- **Easier to find** — search Open VSX for "hover deck", or for Claude Code, Codex, local LLM or DeepSeek, to find HoverDeck and its entry points.
+
 ## 1.0.5 — 2026-11-21
 
 - **Several repositories** — a project folder holding nested repositories gets one Git window: a tab per repository, branches on the left, changes and commits on the right, opened by hovering the footer.

@@ -596,6 +596,9 @@ button {
 	padding-top: 6px;
 	border-top: 1px solid var(--border);
 	padding-left: 0;
+	/* in a narrow side bar the time and tokens go to a line of their own, still on the right */
+	flex-wrap: wrap;
+	row-gap: 2px;
 	/* the chat text's own size, like the working line (asked for) */
 	font-size: var(--vscode-chat-font-size, var(--vscode-font-size));
 }
@@ -607,6 +610,19 @@ button {
 	font-variant-numeric: tabular-nums;
 	color: var(--fg-faint);
 	white-space: pre;
+}
+
+/* When the turn ran, start to end (asked for); right-aligned in the small print, before the tokens. */
+.worked-when {
+	margin-left: auto;
+	font-size: 0.92em;
+	font-variant-numeric: tabular-nums;
+	color: var(--fg-faint);
+	white-space: nowrap;
+}
+
+.worked-when + .worked-tokens {
+	margin-left: 10px;
 }
 
 /* What Gemini's Auto chose, in the small print beside "Worked for …"; cut, never wrapped. */

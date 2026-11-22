@@ -2,6 +2,7 @@ import { initTheme, getThemePreference, setThemePreference, type ThemePreference
 import { initChatAppearance, getChatFileIcons, setChatFileIcons } from './chatAppearance';
 import { overlayBounds, fitOverlay, anchoredOverlay } from './overlayPosition';
 import { chatTabDragType, parseChatTabTransfer } from './tabDrag';
+import { turnSpan, turnSpanTitle } from './turnTime';
 import { allTotals, groupStrip, projectColors, projectOf, tabForProject, type GroupedStrip, type ProjectGroup } from './tabProjects';
 import { createVsCodeChatHost } from './chatHost';
 import { citationInsertionOffset } from '../src/chat/citationPlacement';
@@ -5364,9 +5365,9 @@ function pinOnClick(t: StripTab): void {
 	post({ type: 'pinTab', id: t.id, pinned: true });
 }
 
-/** Closing asks first while the tab works, holds a queue, or is pinned. */
+/** Closing asks first while the tab works, holds a queue (scheduled messages included), is pinned, or has Ultracode on. */
 function asksBeforeClose(t: StripTab): boolean {
-	return !!(t.busy || t.queued || t.skillRuns || (!t.terminal && t.pinned));
+	return !!(t.busy || t.queued || t.skillRuns || (!t.terminal && (t.pinned || t.ultracode)));
 }
 
 /** The dropdown's rows; rebuilt only when what they show changes (#365). */
@@ -6522,8 +6523,8 @@ function renderTabConfirm(s: ChatViewState): void {
 		chatDrawerCollapsed = false; updateChatDrawer(); saveDraft();
 	}
 	const many = closing && closingMany ? stripOf(s).filter(t => !t.terminal && closingMany!.includes(t.id)) : undefined;
-	const shown = many ? JSON.stringify(['many', closing!.id, many.map(t => [t.id, t.busy, t.queued, t.skillRuns, t.pinned])])
-		: closing ? JSON.stringify([closing.id, closing.title, closing.agents, closing.skillRuns, closing.busy, closing.queued, closing.pinned, closing.terminal?.status]) : '';
+	const shown = many ? JSON.stringify(['many', closing!.id, many.map(t => [t.id, t.busy, t.queued, t.scheduled, t.skillRuns, t.pinned, t.ultracode])])
+		: closing ? JSON.stringify([closing.id, closing.title, closing.agents, closing.skillRuns, closing.busy, closing.queued, closing.scheduled, closing.pinned, closing.ultracode, closing.terminal?.status]) : '';
 	if (shown === confirmShown) {
 		return;
 	}
@@ -6536,6 +6537,8 @@ function renderTabConfirm(s: ChatViewState): void {
 	if (many) {
 		const working = many.filter(t => t.busy || t.queued || t.skillRuns).length;
 		const pinned = many.filter(t => t.pinned).length;
+		const scheduled = many.reduce((n, t) => n + (t.scheduled ?? 0), 0);
+		const ultra = many.filter(t => t.ultracode).length;
 		const yes = button([el('span', { text: working ? 'Stop and close' : 'Close' })], { class: 'confirm-danger' });
 		yes.addEventListener('click', () => {
 			closingTab = undefined;
@@ -6547,6 +6550,8 @@ function renderTabConfirm(s: ChatViewState): void {
 		const notes = [
 			working ? `${working} ${working === 1 ? 'is' : 'are'} still working and will be stopped` : '',
 			pinned ? `${pinned} ${pinned === 1 ? 'is' : 'are'} pinned` : '',
+			scheduled ? `${scheduled} scheduled message${scheduled === 1 ? '' : 's'} will not be sent` : '',
+			ultra ? `${ultra} ${ultra === 1 ? 'has' : 'have'} Ultracode on` : '',
 		].filter(Boolean);
 		tabConfirm.replaceChildren(el('span', { text: `Close ${many.length} chat${many.length === 1 ? '' : 's'}? ${notes.join('; ')}.` }), yes, no);
 		placeTabConfirm();
@@ -6569,13 +6574,26 @@ function renderTabConfirm(s: ChatViewState): void {
 		return;
 	}
 	const parts = stoppedParts(closing);
-	const queued = closing.queued ? `${closing.queued} queued message${closing.queued === 1 ? '' : 's'} will not be sent.` : '';
+	const queued = closingQueueNote(closing);
+	const ultraNote = closing.ultracode ? 'Ultracode is on in it.' : '';
+	const extra = [queued, ultraNote].filter(Boolean).join(' ');
 	const pinnedNote = closing.pinned ? `"${closing.title}" is pinned. Are you sure you want to close it?` : '';
 	const text = parts.length
-		? `"${closing.title}" is ${closing.pinned ? 'pinned and ' : ''}still working. Closing it stops ${parts.join(' and ')}.${queued ? ` ${queued}` : ''}`
-		: queued ? `${pinnedNote || `"${closing.title}":`} ${queued}` : pinnedNote;
+		? `"${closing.title}" is ${closing.pinned ? 'pinned and ' : ''}still working. Closing it stops ${parts.join(' and ')}.${extra ? ` ${extra}` : ''}`
+		: extra ? `${pinnedNote || `Close "${closing.title}"?`} ${extra}` : pinnedNote;
 	tabConfirm.replaceChildren(el('span', { text }), yes, no);
 	placeTabConfirm();
+}
+
+/** What closing drops from the tab's queue: scheduled messages named apart from those waiting for the turn. */
+function closingQueueNote(t: ChatTabSummary): string {
+	const scheduled = Math.min(t.scheduled ?? 0, t.queued);
+	const waiting = t.queued - scheduled;
+	const plural = (n: number) => n === 1 ? '' : 's';
+	return [
+		scheduled ? `${scheduled} scheduled message${plural(scheduled)} will not be sent.` : '',
+		waiting ? `${waiting} queued message${plural(waiting)} will not be sent.` : '',
+	].filter(Boolean).join(' ');
 }
 
 /** Puts the confirmation under the tab being closed, kept inside the view. */
@@ -7542,10 +7560,13 @@ function renderTail(tail: HTMLElement, s: ChatViewState, turn: Turn, last: boole
 	const tokens = p?.tokensIn !== undefined ? `↑ ${compact(p.tokensIn)}  ↓ ${compact(p.tokensOut ?? 0)}` : '';
 	// The model that answered, when it is not the one picked — what Gemini's Auto chose.
 	const models = Array.isArray(p?.models) ? p.models.filter(m => typeof m === 'string').join(', ') : '';
+	// When it ran, from start to end (asked for): "12:20–12:40 · 15 min ago", "yesterday 12:20–12:40".
+	const span = worked !== undefined && typeof p?.at === 'number' ? { start: p.at, end: p.at + worked } : undefined;
+	const when = span ? turnSpan(span.start, span.end, Date.now()) : '';
 	// The turn is over and agents it (or an earlier one) started still work:
 	// said at the very bottom, under "Worked for …" (asked for).
 	const runningAgents = last ? agentRows(s).filter(a => a.status === 'running') : [];
-	const sig = JSON.stringify([text, tokens, models, runningAgents.map(a => [a.id, agentTitle(a), a.startedAt])]);
+	const sig = JSON.stringify([text, when, tokens, models, runningAgents.map(a => [a.id, agentTitle(a), a.startedAt])]);
 	if (tail.dataset.sig !== sig) {
 		tail.dataset.sig = sig;
 		// A square where the working star was: the same slot, so the line does
@@ -7556,6 +7577,7 @@ function renderTail(tail: HTMLElement, s: ChatViewState, turn: Turn, last: boole
 					el('span', { class: 'working-glyph done', text: '■' }),
 					el('span', { class: 'worked-text', text }),
 					models ? el('span', { class: 'worked-model', text: models, title: `Answered by ${models} — the model chosen for this turn` }) : undefined,
+						span ? whenSpan(span.start, span.end, when) : undefined,
 					tokens ? el('span', {
 						class: 'worked-tokens', text: tokens,
 						title: `${(p?.tokensIn ?? 0).toLocaleString()} tokens sent${p?.tokensCached ? `, ${p.tokensCached.toLocaleString()} of them from the cache` : ''}; ${(p?.tokensOut ?? 0).toLocaleString()} received`,
@@ -7568,6 +7590,24 @@ function renderTail(tail: HTMLElement, s: ChatViewState, turn: Turn, last: boole
 				...runningAgents.map((a, i) => el('li', {}, agentRunningRow(a, i)))) : '');
 	}
 }
+
+/** The start and end of a turn, kept current by `tickTurnTimes` while it reads "N min ago". */
+function whenSpan(start: number, end: number, text: string): HTMLElement {
+	const node = el('span', { class: 'worked-when', text, title: turnSpanTitle(start, end) });
+	node.dataset.start = String(start);
+	node.dataset.end = String(end);
+	return node;
+}
+
+/** "15 min ago" and "today" move on with the clock; refilled in place, never rebuilt (#365). */
+function tickTurnTimes(): void {
+	const now = Date.now();
+	for (const node of document.querySelectorAll<HTMLElement>('.worked-when[data-start]')) {
+		const text = turnSpan(Number(node.dataset.start), Number(node.dataset.end), now);
+		if (node.textContent !== text) { node.textContent = text; }
+	}
+}
+setInterval(tickTurnTimes, 30_000);
 
 /** A background agent under a finished turn; its title opens its own card. */
 function agentRunningRow(a: ToolEntry, index: number): HTMLElement {
