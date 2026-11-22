@@ -5466,6 +5466,9 @@ body.vscode-light .pending-badge,
 .git-branch-sync-button { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; border: 0; border-radius: 4px; background: transparent; color: var(--fg); font: inherit; padding: 5px 6px; text-align: left; cursor: pointer; }
 .git-branch-sync-button:hover { background: var(--vscode-list-hoverBackground); }
 .git-branch-sync-button .git-branch-sync-external { margin-left: auto; opacity: 0.7; }
+.git-branch-sync-button.accent { background: var(--vscode-button-background); color: var(--vscode-button-foreground); margin-top: 2px; }
+.git-branch-sync-button.accent:hover { background: var(--vscode-button-hoverBackground); }
+.git-branch-sync-button.accent:disabled { opacity: .5; cursor: default; }
 .git-branch-remote { margin: 2px 6px; font: inherit; color: var(--fg); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, transparent); border-radius: 4px; padding: 2px 4px; }
 .git-branch-empty { padding: 12px 6px; color: var(--fg-3); }
 

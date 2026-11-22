@@ -3707,8 +3707,8 @@ function renderBranchSync(): void {
 	const remotes = branchState.remotes ?? [];
 	const upstream = branchState.upstream;
 	const actions = el('div', { class: 'git-branch-sync-actions' });
-	const action = (label: string, iconName: string, tip: string, run: () => void) => {
-		const b = button([icon(iconName), label], { class: 'git-branch-sync-button', title: tip });
+	const action = (label: string, iconName: string, tip: string, run: () => void, accent = false) => {
+		const b = button([icon(iconName), label], { class: `git-branch-sync-button${accent ? ' accent' : ''}`, title: tip });
 		b.disabled = branchBusy;
 		b.addEventListener('click', run);
 		actions.append(b);
@@ -3737,7 +3737,7 @@ function renderBranchSync(): void {
 			select.addEventListener('change', () => { publishRemoteChoice = select.value; });
 			actions.append(select);
 		}
-		action('Publish branch', 'cloud-upload', `Push ${current} and set its upstream`, () => runRemoteAction('publish', publishRemoteChoice));
+		action('Publish branch', 'cloud-upload', `Push ${current} and set its upstream`, () => runRemoteAction('publish', publishRemoteChoice), true);
 	} else {
 		const target = `${upstream.remote}/${upstream.branch}`;
 		const counts = [upstream.ahead ? `↑${upstream.ahead}` : '', upstream.behind ? `↓${upstream.behind}` : ''].filter(Boolean).join(' ');
@@ -3745,7 +3745,7 @@ function renderBranchSync(): void {
 		if (upstream.ahead && upstream.behind) {
 			text += ' · diverged — merge or rebase yourself';
 		} else if (upstream.ahead) {
-			action('Push', 'arrow-up', `Push ${upstream.ahead} commit${upstream.ahead === 1 ? '' : 's'} to ${target}`, () => runRemoteAction('push'));
+			action('Push', 'arrow-up', `Push ${upstream.ahead} commit${upstream.ahead === 1 ? '' : 's'} to ${target}`, () => runRemoteAction('push'), true);
 		} else if (upstream.behind) {
 			action('Pull', 'arrow-down', `Fetch and fast-forward to ${target}`, () => runRemoteAction('pull'));
 		}
