@@ -100,11 +100,8 @@ export const annotationSource = String.raw`(() => {
    const textarea=document.createElement('textarea');textarea.maxLength=2000;textarea.placeholder='Describe the change or leave a comment…';textarea.value=record.text;textarea.setAttribute('aria-label','Annotation '+record.number+' text');
    textarea.addEventListener('focus',()=>{palette.hidden=true;});
    textarea.addEventListener('input',e=>{e.stopPropagation();if(!e.isTrusted)return;record.text=textarea.value.slice(0,2000);badge.title='Annotation '+record.number+': '+record.text;send('change');});
-   textarea.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape'&&!e.isComposing){collapse(record);badge.focus();}});
-   palette.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.isComposing){e.stopPropagation();palette.hidden=true;label.focus();}});
-   card.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.isComposing){e.preventDefault();e.stopPropagation();if(!palette.hidden){palette.hidden=true;label.focus();}else{collapse(record);badge.focus();}}});
    root.addEventListener('focusout',()=>{setTimeout(()=>{const n=nodes.get(record.id);if(n&&n.open&&(!document.hasFocus()||!root.contains(shadow.activeElement)))collapse(record);},0);});
-   card.append(head,textarea,palette);root.append(badge,card);shadow.append(root);nodes.set(record.id,{root,badge,card,tag,textarea,palette,open:false});
+   card.append(head,textarea,palette);root.append(badge,card);shadow.append(root);nodes.set(record.id,{root,badge,card,tag,textarea,palette,label,open:false});
   }layout();
  }
  function layout(){
@@ -138,8 +135,15 @@ export const annotationSource = String.raw`(() => {
   const node=nodes.get(record.id);node.open=true;node.badge.hidden=true;node.card.hidden=false;layout();node.textarea.focus();
  }
  function down(event){if(mode&&!inside(event)&&event.isTrusted){event.preventDefault();event.stopImmediatePropagation();}}
- function key(event){if(event.key==='Escape'&&!event.isComposing&&drag){event.preventDefault();event.stopImmediatePropagation();endDrag(true);return;}if(event.key==='Escape'&&!event.isComposing&&mode){event.preventDefault();event.stopPropagation();setMode(false);}}
- window.addEventListener('pointermove',dragMove,true);window.addEventListener('pointerup',dragEnd,true);window.addEventListener('pointercancel',dragEnd,true);window.addEventListener('pointermove',move,true);window.addEventListener('pointerdown',down,true);window.addEventListener('click',pick,true);window.addEventListener('keydown',key,true);
+ // Keys typed in a note are ours alone. From outside a closed shadow root the event's target is the host, a plain div, so the page's hotkey code (which skips inputs and editors by their tag) took every letter typed into the note. Stopped here, at window capture, nothing of the page registered later sees them; our own Escape is handled here because the event no longer reaches the note.
+ function key(event){
+  const esc=event.type==='keydown'&&event.key==='Escape'&&!event.isComposing;
+  if(esc&&drag){event.preventDefault();event.stopImmediatePropagation();endDrag(true);return;}
+  if(event.target===host){event.stopImmediatePropagation();if(esc){event.preventDefault();if(mode)setMode(false);else escapeNote();}return;}
+  if(esc&&mode){event.preventDefault();event.stopPropagation();setMode(false);}
+ }
+ function escapeNote(){const active=shadow.activeElement;for(const record of records){const n=nodes.get(record.id);if(!n||!n.root.contains(active))continue;if(!n.palette.hidden){n.palette.hidden=true;n.label.focus();}else if(n.open){collapse(record);n.badge.focus();}return;}}
+ window.addEventListener('pointermove',dragMove,true);window.addEventListener('pointerup',dragEnd,true);window.addEventListener('pointercancel',dragEnd,true);window.addEventListener('pointermove',move,true);window.addEventListener('pointerdown',down,true);window.addEventListener('click',pick,true);for(const type of ['keydown','keypress','keyup'])window.addEventListener(type,key,true);
  function navigate(){endDrag(true);url=location.href;setMode(false);records=[];targets.clear();render();send('navigate');}
  const timer=setInterval(()=>{
   if(location.href!==url){navigate();}
@@ -165,7 +169,7 @@ export const annotationSource = String.raw`(() => {
    return {id:record.id,number:record.number,url};
   },
   remove(ids,expectedUrl){if(expectedUrl!==undefined&&location.href!==expectedUrl)throw new Error('Page changed before annotation removal.');records=records.filter(r=>!ids.includes(r.id));for(const id of ids)targets.delete(id);render();},
-  dispose(){endDrag(true);clearInterval(timer);window.removeEventListener('pointermove',dragMove,true);window.removeEventListener('pointerup',dragEnd,true);window.removeEventListener('pointercancel',dragEnd,true);window.removeEventListener('pointermove',move,true);window.removeEventListener('pointerdown',down,true);window.removeEventListener('click',pick,true);window.removeEventListener('keydown',key,true);host.remove();delete globalThis.__aiBrowserAnnotations;}
+  dispose(){endDrag(true);clearInterval(timer);window.removeEventListener('pointermove',dragMove,true);window.removeEventListener('pointerup',dragEnd,true);window.removeEventListener('pointercancel',dragEnd,true);window.removeEventListener('pointermove',move,true);window.removeEventListener('pointerdown',down,true);window.removeEventListener('click',pick,true);for(const type of ['keydown','keypress','keyup'])window.removeEventListener(type,key,true);host.remove();delete globalThis.__aiBrowserAnnotations;}
  };
  globalThis.__aiBrowserAnnotations=api;mount();return api;
 })()`;

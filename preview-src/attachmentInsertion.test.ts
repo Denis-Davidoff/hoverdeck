@@ -42,16 +42,16 @@ const chip = { id: 'a', kind: 'file', label: 'tsconfig.json', reference: '@1' };
 test('a new attachment is put into the text at the caret, as a token', () => {
 	const box = sandbox('Please use now', 'Please use'.length);
 	box.sync(state([chip]));
-	assert.equal(box.input.value, 'Please use [@1\u00a0\u00a0tsconfig.json\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0] now');
+	assert.equal(box.input.value, 'Please use [@1\u00a0tsconfig.json\u00a0\u00a0\u00a0] now');
 	box.sync(state([chip]));
-	assert.equal(box.input.value, 'Please use [@1\u00a0\u00a0tsconfig.json\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0] now', 'a token already there is not added twice');
+	assert.equal(box.input.value, 'Please use [@1\u00a0tsconfig.json\u00a0\u00a0\u00a0] now', 'a token already there is not added twice');
 });
 
 test('deleting a token removes its attachment, and a label change follows the chip', () => {
 	const box = sandbox('', 0);
 	box.sync(state([chip]));
 	box.sync(state([{ ...chip, label: 'other.json' }]));
-	assert.equal(box.input.value, '[@1\u00a0\u00a0other.json\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0]');
+	assert.equal(box.input.value, '[@1\u00a0other.json\u00a0\u00a0\u00a0]');
 	box.input.value = 'plain';
 	box.sync(state([chip]));
 	assert.equal(JSON.stringify(box.posted), JSON.stringify([{ type: 'removeAttachment', id: 'a' }]));

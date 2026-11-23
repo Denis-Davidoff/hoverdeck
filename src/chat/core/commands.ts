@@ -83,6 +83,7 @@ export const COMMANDS = {
 	approve: chat('host', 'host'), setViewMode: chat('host', 'host'), saveFeatureAi: chat('host', 'host'),
 	openAttachment: chat('mixed', 'mixed'),
 	reattachAttachment: editor('Attaching a saved item is available in VS Code.'),
+	attachmentPreview: editor('Attachment previews are read in VS Code.'),
 	unqueue: both('chat'), queueAction: both('chat'), resumeQueue: both('chat'),
 	clearChat: both('chat'), exportChat: chat('host', 'mixed'),
 	attach: chat('local', 'mixed'), pasteFile: chat('local', 'local'), removeAttachment: chat('local', 'mixed'),

@@ -32,6 +32,12 @@ One deck for all your AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Pi an
 - $(location) **Page markers** — pin notes to page elements and send them to the agent as one prompt.
 - $(settings-gear) **Chat Settings** — use the gear at the top to edit prompts for commit messages, branch names and chat titles, or clean up temporary files.
 
+## 1.0.7 — 2026-11-23
+
+- **Attachment previews** — hover a badge in the message box or a sent message to see the image or the first lines of what it attaches; click a sent badge to open it.
+- **Cleaner badges** — even spacing around badges, no cut-off borders, and the × never covers the next letter.
+- **Page notes** — typing in a page annotation no longer triggers the page's own keyboard shortcuts.
+
 ## 1.0.6 — 2026-11-22
 
 - **When a turn ran** — beside each turn's tokens: its start and end time and how long ago, refreshed as time passes.

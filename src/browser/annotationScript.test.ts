@@ -34,6 +34,7 @@ function page() {
 		hasPointerCapture(id: number) { return this.captured === id; }
 		releasePointerCapture(_id: number) { this.captured = undefined; }
 		focus() { document.activeElement = this; }
+		contains(node: Element | undefined): boolean { return !!node && (node === this || this.children.some(child => child.contains(node))); }
 		addEventListener(type: string, fn: (event: any) => void) { const entries = this.listeners.get(type) ?? []; entries.push(fn); this.listeners.set(type, entries); }
 		fire(type: string, extra: any = {}) { for (const fn of this.listeners.get(type) ?? []) { fn({ isTrusted: true, stopPropagation() {}, ...extra }); } }
 	}
@@ -75,7 +76,8 @@ function page() {
 		windowEvents.get('click')!({ target: element, clientX, clientY, isTrusted: trusted, composedPath: () => [element, body, document.documentElement], preventDefault() { prevented = true; }, stopImmediatePropagation() {} });
 		return prevented;
 	};
-	return { api, target, body, Element, messages, find, pick, ticks, windowEvents, location, shadow, all, window };
+	const host = document.documentElement.children.find((node: Element) => node.shadow)!;
+	return { api, target, body, Element, messages, find, pick, ticks, windowEvents, location, shadow, all, window, host };
 }
 
 test('toolbar lives outside the page; trusted selection creates editable notes and stable numbered badges', () => {
@@ -205,4 +207,22 @@ test('anywhere drag cancellation restores coordinates and a simple click still o
 		p.windowEvents.get('pointerup')!(pointer('pointerup', 125, 115));
 		badge.fire('click'); assert.equal(p.find('card').hidden, false);
 	} finally { p.api.dispose(); }
+});
+
+test('keys typed into a note never reach the page, and Escape still closes the note', () => {
+	const { api, pick, find, windowEvents, shadow, host, Element } = page();
+	api.start({ records: [], nextNumber: 1 }); pick();
+	const card = find('card'); const textarea = card.children.find(node => node.localName === 'textarea')!;
+	const key = (type: string, target: unknown, name = 'k') => {
+		const seen = { stopped: false, prevented: false };
+		windowEvents.get(type)!({ type, key: name, isComposing: false, target, stopImmediatePropagation() { seen.stopped = true; }, stopPropagation() {}, preventDefault() { seen.prevented = true; } });
+		return seen;
+	};
+	for (const type of ['keydown', 'keypress', 'keyup']) { assert.equal(key(type, host).stopped, true, `${type} in a note is stopped at window capture`); }
+	assert.equal(key('keydown', new Element('input')).stopped, false, 'keys typed in the page are left alone');
+	assert.equal(card.hidden, false);
+	(shadow as any).activeElement = textarea;
+	const escape = key('keydown', host, 'Escape');
+	assert.ok(escape.stopped && escape.prevented);
+	assert.equal(card.hidden, true, 'Escape in the note collapses it, handled at window capture');
 });

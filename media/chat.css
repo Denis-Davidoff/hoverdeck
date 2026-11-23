@@ -7669,12 +7669,15 @@ body.vv-locked {
 	box-decoration-break: clone;
 	color: var(--fg);
 }
+.input-mirror .att-token.split { -webkit-box-decoration-break: slice; box-decoration-break: slice; }
 .att-token.unbound { background: color-mix(in srgb, var(--fg) 10%, transparent); box-shadow: none; }
 .att-token-hide { color: transparent; }
 .att-token-prefix { position: relative; }
 .att-token .att-token-icon {
 	position: absolute;
-	left: 5px;
+	/* 5 px into the capsule. In the box the capsule starts at its transparent `[`, `--att-lead`
+	   before the reference the icon is placed in (`layoutComposerBadges`). */
+	left: calc(5px - var(--att-lead, 0px));
 	top: 50%;
 	transform: translateY(-50%);
 	width: 12px;
@@ -7686,12 +7689,14 @@ body.vv-locked {
 }
 .att-token .att-token-close { position: relative; }
 .sent-attachment .att-token-close { display: none; }
-.sent-attachment .att-token { padding-right: 6px; }
-.input-mirror .att-token .att-token-close::after {
+.input-mirror .att-token-x { position: relative; }
+/* The × is drawn on the closing `]`, which `layoutComposerBadges` lays over the capsule's right end: unlike
+   the reserved slot before it, that one glyph is never split across two lines. */
+.input-mirror .att-token-x::after {
 	/* Drawn, not the × glyph: a font's × sits off the circle's centre. */
 	content: '';
 	position: absolute;
-	right: 3px;
+	right: calc(3px + var(--att-trail-gap, 0px));
 	top: 50%;
 	transform: translateY(-50%);
 	width: 14px;
@@ -7703,7 +7708,7 @@ body.vv-locked {
 		linear-gradient(-45deg, transparent calc(50% - .6px), var(--x-color) calc(50% - .6px), var(--x-color) calc(50% + .6px), transparent calc(50% + .6px)) center / 7px 7px no-repeat,
 		transparent;
 }
-.input-mirror .att-token-close.hovered::after {
+.input-mirror .att-token-x.hovered::after {
 	--x-color: var(--vscode-errorForeground, #f48771);
 	background-color: color-mix(in srgb, var(--vscode-errorForeground, #f48771) 20%, transparent);
 }
@@ -7728,6 +7733,83 @@ body.vv-locked {
 /* text-indent is inherited, and the icon is a block inside that slot: without this its glyph
    was pushed 200 px left, out of the badge. */
 .att-token-wrap:not(.input-mirror *) .att-token-prefix .att-token-icon { text-indent: 0; }
+/* A badge outside the box is one unbreakable piece: it never splits between its icon and its label
+   across two lines, and a label longer than the line ends in an ellipsis (the hover card has it whole).
+   As tall as the text it sits in, less a pixel above and below, so badges on two lines never touch. */
+.att-token-wrap:not(.input-mirror *) {
+	display: inline-flex;
+	max-width: 100%;
+	/* With the capsule exactly one line tall (margin included), `top` puts it in the line box and its
+	   text, centred in it, on the line of the words around it; no other alignment does both. */
+	vertical-align: top;
+	white-space: nowrap;
+	/* The capsule's border is a box-shadow, outside its box: at a line's start a folded prompt
+	   (`overflow: hidden`) cut it off, and two badges written together touched. */
+	margin: 0 1px;
+}
+.att-token-wrap:not(.input-mirror *) > .att-token {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+	height: calc(1em * var(--line) - 2px);
+	margin: 1px 0;
+	padding: 0 7px 0 0;
+	line-height: 1;
+}
+.att-token-wrap:not(.input-mirror *) .att-token-prefix { flex: none; height: 100%; }
+.att-token-wrap:not(.input-mirror *) .att-token-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The hover card of an attachment badge (`attachmentHover.ts`): the same for every badge. */
+.hover-tip.att-hover {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	width: max-content;
+	min-width: 160px;
+	max-width: min(300px, calc(100% - 8px));
+	padding: 7px 9px 6px;
+	white-space: normal;
+	pointer-events: none;
+}
+.att-hover-image {
+	display: flex;
+	justify-content: center;
+	margin: -2px -4px 4px;
+	border-radius: 4px;
+	overflow: hidden;
+	/* A checkerboard, so a transparent image reads as one. */
+	background: repeating-conic-gradient(color-mix(in srgb, var(--fg) 7%, transparent) 0 25%, transparent 0 50%) 0 0 / 12px 12px;
+}
+.att-hover-image img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }
+.att-hover-head { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--fg-3); font-size: 11px; }
+.att-hover-head .att-hover-icon { position: static; flex: none; width: 14px; font-size: 14px; line-height: 1; text-align: center; transform: none; }
+.att-hover-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-hover-label {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+}
+.att-hover-detail { color: var(--fg-3); font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; overflow-wrap: anywhere; }
+.att-hover-text {
+	margin-top: 2px;
+	padding: 4px 6px;
+	border-radius: 4px;
+	background: var(--code-bg, color-mix(in srgb, var(--fg) 6%, transparent));
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 11px;
+	line-height: 1.4;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: calc(9 * 1.4em);
+	overflow: hidden;
+}
+.att-hover-loading { color: var(--fg-3); font-size: 11px; font-style: italic; }
+.att-hover-hint { margin-top: 3px; padding-top: 4px; border-top: 1px solid var(--border, color-mix(in srgb, var(--fg) 12%, transparent)); color: var(--fg-3); font-size: 11px; }
 
 /* Generated and presented raster images use native cards on every chat surface. */
 .image-card > img { display: block; width: auto; max-width: 100%; max-height: 480px; margin: 0 auto; object-fit: contain; }

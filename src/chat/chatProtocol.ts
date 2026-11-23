@@ -1144,6 +1144,11 @@ export type HostToView =
 	| { readonly type: 'terminalPaste'; readonly id: string; readonly text: string }
 	/** The answer to `composerClipboard`: whether the clipboard holds text, and the text itself for `paste`. */
 	| { readonly type: 'composerClipboard'; readonly hasText: boolean; readonly text?: string }
+	/**
+	 * The answer to `attachmentPreview`: what an attachment badge's hover card shows — a picture (a `data:` URL of
+	 * an image the attachment is or names, at most 4 MB) or the start of its text. Neither when there is nothing to show.
+	 */
+	| { readonly type: 'attachmentPreview'; readonly id: string; readonly entry?: number; readonly image?: string; readonly text?: string }
 	/** Focus this terminal's keyboard input (a terminal tab was selected, or the view was revealed on it). */
 	| { readonly type: 'terminalFocus'; readonly id: string }
 	/** The view's title bar cup: open the keep-awake popup. */
@@ -1242,6 +1247,8 @@ export type ViewToHost =
 	| { readonly type: 'osNotify'; readonly title: string; readonly text: string }
 	/** The empty message box asks whether the clipboard holds text (`peek`), or for that text (`paste`). Editor only. */
 	| { readonly type: 'composerClipboard'; readonly action: 'peek' | 'paste' }
+	/** A badge's hover card asks what to preview: `entry` for a sent message's badge, as `openAttachment`. */
+	| { readonly type: 'attachmentPreview'; readonly id: string; readonly entry?: number }
 	/** Chrome and the website: send more of the conversation's earlier turns. Answered by the surface's bridge. */
 	| { readonly type: 'loadEarlier'; readonly chatId: string; readonly reset?: boolean }
 	| { readonly type: 'setConnectionPermission'; readonly surface: 'chrome' | 'exchange'; readonly group: import('./core/commands').ConnectionPermission; readonly allowed: boolean }

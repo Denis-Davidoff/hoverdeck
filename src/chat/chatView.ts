@@ -2006,6 +2006,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			case 'openText':
 				await this._openText(message.name, message.text);
 				return;
+			case 'attachmentPreview':
+				await this._attachmentPreview(message.id, message.entry);
+				break;
 			case 'openAttachment':
 				await this._openAttachment(message.id, message.entry);
 				return;
@@ -4189,13 +4192,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 		this._focusInput();
 	}
 
-	private async _openAttachment(id: string, entryIndex?: number): Promise<void> {
+	/** The attachment a badge names: the draft's or a queued message's (no `entryIndex`), or a sent message's. */
+	private _findAttachment(id: string, entryIndex?: number) {
 		const entry = Number.isInteger(entryIndex) ? this._active.chat.entries[entryIndex!] : undefined;
 		const saved = entry?.kind === 'user' ? entry.attachmentData?.find(a => a.chip.id === id) : undefined;
 		// A badge on show in a message recalled with ↑, not yet made again, names the attachment it
 		// was sent with: found wherever a copy of it is kept.
-		const attachment = entryIndex === undefined ? this._active.attachments.find(a => a.chip.id === id) ?? this._active.pendingAttachment(id) ?? (this._blocked() ? undefined : this._attachmentFinder()(id))
+		return entryIndex === undefined ? this._active.attachments.find(a => a.chip.id === id) ?? this._active.pendingAttachment(id) ?? (this._blocked() ? undefined : this._attachmentFinder()(id))
 			: saved ? { ...saved, file: saved.file ? vscode.Uri.parse(saved.file) : undefined } : undefined;
+	}
+
+	/**
+	 * What a badge's hover card shows (`attachmentPreview`): the picture of a screenshot or a pasted image, an image
+	 * file read from disk, or the first lines of the attachment's text — an element, a page, a selection, a text file.
+	 * Answered straight to a ready view and never queued: a late preview is worth nothing. Nothing is shown of a file
+	 * over the limits, of a binary file, or where the chat is blocked.
+	 */
+	private async _attachmentPreview(id: unknown, entryIndex: unknown): Promise<void> {
+		if (typeof id !== 'string' || (entryIndex !== undefined && !Number.isInteger(entryIndex))) { return; }
+		const entry = entryIndex as number | undefined;
+		const answer = (preview: { image?: string; text?: string }) => this._postTerminal({ type: 'attachmentPreview', id, ...(entry !== undefined ? { entry } : {}), ...preview });
+		if (this._blocked()) { answer({}); return; }
+		const attachment = this._findAttachment(id, entry);
+		try {
+			answer(attachment ? await attachmentPreviewOf(attachment) : {});
+		} catch {
+			answer({});
+		}
+	}
+
+	private async _openAttachment(id: string, entryIndex?: number): Promise<void> {
+		const attachment = this._findAttachment(id, entryIndex);
 		if (!attachment) {
 			return;
 		}
@@ -9843,4 +9870,36 @@ function scheduledOf(store: unknown, chatId: string): { id: string; text: string
 		out.push({ id: q.id, text: q.text, at: q.at, attachments });
 	}
 	return out;
+}
+
+/** At most this much of an image goes to a hover card, as a `data:` URL. */
+const previewImageLimit = 4 * 1024 * 1024;
+/** And at most this much of a text: the card shows a few lines. */
+const previewTextLimit = 1200;
+const previewImageTypes: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', ico: 'image/x-icon', avif: 'image/avif' };
+
+/** A badge's preview (see `_attachmentPreview`). An SVG goes into an `<img>`, where its scripts do not run. */
+async function attachmentPreviewOf(attachment: { readonly text?: string; readonly file?: vscode.Uri; readonly image?: { readonly mediaType: string; readonly base64: string } }): Promise<{ image?: string; text?: string }> {
+	if (attachment.image) {
+		return attachment.image.base64.length <= previewImageLimit * 4 / 3 && /^image\/[\w.+-]+$/.test(attachment.image.mediaType)
+			? { image: `data:${attachment.image.mediaType};base64,${attachment.image.base64}` } : {};
+	}
+	if (attachment.file) {
+		const stat = await vscode.workspace.fs.stat(attachment.file);
+		if (stat.type & vscode.FileType.Directory) { return {}; }
+		const type = previewImageTypes[/\.([a-z0-9]+)$/i.exec(attachment.file.path)?.[1]?.toLowerCase() ?? ''];
+		if (type) {
+			return stat.size <= previewImageLimit ? { image: `data:${type};base64,${Buffer.from(await vscode.workspace.fs.readFile(attachment.file)).toString('base64')}` } : {};
+		}
+		if (stat.size > 512 * 1024) { return {}; }
+		const bytes = await vscode.workspace.fs.readFile(attachment.file);
+		const head = bytes.subarray(0, 8192);
+		if (head.includes(0)) { return {}; }
+		const text = Buffer.from(bytes.subarray(0, previewTextLimit * 4)).toString('utf8');
+		return text.trim() ? { text: capAt(text, previewTextLimit) } : {};
+	}
+	if (attachment.text?.trim()) {
+		return { text: capAt(attachment.text, previewTextLimit) };
+	}
+	return {};
 }

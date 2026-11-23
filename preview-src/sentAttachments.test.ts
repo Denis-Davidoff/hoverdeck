@@ -43,14 +43,14 @@ function fixture(entry: any) {
 			return node;
 		}, hasSelection: () => false, getSelection: () => null,
 		openMenu: (_anchor: any, items: any[]) => { menu = items; },
-		gate: () => ({ s: 'on' }),
+		gate: () => ({ s: 'on' }), attachmentHover: { attach() {} },
 		attachmentClipboardType: 'application/x-ai-browser-attachments',
 		attachmentMarker, sentAttachmentCopySequence: 0,
 		composerLinks, composerListChecker, composerListItem, linkNode: (url: string, text: string) => element('span', { class: 'link', text, title: url }),
 	};
 	const code = [source.match(/const attachmentTokenPattern = [^\n]+/)![0],
 		...['attachmentToken', 'tokensIn', 'plainToken', 'chipIcon', 'attachmentIcon', 'markAttachmentTokens',
-			'sentAttachmentAt', 'sentAttachmentChip', 'wireSentAttachment', 'markComposerText', 'renderPromptText', 'promptNode'].map(lift),
+			'sentAttachmentAt', 'sentAttachmentChip', 'dropSelectionOf', 'wireSentAttachment', 'markComposerText', 'renderPromptText', 'promptNode'].map(lift),
 		'({ promptNode, sentAttachmentChip });',
 	].join('\n');
 	const api = runInNewContext(transpileModule(code, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText, context);

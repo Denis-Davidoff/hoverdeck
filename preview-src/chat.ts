@@ -97,6 +97,7 @@ import { controlOf, connectionPermissionGroups, readConnectionPermissions, type 
 import { chatConnectionsEnabled } from '../src/chat/core/chatFeatures';
 import { describePrice, formatContext, modelFromCatalogItem, modelSummary, parseOptionalNumber } from '../src/chat/openrouterView';
 import { searchField } from './searchField';
+import { createAttachmentHover, type AttachmentHoverInfo } from './attachmentHover';
 import { formatSendTime, localInputValue, parseLocalInput, scheduleHorizonMs, schedulePresets, untilSend } from './sendSchedule';
 // Every codicon the bundled font has, one per line (`name,char,code`); bundled
 // as text by esbuild, so the icon picker lists exactly what can be drawn.
@@ -4467,6 +4468,9 @@ vscode.onMessage(message => {
 		case 'composerClipboard':
 			composerClipboardAnswer(message.hasText, message.text);
 			return;
+		case 'attachmentPreview':
+			attachmentHover.preview(message.entry === undefined ? message.id : `${message.id}@${message.entry}`, { image: message.image, text: message.text });
+			return;
 		case 'terminalData':
 		case 'terminalReplay':
 		case 'terminalExit':
@@ -8689,6 +8693,13 @@ function sentAttachmentAt(entry: Extract<ChatEntry, { kind: 'user' }>, index: nu
 
 let sentAttachmentCopySequence = 0;
 /** `pending`: a badge of a message still waiting to go out; the host finds it in the queue, by chip id alone. */
+/** Drops a selection that holds `badge` (its own press, or a word a right press selected beside it). */
+function dropSelectionOf(badge: HTMLElement): void {
+	const selection = getSelection();
+	if (!selection || selection.rangeCount === 0 || selection.isCollapsed) { return; }
+	if (selection.getRangeAt(0).intersectsNode(badge) || badge.contains(selection.anchorNode)) { selection.removeAllRanges(); }
+}
+
 function wireSentAttachment(badge: HTMLElement, chip: AttachmentChip, pending = false): void {
 	const savedEntry = () => {
 		if (pending) { return undefined; }
@@ -8703,7 +8714,8 @@ function wireSentAttachment(badge: HTMLElement, chip: AttachmentChip, pending = 
 	badge.dataset.attachmentKey = String(++sentAttachmentCopySequence);
 	badge.dataset.attachmentId = chip.id;
 	badge.dataset.attachmentLabel = chip.label;
-	badge.title = `${chip.filePath ?? chip.label}\nClick to open · Right-click for actions`;
+	badge.setAttribute('aria-label', `${chip.label} — click to open, right-click for actions`);
+	attachmentHover.attach(badge, () => attachmentHoverInfo(chip, pending ? { pending: true } : { entry: savedEntry() }));
 	badge.tabIndex = 0;
 	badge.setAttribute('role', 'button');
 	badge.draggable = true;
@@ -8715,15 +8727,24 @@ function wireSentAttachment(badge: HTMLElement, chip: AttachmentChip, pending = 
 		event.dataTransfer.setData(attachmentClipboardType, JSON.stringify({ text: token, items: [{ token, id: chip.id, kind: chip.kind, label: chip.label, filePath: chip.filePath }] }));
 		if (chip.id && gate('rememberAttachments').s === 'on') { post({ type: 'rememberAttachments', ids: [chip.id] }); }
 	});
-	// A click opens it. A selection held inside the badge alone is the click's own (the badge snaps
-	// to whole tokens), so it is dropped; one reaching past the badge is the reader's and stays.
-	badge.addEventListener('mousedown', event => { if (event.detail > 1) { event.preventDefault(); } });
+	// A click opens it. Whether it was a click or the end of a drag-selection is decided by how far
+	// the pointer moved, not by the selection: the badge is `user-select: all`, so a plain press already
+	// selects it whole, with the selection's ends in the prompt around it, and a test of "is the
+	// selection inside the badge" read every click as the reader selecting text (nothing opened).
+	// A press that selected the badge is the click's own, and that selection is dropped.
+	let pressAt: { x: number; y: number } | undefined;
+	badge.addEventListener('mousedown', event => {
+		pressAt = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
+		// A right press would select the word under the pointer (macOS), and a second press a word of the
+		// prompt beside the badge: neither is wanted, the menu and the open are the badge's own.
+		if (event.button === 2 || event.detail > 1) { event.preventDefault(); }
+	});
 	badge.addEventListener('click', event => {
 		event.stopPropagation();
-		const selection = getSelection();
-		const inside = !!selection && selection.rangeCount > 0 && badge.contains(selection.anchorNode) && badge.contains(selection.focusNode);
-		if (hasSelection() && !inside) { return; }
-		if (inside) { selection?.removeAllRanges(); }
+		const moved = pressAt && event.clientX !== undefined && Math.hypot(event.clientX - pressAt.x, event.clientY - pressAt.y) > 4;
+		pressAt = undefined;
+		if (moved) { return; }
+		dropSelectionOf(badge);
 		open();
 	});
 	badge.addEventListener('keydown', event => {
@@ -8732,6 +8753,7 @@ function wireSentAttachment(badge: HTMLElement, chip: AttachmentChip, pending = 
 	badge.addEventListener('contextmenu', event => {
 		event.preventDefault();
 		event.stopPropagation();
+		dropSelectionOf(badge);
 		openMenu(badge, [
 			{ icon: 'go-to-file', label: 'Open', disabled: !pending && savedEntry() === undefined, run: open },
 			{ icon: 'copy', label: 'Copy', run: () => {
@@ -9659,7 +9681,9 @@ function suggestionNode(chip: AttachmentChip): HTMLElement {
 	add.addEventListener('click', accept);
 	const open = button([chipIcon(chip), el('span', { class: 'chip-label', text: chip.label })], { class: 'chip-open', title: `Open in front — click to attach ${what}` });
 	open.addEventListener('click', accept);
-	return el('span', { class: 'chip suggested' }, add, open);
+	const root = el('span', { class: 'chip suggested' }, add, open);
+	chipCard(open, () => ({ ...attachmentHoverInfo({ ...chip, id: '' }), kind: `${attachmentKindName(chip)} · open in front`, hint: `Not attached yet — click to attach ${what}` }));
+	return root;
 }
 
 /**
@@ -9678,6 +9702,7 @@ function composerTerminalSuggestion(terminal: TerminalTabSummary, tabId: string)
 	add.addEventListener('click', attach);
 	const open = button([icon('terminal'), el('span', { class: 'chip-label', text: terminal.name })], { class: 'chip-open', title: 'Not attached — click to attach it to this chat' });
 	open.addEventListener('click', attach);
+	chipCard(open, () => ({ kind: 'Terminal · this chat\u2019s own', label: terminal.name, icon: () => icon('terminal'), hint: 'Not attached — click to attach it to this chat' }));
 	return el('span', { class: 'chip suggested' }, add, open);
 }
 
@@ -9687,7 +9712,9 @@ function browserPinNode(tab: NonNullable<ChatViewState['access']>['tabs'][number
 	remove.addEventListener('click', () => post({ type: 'tabAccess', tabId: tab.id, take: false }));
 	const open = button([icon('globe'), el('span', { class: 'chip-label', text: tab.title || tab.url })], { class: 'chip-open', title: tab.url });
 	open.addEventListener('click', () => post({ type: 'tabAccess', tabId: tab.id, take: true, reveal: true }));
-	return el('span', { class: 'chip chip-browser', title: tab.url }, remove, open);
+	const root = el('span', { class: 'chip chip-browser' }, remove, open);
+	chipCard(open, () => ({ kind: 'Browser tab · pinned to this chat', label: tab.title || tab.url, detail: tab.url, icon: () => icon('globe'), hint: 'Click to show the tab · × to make it free for other chats' }));
+	return root;
 }
 
 /**
@@ -9710,6 +9737,8 @@ function pinChipNode(chip: AttachmentChip & { readonly terminalId: string }): HT
 	const go = () => { if (composerTerminalIds.has(id)) { setComposerTab('terminal'); } else { post({ type: 'selectTerminal', id }); } };
 	open.addEventListener('click', go);
 	const root = el('span', { class: `chip chip-terminal ${status}` }, remove, mark, open);
+	chipCard(open, () => ({ kind: `Terminal · ${chip.terminalWatch ? 'shared read-only' : 'pinned to this chat'}`, label: chip.label,
+		detail: pinChipOpenTitle(chip), icon: () => icon(chip.terminalWatch ? 'eye' : 'terminal'), hint: 'Click to go to the terminal · Right-click for actions' }));
 	root.addEventListener('contextmenu', event => {
 		event.preventDefault();
 		const terminal = state?.terminals?.find(t => t.id === id) ?? composerTerminals.find(t => t.id === id);
@@ -9767,7 +9796,9 @@ function attachmentToken(chip: AttachmentChip): string {
 	// Invisible character slots reserve the icon, spacing and remove control in both text layers.
 	// No-break spaces throughout: a line may not break inside a badge, or the textarea wraps its
 	// tail (the × slot) onto the next line while the mirror draws it whole.
-	return `[${chip.reference}  ${chip.label.replace(/[\]\n\r]/g, ' ').trim().slice(0, 120)}      ]`.replace(/ /g, '\u00a0');
+	// One space after the reference, three for the ×: the slots `layoutComposerBadges` draws into (it
+	// makes the room exact). An older draft's wider token is rewritten to this one by `syncAttachmentTokens`.
+	return `[${chip.reference} ${chip.label.replace(/[\]\n\r]/g, ' ').trim().slice(0, 120)}   ]`.replace(/ /g, '\u00a0');
 }
 
 /** Per chat: the chips that have had a token in its draft, so a token deleted removes its chip. */
@@ -10115,9 +10146,11 @@ function attachmentHit(point: { clientX: number; clientY: number }) {
 	const index = marks.findIndex(mark => [...mark.getClientRects()].some(r => point.clientX >= r.left && point.clientX <= r.right && point.clientY >= r.top - 3 && point.clientY <= r.bottom + 3));
 	const token = tokensIn(input.value)[index];
 	if (!token) { return undefined; }
-	const closeMark = marks[index].querySelector<HTMLElement>('.att-token-close');
+	// The × is drawn on the closing `]`, at the capsule's right end, 18 px wide with its margin.
+	const closeMark = marks[index].querySelector<HTMLElement>('.att-token-x');
 	const close = closeMark?.getBoundingClientRect();
-	return { token, closeMark, close: !!close && point.clientX >= close.left && point.clientX <= close.right && point.clientY >= close.top - 3 && point.clientY <= close.bottom + 3 };
+	const right = (close?.right ?? 0) - (parseFloat(closeMark?.style?.getPropertyValue?.('--att-trail-gap') ?? '') || 0);
+	return { token, closeMark, close: !!close && point.clientX >= right - 18 && point.clientX <= right + 2 && point.clientY >= close.top - 3 && point.clientY <= close.bottom + 3 };
 }
 
 let attachmentPress: { x: number; y: number; start: number; end: number; selection: number; text: string; chat: string | undefined; shift: boolean } | undefined;
@@ -10132,12 +10165,13 @@ input.addEventListener('mousemove', event => {
 	hoveredAttachmentClose = hit?.close ? hit.closeMark ?? undefined : undefined;
 	hoveredAttachmentClose?.classList.add('hovered');
 	input.style.cursor = hit ? (hit.close ? 'pointer' : 'grab') : '';
-	input.title = hit ? (hit.close ? `Remove ${chip?.label ?? hit.token.label.trim()}` : `${chip?.filePath ?? chip?.label ?? hit.token.label.trim()}\nClick to open · Drag to move · Right-click for actions`) : '';
+	// The hover card says what it is (`attachmentHover`, wired below); the × says what it does.
+	if (hoveredAttachmentClose) { hoveredAttachmentClose.dataset.tip = `Remove ${chip?.label ?? hit?.token.label.trim() ?? ''}`; }
 });
 input.addEventListener('mouseleave', () => {
 	hoveredAttachmentClose?.classList.remove('hovered');
 	hoveredAttachmentClose = undefined;
-	if (!draggedAttachment) { input.draggable = false; input.title = ''; input.style.cursor = ''; }
+	if (!draggedAttachment) { input.draggable = false; input.style.cursor = ''; }
 });
 input.addEventListener('mousedown', event => {
 	attachmentPress = undefined;
@@ -10270,7 +10304,7 @@ function markAttachmentTokens(text: string, chipFor: (reference: string) => Atta
 		const label = token.label.trim();
 		const leading = token.label.slice(0, token.label.length - token.label.trimStart().length);
 		const trailing = token.label.slice(token.label.trimEnd().length);
-		out.push(el('span', { class: `att-token-wrap${chip ? ` att-kind-${chip.kind}` : ''}`, title: chip?.filePath ?? chip?.label ?? label },
+		out.push(el('span', { class: `att-token-wrap${chip ? ` att-kind-${chip.kind}` : ''}`, ...(chip ? {} : { title: label }) },
 			// Only the `[` stays outside the capsule, a narrow constant gap. The icon is pinned to the
 			// capsule's left edge, so the reference's varying digits widen the space after the icon,
 			// never the capsule's own padding or the room before it.
@@ -10282,7 +10316,7 @@ function markAttachmentTokens(text: string, chipFor: (reference: string) => Atta
 				el('span', { class: 'att-token-hide', text: `${token.gap}${leading}` }),
 				el('span', { class: 'att-token-label', text: label }),
 				el('span', { class: 'att-token-hide att-token-close', text: trailing })),
-			el('span', { class: 'att-token-hide', text: ']' })));
+			el('span', { class: 'att-token-hide att-token-x', text: ']' })));
 		last = token.end;
 	}
 	if (last < text.length) { out.push(...rest(text.slice(last))); }
@@ -10303,6 +10337,39 @@ function attachmentIcon(kind: AttachmentKind): string {
 		case 'pointAnnotation': case 'annotation': return 'comment';
 		case 'terminal': return 'terminal';
 	}
+}
+
+/** The kind's name, small above the label in a badge's hover card. */
+function attachmentKindName(chip: AttachmentChip): string {
+	switch (chip.kind) {
+		case 'screenshot': return 'Screenshot';
+		case 'element': return 'Page element';
+		case 'page': return 'Page address';
+		case 'sharedPage': return 'Browser tab';
+		case 'selection': return 'Selection';
+		case 'file': return chip.label.endsWith('/') || chip.iconName?.endsWith('/') ? 'Folder' : 'File';
+		case 'folder': return 'Folder';
+		case 'voice': return 'Voice message';
+		case 'video': return 'Video';
+		case 'pointAnnotation': case 'annotation': return 'Annotation';
+		case 'terminal': return 'Terminal';
+	}
+}
+
+/**
+ * What a badge's hover card shows (`attachmentHover`), the same for a badge in the message box,
+ * in a sent or queued message and in the box's own row. `entry` is a sent message's index in the
+ * whole chat; `pending` a message still in the queue, which the host finds by chip id alone.
+ */
+function attachmentHoverInfo(chip: AttachmentChip, where: { readonly entry?: number; readonly pending?: boolean; readonly hint?: string } = {}): AttachmentHoverInfo {
+	const key = chip.id ? (where.entry === undefined ? chip.id : `${chip.id}@${where.entry}`) : undefined;
+	const canAsk = !!chip.id && (where.entry !== undefined || !!where.pending || !!chip.reference) && gate('attachmentPreview').s === 'on';
+	return {
+		key, kind: attachmentKindName(chip), label: chip.label,
+		detail: chip.filePath, icon: () => chipIcon(chip), image: chip.thumbnail,
+		hint: where.hint ?? 'Click to open · Right-click for actions',
+		...(canAsk ? { request: () => post({ type: 'attachmentPreview', id: chip.id, ...(where.entry !== undefined ? { entry: where.entry } : {}) }) } : {}),
+	};
 }
 
 function pillContent(label: string): Node[] {
@@ -10918,17 +10985,25 @@ function paintInput(): void {
 	// is one short of the textarea's.
 	inputMirror.replaceChildren(...markAttachmentTokens(input.value, chipOfToken, text => markComposerText(text, knownCommands(state))), '\u200b');
 	inputMirror.scrollTop = input.scrollTop;
-	alignLineStartBadges();
+	layoutComposerBadges();
 }
 
 /**
- * A badge that opens a line starts its capsule where the line starts, so its left edge
- * meets the pinned chips under the box (asked for). The transparent `[` before it keeps
- * its width, which the textarea's caret depends on; the capsule grows over it with a
- * negative margin and the same padding, a net zero in the line's layout.
+ * Lays the message box's badges out so they look like the badges of a sent message, while every
+ * character keeps the place the textarea gives it (its caret depends on that). Each change is a
+ * net zero in the line's layout:
+ *
+ * - the capsule covers its own transparent `[` and `]` (a negative margin and the same padding), so
+ *   two badges, or a badge and a word, are one space apart and a badge that opens a line starts at
+ *   the line's left edge, as the pinned chips under the box do (asked for);
+ * - the icon sits 5 px into the capsule and the label 21 px in (`badgeLabelOffset`), whatever the
+ *   reference's digits: the invisible `@N` and the space after it are as wide as the textarea's own
+ *   glyphs, so the label is pulled back over them and the room goes to the slot before the ×.
+ *
+ * Wrapping does not change, since no line gets wider or narrower; only where things are drawn does.
  */
-function alignLineStartBadges(): void {
-	type Badge = { capsule: HTMLElement; bracket: HTMLElement; prefix: HTMLElement; gap: HTMLElement; label: HTMLElement; closer: HTMLElement };
+function layoutComposerBadges(): void {
+	type Badge = { wrap: HTMLElement; capsule: HTMLElement; bracket: HTMLElement; prefix: HTMLElement; gap: HTMLElement; label: HTMLElement; close: HTMLElement; closer: HTMLElement };
 	const badges: Badge[] = [];
 	for (const wrap of inputMirror.querySelectorAll<HTMLElement>('.att-token-wrap')) {
 		const bracket = wrap.firstElementChild as HTMLElement | null;
@@ -10937,41 +11012,74 @@ function alignLineStartBadges(): void {
 		const prefix = capsule?.querySelector<HTMLElement>('.att-token-prefix');
 		const gap = prefix?.nextElementSibling as HTMLElement | null | undefined;
 		const label = capsule?.querySelector<HTMLElement>('.att-token-label');
-		if (!bracket || !closer || !capsule || !prefix || !gap || !label) { continue; }
-		badges.push({ capsule, bracket, prefix, gap, label, closer });
+		const close = capsule?.querySelector<HTMLElement>('.att-token-close');
+		if (!bracket || !closer || !capsule || !prefix || !gap || !label || !close) { continue; }
+		badges.push({ wrap, capsule, bracket, prefix, gap, label, close, closer });
 	}
 	// Reset everything, then read, then write: one layout, not one per badge.
 	for (const b of badges) {
-		b.capsule.style.marginLeft = b.capsule.style.paddingLeft = '';
-		b.gap.style.marginRight = b.closer.style.marginLeft = '';
+		b.capsule.style.cssText = '';
+		b.capsule.classList.remove('split');
+		b.gap.style.marginRight = b.close.style.marginLeft = b.closer.style.marginLeft = b.wrap.style.marginRight = '';
+		b.closer.style.removeProperty('--att-trail-gap');
 	}
-	const lineLeft = inputMirror.getBoundingClientRect().left + (parseFloat(getComputedStyle(inputMirror).paddingLeft) || 0);
+	const lineStart = inputMirror.getBoundingClientRect().left + parseFloat(getComputedStyle(inputMirror).paddingLeft);
 	const plans = badges.map(b => {
-		const box = b.bracket.getClientRects()[0];
-		const lead = box && Math.abs(box.left - lineLeft) < 1 ? box.width : 0;
-		const start = b.prefix.getClientRects()[0];
+		const lead = b.bracket.getBoundingClientRect().width;
+		const trail = b.closer.getBoundingClientRect().width;
+		const open = b.bracket.getClientRects()[0];
 		const text = b.label.getClientRects()[0];
-		// The invisible `@N` and the spaces after it are as wide as the textarea's own glyphs, which
-		// vary with the number's digits; the label is drawn at a fixed distance from the icon instead,
-		// and the closing bracket gives the room back, so what follows the badge does not move.
-		const pull = start && text ? Math.max(0, text.left - start.left - badgeLabelOffset) : 0;
-		return { lead, pull };
+		// Text written against a badge (`]word`, `word[`, two badges together) has no space to keep it off the
+		// capsule, so the capsule stops short of that side's bracket: the transparent glyph becomes the gap.
+		// A badge that opens a line has the line's edge before it, whatever ended the line above.
+		const before = open && open.left - lineStart < 1 ? 0 : edgeGap(b.wrap.previousSibling, 'end', lead);
+		const after = edgeGap(b.wrap.nextSibling, 'start', trail);
+		const pull = open && text && Math.abs(open.top - text.top) < 2 ? text.left - open.left - before - badgeLabelOffset : 0;
+		// Longer than the line, the textarea breaks the token where it overflows: drawn as one capsule cut at
+		// the line's edges, or its × slot reads as a second, empty badge on the next line.
+		const split = new Set([...b.capsule.getClientRects()].map(r => Math.round(r.top))).size > 1;
+		// From the label's end to the capsule's (which will cover the `]`): the room the × has before any
+		// correction. The label's pull is given back inside the capsule only as far as it brings this to
+		// `badgeCloseRoom`; the rest goes after the badge, where it reads as part of the space.
+		const labelEnd = b.label.getClientRects();
+		const end = labelEnd[labelEnd.length - 1];
+		const shut = b.closer.getClientRects()[0];
+		const room = end && shut && Math.abs(end.top - shut.top) < 2 ? shut.left - end.right + trail - after : undefined;
+		const inside = room === undefined ? pull : badgeCloseRoom - room;
+		return { lead, trail, pull, split, inside, before, after };
 	});
 	badges.forEach((b, i) => {
-		const { lead, pull } = plans[i];
-		// At the start of a line the capsule moves over its transparent `[` rather than growing over
-		// it, so every badge of one label is drawn the same width wherever it sits.
-		if (lead) { b.capsule.style.marginLeft = `${-lead}px`; }
-		if (pull > 0.5) { b.gap.style.marginRight = `${-pull}px`; }
-		if (lead || pull > 0.5) { b.closer.style.marginLeft = `${lead + Math.max(0, pull > 0.5 ? pull : 0)}px`; }
+		const { lead, trail, pull, split, inside, before, after } = plans[i];
+		if (split) { b.capsule.classList.add('split'); }
+		// Margin and padding always sum to zero, so the textarea's glyphs and the mirror's stay where they are.
+		b.capsule.style.marginLeft = `${before - lead}px`;
+		b.capsule.style.paddingLeft = `${lead - before}px`;
+		b.capsule.style.paddingRight = `${trail - after}px`;
+		b.capsule.style.setProperty('--att-lead', `${lead - before}px`);
+		b.closer.style.marginLeft = `${after - trail}px`;
+		if (after) { b.closer.style.setProperty('--att-trail-gap', `${after}px`); }
+		// Every shift is given back on the same line: the label's pull, inside before the ×, the rest after.
+		if (Math.abs(pull) > 0.25) { b.gap.style.marginRight = `${-pull}px`; }
+		if (Math.abs(inside) > 0.25) { b.close.style.marginLeft = `${inside}px`; }
+		if (Math.abs(pull - inside) > 0.25) { b.wrap.style.marginRight = `${pull - inside}px`; }
 	});
 }
-/** Where a badge's label starts, from the left of its reserved `@N`: the icon (5 px in, 12 px wide) and a 4 px gap. */
+/** The gap kept between a badge and text written right against it, taken out of that side's bracket.
+ * Nothing when a space, a line break or nothing is there: the space is the gap. */
+function edgeGap(neighbour: ChildNode | null, side: 'start' | 'end', bracket: number): number {
+	const text = neighbour?.textContent ?? '';
+	const char = side === 'end' ? text.slice(-1) : text.slice(0, 1);
+	return char && !/\s/.test(char) ? Math.max(0, Math.min(badgeEdgeGap, bracket - 0.5)) : 0;
+}
+const badgeEdgeGap = 3;
+/** Where a badge's label starts, from the capsule's left edge: 5 px, the 12 px icon, a 4 px gap. */
 const badgeLabelOffset = 21;
+/** From a badge's label to its capsule's right end: a 5 px gap, the 14 px ×, 3 px to the edge. */
+const badgeCloseRoom = 22;
 
 input.addEventListener('scroll', () => { inputMirror.scrollTop = input.scrollTop; });
 // Wrapping changes with the width, and with it which badges open a line.
-new ResizeObserver(() => alignLineStartBadges()).observe(inputMirror);
+new ResizeObserver(() => layoutComposerBadges()).observe(inputMirror);
 
 /*
  * ↑ / ↓ walk through the messages sent before, as in a terminal: ↑ is older,
@@ -13779,6 +13887,41 @@ const hoverTip = (() => {
 	window.addEventListener('scroll', () => api.hide(), true);
 	return api;
 })();
+
+/**
+ * Every attachment badge's hover card: the composer's, a sent or queued message's, and the chips
+ * under the box. One look and one behaviour (see `attachmentHover.ts`); a preview the chip does not
+ * carry is asked of the host (`attachmentPreview`) once per attachment.
+ */
+const attachmentHover = createAttachmentHover({
+	root: app, codicon: name => icon(name),
+	place: (node, anchor) => showAnchoredOverlay(node, anchor, 'center'),
+});
+/** The hover card for an element that is not an attachment badge but sits in the same row. */
+function chipCard(anchor: HTMLElement, info: () => AttachmentHoverInfo | undefined): void {
+	anchor.removeAttribute('title');
+	for (const inner of anchor.querySelectorAll('[title]')) { inner.removeAttribute('title'); }
+	attachmentHover.attach(anchor, info);
+}
+
+// In the message box the badges are drawn by the mirror, which takes no pointer: the textarea's own
+// pointer events find the badge under the pointer (`attachmentHit`), and the card is shown for it.
+input.addEventListener('mousemove', event => {
+	if (event.buttons || draggedAttachment) { attachmentHover.hide(); return; }
+	const hit = attachmentHit(event);
+	const chip = hit && !hit.close ? chipOfToken(hit.token.reference) : undefined;
+	if (hit?.close && hit.closeMark) { attachmentHover.hide(); hoverTip.show(hit.closeMark); return; }
+	if (hoverTip.anchor?.classList.contains('att-token-x')) { hoverTip.hide(); }
+	if (!hit || !chip) { if (attachmentHover.anchor?.closest('.input-mirror')) { attachmentHover.hide(); } return; }
+	const capsule = inputMirror.querySelectorAll<HTMLElement>('.att-token-wrap')[tokensIn(input.value).findIndex(t => t.start === hit.token.start)]?.querySelector<HTMLElement>(':scope > .att-token');
+	if (capsule) { attachmentHover.hover(capsule, attachmentHoverInfo(chip, { hint: 'Click to open · Drag to move · Right-click for actions' })); }
+});
+input.addEventListener('mouseleave', () => {
+	if (attachmentHover.anchor?.closest('.input-mirror')) { attachmentHover.hide(); }
+	if (hoverTip.anchor?.classList.contains('att-token-x')) { hoverTip.hide(); }
+});
+input.addEventListener('mousedown', () => attachmentHover.hide());
+input.addEventListener('input', () => attachmentHover.hide());
 
 // The context pie's tooltip: how much of the window is used and how much is left.
 hoverTip.attach(branchMagic);

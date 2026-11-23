@@ -30,7 +30,7 @@ function fixture() {
 		pinChipNode: (chip: unknown) => chip, composerTab: 'chat', composerTerminalAvailable: false,
 		browserPinNode: (tab: unknown) => tab,
 		toolbarLayoutShape: '', scheduleToolbarLayout() {},
-		autosize() {},
+		autosize() {}, chipCard() {},
 	});
 	return { state, posted, classes, plusClasses, row, api, page };
 }
