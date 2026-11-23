@@ -9456,12 +9456,21 @@ function runInTerminalButton(text: () => string): HTMLButtonElement {
 		event.stopPropagation();
 		if (b.getAttribute('aria-disabled') === 'true') { return; }
 		const items: MenuItem[] = [
-			{ icon: 'terminal', label: 'VS Code terminal', description: 'the active one, or a new one', run: () => post({ type: 'runInTerminal', text: text(), target: 'vscode' }) },
+			{ icon: 'terminal', label: 'VS Code Terminal', description: 'the active one, or a new one', run: () => post({ type: 'runInTerminal', text: text(), target: 'vscode' }) },
 		];
+		// The conversation's own terminal, in the Terminal tab beside the message box (started if it has none yet).
+		const ownTab = state?.activeTab;
+		const own = __TERMINAL__ && ownTab !== undefined && composerTabShown('terminal');
+		if (own) {
+			items.push({
+				icon: 'terminal', label: "Chat's terminal", description: 'the Terminal tab under this chat', separator: true,
+				run: () => { setComposerTab('terminal'); post({ type: 'runInTerminal', text: text(), target: 'own', tabId: ownTab }); },
+			});
+		}
 		const running = (state?.terminals ?? []).filter(t => t.status === 'running');
-		running.forEach((t, i) => items.push({ icon: 'terminal-bash', label: t.name, description: 'chat terminal tab', separator: i === 0, run: () => post({ type: 'runInTerminal', text: text(), target: 'tab', id: t.id }) }));
+		running.forEach((t, i) => items.push({ icon: 'terminal-bash', label: t.name, description: 'terminal tab', separator: i === 0, run: () => post({ type: 'runInTerminal', text: text(), target: 'tab', id: t.id }) }));
 		if (state?.terminalSupport?.available) {
-			items.push({ icon: 'add', label: 'New chat terminal tab', separator: !running.length, run: () => post({ type: 'runInTerminal', text: text(), target: 'newTab' }) });
+			items.push({ icon: 'add', label: 'New terminal tab', separator: !running.length && !own, run: () => post({ type: 'runInTerminal', text: text(), target: 'newTab' }) });
 		}
 		openMenu(b, items, 'Run in');
 	});

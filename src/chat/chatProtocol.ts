@@ -1432,7 +1432,7 @@ export type ViewToHost =
 	/** Selected text or the last `lines` lines of the screen, attached to the conversation in front as context; the view then shows that conversation. */
 	| { readonly type: 'terminalToChat'; readonly id: string; readonly text: string; /** The conversation chosen in the menu; absent: the one in front. */ readonly tabId?: string }
 	/** A shell code block's Run: typed into VS Code's terminal, a chat terminal tab, or a new one, then Enter. */
-	| { readonly type: 'runInTerminal'; readonly text: string; readonly target: 'vscode' | 'tab' | 'newTab'; readonly id?: string }
+	| { readonly type: 'runInTerminal'; readonly text: string; readonly target: 'vscode' | 'tab' | 'newTab' | 'own'; readonly id?: string; readonly tabId?: string }
 	/** The composer's browser button: a new browser tab, nothing else. */
 	| { readonly type: 'openBrowser'; readonly where?: 'vscode' | 'chrome' }
 	/** The approval menu's View Mode: `hoverdeck.chat.viewMode`. */

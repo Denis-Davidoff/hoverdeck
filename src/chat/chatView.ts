@@ -2365,7 +2365,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 				this._showShellOutput(message.chatId, message.id);
 				return;
 			case 'runInTerminal':
-				await this._runInTerminal(message.text, message.target, message.id);
+				await this._runInTerminal(message.text, message.target, message.id, message.tabId);
 				return;
 			case 'terminalToChat':
 				await this._terminalToChat(message.id, message.text, message.tabId);
@@ -5485,7 +5485,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 	}
 
 	/** A shell code block from a reply, typed where the user picked and sent with Enter. The click is the consent. */
-	private async _runInTerminal(text: unknown, target: unknown, id: unknown): Promise<void> {
+	private async _runInTerminal(text: unknown, target: unknown, id: unknown, tabId?: unknown): Promise<void> {
 		if (typeof text !== 'string' || !text.trim() || text.length > 990_000) { return; }
 		const blocked = this._blocked();
 		if (blocked) { refuse(blocked); return; }
@@ -5497,6 +5497,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 			const terminal = active && !('pty' in active.creationOptions) ? active : vscode.window.createTerminal({ name: productName(), cwd: this._active.cwd });
 			terminal.show(false);
 			terminal.sendText(command, true);
+			return;
+		}
+		if (target === 'own') {
+			// The conversation's own terminal (the composer's Terminal tab): started first if it has none. It is never
+			// put in front of the chat; the view has already switched to its tab.
+			const conversation = typeof tabId === 'string' ? this._tabs.find(t => t.id === tabId) : undefined;
+			if (!conversation) { refuse(vscode.l10n.t("That conversation is no longer open.")); return; }
+			const had = this._composerTerminals.get(conversation.id);
+			const started = had === undefined || !this._terminals.find(had);
+			await this._openComposerTerminal(conversation.id);
+			// Opening the Terminal tab may have started it a moment earlier: wait for that start rather than drop the command.
+			for (let waited = 0; this._composerTerminalsStarting.has(conversation.id) && waited < 10_000; waited += 100) {
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			const own = this._terminals.find(this._composerTerminals.get(conversation.id));
+			if (!own) { return; } // _openComposerTerminal already said why.
+			setTimeout(() => own.input(command.replace(/\n/g, '\r') + '\r'), started ? 400 : 0);
 			return;
 		}
 		let tab = target === 'tab' && typeof id === 'string' ? this._terminals.find(id) : undefined;
